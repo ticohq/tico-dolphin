@@ -35,92 +35,41 @@
 #include <mutex>
 
 #include <imgui.h>
+#if !defined(LIBRETRO)
 #include <implot.h>
+#endif
 
 namespace VideoCommon
 {
+// STATIC GUARD for Disable
+static bool s_is_disabled = false;
+
 bool OnScreenUI::Initialize(u32 width, u32 height, float scale)
 {
-  std::unique_lock<std::mutex> imgui_lock(m_imgui_mutex);
-
-  if (!IMGUI_CHECKVERSION())
-  {
-    PanicAlertFmt("ImGui version check failed");
-    return false;
-  }
-  if (!ImGui::CreateContext())
-  {
-    PanicAlertFmt("Creating ImGui context failed");
-    return false;
-  }
-  if (!ImPlot::CreateContext())
-  {
-    PanicAlertFmt("Creating ImPlot context failed");
-    return false;
-  }
-
-  // Don't create an ini file. TODO: Do we want this in the future?
-  ImGui::GetIO().IniFilename = nullptr;
-  SetScale(scale);
-
-  PortableVertexDeclaration vdecl = {};
-  vdecl.position = {ComponentFormat::Float, 2, offsetof(ImDrawVert, pos), true, false};
-  vdecl.texcoords[0] = {ComponentFormat::Float, 2, offsetof(ImDrawVert, uv), true, false};
-  vdecl.colors[0] = {ComponentFormat::UByte, 4, offsetof(ImDrawVert, col), true, false};
-  vdecl.stride = sizeof(ImDrawVert);
-  m_imgui_vertex_format = g_gfx->CreateNativeVertexFormat(vdecl);
-  if (!m_imgui_vertex_format)
-  {
-    PanicAlertFmt("Failed to create ImGui vertex format");
-    return false;
-  }
-
-  // Font defaults
-  ImGuiIO& io = ImGui::GetIO();
-  m_imgui_textures.clear();
-
-  // User supplied font
-  std::string file = File::GetUserPath(D_LOAD_IDX) + "OSD_Font.ttf";
-
-  bool font_exists = File::Exists(file);
-  if (!font_exists)
-  {
-    // Default supplied font
-    file = File::GetSysDirectory() + DIR_SEP + RESOURCES_DIR + DIR_SEP + "OSD_Font.ttf";
-    font_exists = File::Exists(file);
-  }
-
-  if (font_exists)
-  {
-    io.Fonts->Clear();
-    io.Fonts->AddFontFromFileTTF(file.c_str());
-  }
-
-  // Setup new font management behavior
-  io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures | ImGuiBackendFlags_RendererHasVtxOffset;
-
-  if (!RecompileImGuiPipeline())
-    return false;
-
-  m_imgui_last_frame_time = Common::Timer::NowUs();
-  m_ready = true;
-  BeginImGuiFrameUnlocked(width, height);  // lock is already held
-
+  s_is_disabled = true;
   return true;
+
 }
 
 OnScreenUI::~OnScreenUI()
 {
+  if (s_is_disabled)
+    return;
   std::unique_lock<std::mutex> imgui_lock(m_imgui_mutex);
 
   ImGui::EndFrame();
+
+#if !defined(__SWITCH__)
   ImPlot::DestroyContext();
+#endif
   ImGui::DestroyContext();
   m_imgui_textures.clear();
 }
 
 bool OnScreenUI::RecompileImGuiPipeline()
 {
+  if (s_is_disabled)
+    return true;
   if (g_presenter->GetBackbufferFormat() == AbstractTextureFormat::Undefined)
   {
     // No backbuffer (nogui) means no imgui rendering will happen
@@ -187,12 +136,16 @@ bool OnScreenUI::RecompileImGuiPipeline()
 
 void OnScreenUI::BeginImGuiFrame(u32 width, u32 height)
 {
+  if (s_is_disabled)
+    return;
   std::unique_lock<std::mutex> imgui_lock(m_imgui_mutex);
   BeginImGuiFrameUnlocked(width, height);
 }
 
 void OnScreenUI::BeginImGuiFrameUnlocked(u32 width, u32 height)
 {
+  if (s_is_disabled)
+    return;
   m_backbuffer_width = width;
   m_backbuffer_height = height;
 
@@ -212,6 +165,8 @@ void OnScreenUI::BeginImGuiFrameUnlocked(u32 width, u32 height)
 
 void OnScreenUI::DrawImGui()
 {
+  if (s_is_disabled)
+    return;
   ImDrawData* draw_data = ImGui::GetDrawData();
   if (!draw_data)
     return;
@@ -275,6 +230,8 @@ void OnScreenUI::DrawImGui()
 // Create On-Screen-Messages
 void OnScreenUI::DrawDebugText()
 {
+  if (s_is_disabled)
+    return;
   if (Config::Get(Config::MAIN_MOVIE_SHOW_OSD))
   {
     // Position under the FPS display.
@@ -315,13 +272,13 @@ void OnScreenUI::DrawDebugText()
 
   if (g_ActiveConfig.bOverlayStats)
     g_stats.Display();
-
+#if !defined(__SWITCH__)
   if (Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) && g_netplay_chat_ui)
     g_netplay_chat_ui->Display();
 
   if (Config::Get(Config::NETPLAY_GOLF_MODE_OVERLAY) && g_netplay_golf_ui)
     g_netplay_golf_ui->Display();
-
+#endif
   if (g_ActiveConfig.bOverlayProjStats)
     g_stats.DisplayProj();
 
@@ -335,6 +292,7 @@ void OnScreenUI::DrawDebugText()
 
 void OnScreenUI::DrawChallengesAndLeaderboards()
 {
+  return;
   if (!Config::Get(Config::MAIN_OSD_MESSAGES))
     return;
 #ifdef USE_RETRO_ACHIEVEMENTS
@@ -415,6 +373,9 @@ void OnScreenUI::DrawChallengesAndLeaderboards()
 
 void OnScreenUI::Finalize()
 {
+  if (s_is_disabled)
+    return;
+
   auto lock = GetImGuiLock();
 
   g_perf_metrics.DrawImGuiStats(m_backbuffer_scale);
@@ -439,6 +400,9 @@ void OnScreenUI::Finalize()
 
 void OnScreenUI::UpdateImguiTexture(ImTextureData* tex)
 {
+  if (s_is_disabled)
+    return;
+
   if (tex->Status == ImTextureStatus_WantCreate)
   {
     // Create new font texture.
@@ -528,6 +492,8 @@ std::unique_lock<std::mutex> OnScreenUI::GetImGuiLock()
 
 void OnScreenUI::SetScale(float backbuffer_scale)
 {
+  if (s_is_disabled)
+    return;
   ImGui::GetIO().DisplayFramebufferScale.x = backbuffer_scale;
   ImGui::GetIO().DisplayFramebufferScale.y = backbuffer_scale;
 
@@ -543,6 +509,8 @@ void OnScreenUI::SetScale(float backbuffer_scale)
 }
 void OnScreenUI::SetKeyMap(const DolphinKeyMap& key_map)
 {
+  if (s_is_disabled)
+    return;
   static constexpr DolphinKeyMap dolphin_to_imgui_map = {
       ImGuiKey_Tab,       ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_UpArrow,
       ImGuiKey_DownArrow, ImGuiKey_PageUp,    ImGuiKey_PageDown,   ImGuiKey_Home,
@@ -571,6 +539,8 @@ void OnScreenUI::SetKeyMap(const DolphinKeyMap& key_map)
 
 void OnScreenUI::SetKey(u32 key, bool is_down, const char* chars)
 {
+  if (s_is_disabled)
+    return;
   auto lock = GetImGuiLock();
   if (auto iter = m_dolphin_to_imgui_map.find(key); iter != m_dolphin_to_imgui_map.end())
     ImGui::GetIO().AddKeyEvent((ImGuiKey)iter->second, is_down);
@@ -581,6 +551,8 @@ void OnScreenUI::SetKey(u32 key, bool is_down, const char* chars)
 
 void OnScreenUI::SetMousePos(float x, float y)
 {
+  if (s_is_disabled)
+    return;
   auto lock = GetImGuiLock();
 
   ImGui::GetIO().AddMousePosEvent(x, y);
@@ -588,6 +560,8 @@ void OnScreenUI::SetMousePos(float x, float y)
 
 void OnScreenUI::SetMousePress(u32 button_mask)
 {
+  if (s_is_disabled)
+    return;
   auto lock = GetImGuiLock();
 
   for (size_t i = 0; i < std::size(ImGui::GetIO().MouseDown); i++)

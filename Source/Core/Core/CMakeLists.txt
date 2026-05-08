@@ -189,12 +189,7 @@ add_library(core
   HW/DVD/DVDThread.h
   HW/DVD/FileMonitor.cpp
   HW/DVD/FileMonitor.h
-  HW/EXI/BBA/TAPServerConnection.cpp
-  HW/EXI/BBA/TAPServerBBA.cpp
-  HW/EXI/BBA/XLINK_KAI_BBA.cpp
-  HW/EXI/BBA/BuiltIn.cpp
-  HW/EXI/BBA/BuiltIn.h
-  HW/EXI/Modem/TAPServerModem.cpp
+
   HW/EXI/EXI_Channel.cpp
   HW/EXI/EXI_Channel.h
   HW/EXI/EXI_Device.cpp
@@ -207,16 +202,13 @@ add_library(core
   HW/EXI/EXI_DeviceBaseboard.h
   HW/EXI/EXI_DeviceDummy.cpp
   HW/EXI/EXI_DeviceDummy.h
-  HW/EXI/EXI_DeviceEthernet.cpp
-  HW/EXI/EXI_DeviceEthernet.h
-  HW/EXI/EXI_DeviceGecko.cpp
-  HW/EXI/EXI_DeviceGecko.h
+
+
   HW/EXI/EXI_DeviceIPL.cpp
   HW/EXI/EXI_DeviceIPL.h
   HW/EXI/EXI_DeviceMemoryCard.cpp
   HW/EXI/EXI_DeviceMemoryCard.h
-  HW/EXI/EXI_DeviceModem.cpp
-  HW/EXI/EXI_DeviceModem.h
+
   HW/EXI/EXI.cpp
   HW/EXI/EXI.h
   HW/GBAPad.cpp
@@ -272,8 +264,7 @@ add_library(core
   HW/SI/SI_Device.h
   HW/SI/SI_DeviceDanceMat.cpp
   HW/SI/SI_DeviceDanceMat.h
-  HW/SI/SI_DeviceGBA.cpp
-  HW/SI/SI_DeviceGBA.h
+
   HW/SI/SI_DeviceGCAdapter.cpp
   HW/SI/SI_DeviceGCAdapter.h
   HW/SI/SI_DeviceGCController.cpp
@@ -385,38 +376,7 @@ add_library(core
   IOS/IOSC.h
   IOS/MIOS.cpp
   IOS/MIOS.h
-  IOS/Network/ICMP.h
-  IOS/Network/ICMPLin.cpp
-  IOS/Network/IP/Top.cpp
-  IOS/Network/IP/Top.h
-  IOS/Network/KD/NetKDRequest.cpp
-  IOS/Network/KD/NetKDRequest.h
-  IOS/Network/KD/NetKDTime.cpp
-  IOS/Network/KD/NetKDTime.h
-  IOS/Network/KD/NWC24Config.cpp
-  IOS/Network/KD/NWC24Config.h
-  IOS/Network/KD/NWC24DL.cpp
-  IOS/Network/KD/NWC24DL.h
-  IOS/Network/KD/VFF/VFFUtil.cpp
-  IOS/Network/KD/VFF/VFFUtil.h
-  IOS/Network/KD/WC24File.h
-  IOS/Network/KD/Mail/MailCommon.h
-  IOS/Network/KD/Mail/WC24FriendList.cpp
-  IOS/Network/KD/Mail/WC24FriendList.h
-  IOS/Network/KD/Mail/WC24Send.cpp
-  IOS/Network/KD/Mail/WC24Send.h
-  IOS/Network/MACUtils.cpp
-  IOS/Network/MACUtils.h
-  IOS/Network/NCD/Manage.cpp
-  IOS/Network/NCD/Manage.h
-  IOS/Network/NCD/WiiNetConfig.cpp
-  IOS/Network/NCD/WiiNetConfig.h
-  IOS/Network/Socket.cpp
-  IOS/Network/Socket.h
-  IOS/Network/SSL.cpp
-  IOS/Network/SSL.h
-  IOS/Network/WD/Command.cpp
-  IOS/Network/WD/Command.h
+
   IOS/SDIO/SDIOSlot0.cpp
   IOS/SDIO/SDIOSlot0.h
   IOS/STM/STM.cpp
@@ -483,6 +443,13 @@ add_library(core
   MemTools.h
   Movie.cpp
   Movie.h
+)
+if(LIBRETRO)
+  target_compile_definitions(core PRIVATE LIBRETRO)
+endif()
+
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+target_sources(core PRIVATE
   NetPlayClient.cpp
   NetPlayClient.h
   NetPlayCommon.cpp
@@ -491,6 +458,56 @@ add_library(core
   NetPlayServer.h
   NetworkCaptureLogger.cpp
   NetworkCaptureLogger.h
+  HW/EXI/BBA/TAPServerConnection.cpp
+  HW/EXI/BBA/TAPServerBBA.cpp
+  HW/EXI/BBA/XLINK_KAI_BBA.cpp
+  HW/EXI/BBA/BuiltIn.cpp
+  HW/EXI/BBA/BuiltIn.h
+  HW/EXI/Modem/TAPServerModem.cpp
+  HW/EXI/EXI_DeviceEthernet.cpp
+  HW/EXI/EXI_DeviceEthernet.h
+  HW/EXI/EXI_DeviceGecko.cpp
+  HW/EXI/EXI_DeviceGecko.h
+  HW/EXI/EXI_DeviceModem.cpp
+  HW/EXI/EXI_DeviceModem.h
+  HW/SI/SI_DeviceGBA.cpp
+  HW/SI/SI_DeviceGBA.h
+  IOS/Network/ICMP.h
+  IOS/Network/ICMPLin.cpp
+  IOS/Network/IP/Top.cpp
+  IOS/Network/IP/Top.h
+  IOS/Network/KD/NetKDRequest.cpp
+  IOS/Network/KD/NetKDRequest.h
+  IOS/Network/KD/NetKDTime.cpp
+  IOS/Network/KD/NetKDTime.h
+  IOS/Network/KD/NWC24Config.cpp
+  IOS/Network/KD/NWC24Config.h
+  IOS/Network/KD/NWC24DL.cpp
+  IOS/Network/KD/NWC24DL.h
+  IOS/Network/KD/VFF/VFFUtil.cpp
+  IOS/Network/KD/VFF/VFFUtil.h
+  IOS/Network/KD/WC24File.h
+  IOS/Network/KD/Mail/MailCommon.h
+  IOS/Network/KD/Mail/WC24FriendList.cpp
+  IOS/Network/KD/Mail/WC24FriendList.h
+  IOS/Network/KD/Mail/WC24Send.cpp
+  IOS/Network/KD/Mail/WC24Send.h
+  IOS/Network/MACUtils.cpp
+  IOS/Network/MACUtils.h
+  IOS/Network/NCD/Manage.cpp
+  IOS/Network/NCD/Manage.h
+  IOS/Network/NCD/WiiNetConfig.cpp
+  IOS/Network/NCD/WiiNetConfig.h
+  IOS/Network/Socket.cpp
+  IOS/Network/Socket.h
+  IOS/Network/SSL.cpp
+  IOS/Network/SSL.h
+  IOS/Network/WD/Command.cpp
+  IOS/Network/WD/Command.h
+)
+endif()
+target_sources(core PRIVATE
+
   PatchEngine.cpp
   PatchEngine.h
   PowerPC/BreakPoints.cpp
@@ -530,6 +547,7 @@ add_library(core
   PowerPC/JitCommon/JitCache.h
   PowerPC/JitInterface.cpp
   PowerPC/JitInterface.h
+
   PowerPC/GDBStub.cpp
   PowerPC/GDBStub.h
   PowerPC/MMU.cpp
@@ -655,12 +673,10 @@ PUBLIC
   audiocommon
   common
   discio
-  enet::enet
   expr
   inputcommon
   MbedTLS::mbedtls
   pugixml
-  sfml-network
   videonull
   videoogl
   videosoftware
@@ -672,6 +688,13 @@ PRIVATE
   LZ4::LZ4
   ZLIB::ZLIB
 )
+
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+target_link_libraries(core PUBLIC
+  enet::enet
+  sfml-network
+)
+endif()
 
 if(LIBUDEV_FOUND)
   target_include_directories(core PRIVATE ${LIBUDEV_INCLUDE_DIR})
@@ -721,7 +744,7 @@ if(ENABLE_VULKAN)
   target_link_libraries(core PUBLIC videovulkan)
 endif()
 
-if(APPLE AND NOT LIBRETRO)
+if(APPLE AND NOT LIBRETRO AND NOT SWITCH_STANDALONE)
   target_link_libraries(core PUBLIC videometal)
 endif()
 
@@ -759,7 +782,7 @@ elseif(UNIX)
   target_sources(core PRIVATE
     HW/EXI/BBA/TAP_Unix.cpp
   )
-  if(ANDROID AND NOT LIBRETRO)
+  if(ANDROID AND NOT LIBRETRO AND NOT SWITCH_STANDALONE)
     target_sources(core PRIVATE
       HW/WiimoteReal/IOAndroid.cpp
       HW/WiimoteReal/IOAndroid.h

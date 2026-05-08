@@ -25,6 +25,9 @@
 #ifdef __LIBRETRO__
 #include "DolphinLibretro/Audio.h"
 #endif
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+#include "DolphinNX/Audio.h"
+#endif
 
 namespace AudioCommon
 {
@@ -52,6 +55,10 @@ static std::unique_ptr<SoundStream> CreateSoundStreamForBackend(std::string_view
 #ifdef __LIBRETRO__
   else if (backend == BACKEND_LIBRETRO && Libretro::Audio::Stream::IsValid())
     return std::make_unique<Libretro::Audio::Stream>();
+#endif
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  else if (backend == BACKEND_SWITCHNX && DolphinNX::Audio::SwitchStream::IsValid())
+    return std::make_unique<DolphinNX::Audio::SwitchStream>();
 #endif
   return {};
 }
@@ -105,7 +112,9 @@ void ShutdownSoundStream(Core::System& system)
 
 std::string GetDefaultSoundBackend()
 {
-#if defined(__LIBRETRO__)
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  return BACKEND_SWITCHNX;
+#elif defined(__LIBRETRO__)
   return BACKEND_LIBRETRO;
 #elif defined(ANDROID)
   return BACKEND_OPENSLES;
@@ -147,6 +156,10 @@ std::vector<std::string> GetSoundBackends()
 #ifdef __LIBRETRO__
   if (Libretro::Audio::Stream::IsValid())
     backends.emplace_back(BACKEND_LIBRETRO);
+#endif
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  if (DolphinNX::Audio::SwitchStream::IsValid())
+    backends.emplace_back(BACKEND_SWITCHNX);
 #endif
   return backends;
 }

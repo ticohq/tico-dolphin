@@ -10,11 +10,13 @@
 #include "Core/HW/EXI/EXI_DeviceAGP.h"
 #include "Core/HW/EXI/EXI_DeviceBaseboard.h"
 #include "Core/HW/EXI/EXI_DeviceDummy.h"
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
+#include "Core/HW/EXI/EXI_DeviceModem.h"
 #include "Core/HW/EXI/EXI_DeviceGecko.h"
+#endif
 #include "Core/HW/EXI/EXI_DeviceIPL.h"
 #include "Core/HW/EXI/EXI_DeviceMemoryCard.h"
-#include "Core/HW/EXI/EXI_DeviceModem.h"
 #include "Core/HW/Memmap.h"
 #include "Core/System.h"
 
@@ -145,6 +147,7 @@ std::unique_ptr<IEXIDevice> EXIDevice_Create(Core::System& system, const EXIDevi
 #endif
     break;
 
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
   case EXIDeviceType::Ethernet:
     result = std::make_unique<CEXIETHERNET>(system, BBADeviceType::TAP);
     break;
@@ -172,6 +175,7 @@ std::unique_ptr<IEXIDevice> EXIDevice_Create(Core::System& system, const EXIDevi
   case EXIDeviceType::Gecko:
     result = std::make_unique<CEXIGecko>(system);
     break;
+#endif
 
   case EXIDeviceType::AGP:
     result = std::make_unique<CEXIAgp>(system, slot);

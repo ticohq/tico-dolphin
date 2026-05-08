@@ -141,6 +141,6 @@ public:
 private:
   std::list<Section> sections;
 
-  static const std::string& NULL_STRING;
+  static const std::string NULL_STRING;
 };
 }  // namespace Common

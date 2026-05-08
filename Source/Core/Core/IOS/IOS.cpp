@@ -36,6 +36,7 @@
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/IOS/FS/FileSystemProxy.h"
 #include "Core/IOS/MIOS.h"
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
 #include "Core/IOS/Network/IP/Top.h"
 #include "Core/IOS/Network/KD/NetKDRequest.h"
 #include "Core/IOS/Network/KD/NetKDTime.h"
@@ -43,6 +44,7 @@
 #include "Core/IOS/Network/SSL.h"
 #include "Core/IOS/Network/Socket.h"
 #include "Core/IOS/Network/WD/Command.h"
+#endif
 #include "Core/IOS/SDIO/SDIOSlot0.h"
 #include "Core/IOS/STM/STM.h"
 #include "Core/IOS/USB/Bluetooth/BTEmu.h"
@@ -335,7 +337,10 @@ EmulationKernel::~EmulationKernel()
   m_system.GetCoreTiming().RemoveAllEvents(s_event_enqueue);
 
   m_device_map.clear();
+  m_device_map.clear();
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
   m_socket_manager.reset();
+#endif
 }
 
 // The title ID is a u64 where the first 32 bits are used for the title type.
@@ -373,7 +378,11 @@ std::shared_ptr<ESDevice> EmulationKernel::GetESDevice()
 
 std::shared_ptr<WiiSockMan> EmulationKernel::GetSocketManager()
 {
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
   return m_socket_manager;
+#else
+  return nullptr;
+#endif
 }
 
 // Since we don't have actual processes, we keep track of only the PPC's UID/GID.
@@ -565,6 +574,8 @@ void EmulationKernel::AddStaticDevices()
   AddDevice(std::make_unique<DeviceStub>(*this, "/dev/sdio/slot1"));
 
   // Network modules
+  // Network modules
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
   if (HasFeature(features, Feature::KD) || HasFeature(features, Feature::SO) ||
       HasFeature(features, Feature::SSL))
   {
@@ -594,6 +605,27 @@ void EmulationKernel::AddStaticDevices()
   {
     AddDevice(std::make_unique<NetSSLDevice>(*this, "/dev/net/ssl"));
   }
+#else
+  // On Switch and Libretro the real network stack is disabled, but games
+  // (notably Mario Kart Wii) treat /dev/net/kd as part of "Wii system memory"
+  // and surface a "Could not write to/read from Wii System memory" error
+  // when KD Open() returns IPC_ENOENT. Registering stubs makes Open/IOCtl
+  // succeed; without real WC24 the game just observes "no mail / nothing to
+  // do" responses, which is fine.
+  if (HasFeature(features, Feature::KD))
+  {
+    AddDevice(std::make_unique<DeviceStub>(*this, "/dev/net/kd/time"));
+    AddDevice(std::make_unique<DeviceStub>(*this, "/dev/net/kd/request"));
+  }
+  if (HasFeature(features, Feature::NCD))
+    AddDevice(std::make_unique<DeviceStub>(*this, "/dev/net/ncd/manage"));
+  if (HasFeature(features, Feature::WiFi))
+    AddDevice(std::make_unique<DeviceStub>(*this, "/dev/net/wd/command"));
+  if (HasFeature(features, Feature::SO))
+    AddDevice(std::make_unique<DeviceStub>(*this, "/dev/net/ip/top"));
+  if (HasFeature(features, Feature::SSL))
+    AddDevice(std::make_unique<DeviceStub>(*this, "/dev/net/ssl"));
+#endif
 
   // USB modules
   // OH0 is unconditionally added because this device path is registered in all cases.
@@ -855,7 +887,9 @@ void EmulationKernel::UpdateDevices()
 void EmulationKernel::UpdateWantDeterminism(const bool new_want_determinism)
 {
   if (m_socket_manager)
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
     m_socket_manager->UpdateWantDeterminism(new_want_determinism);
+#endif
   for (const auto& device : m_device_map)
     device.second->UpdateWantDeterminism(new_want_determinism);
 }
@@ -877,7 +911,9 @@ void EmulationKernel::DoState(PointerWrap& p)
     return;
 
   if (m_socket_manager)
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
     m_socket_manager->DoState(p);
+#endif
 
   for (const auto& entry : m_device_map)
     entry.second->DoState(p);

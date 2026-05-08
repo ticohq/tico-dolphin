@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string_view>
 
@@ -19,6 +20,8 @@ class StagingTexture2D;
 class VKFramebuffer;
 class VKPipeline;
 class VKTexture;
+
+using OverlayRenderCallback = std::function<void(VKFramebuffer*, VkCommandBuffer)>;
 
 class VKGfx final : public ::AbstractGfx
 {
@@ -52,6 +55,8 @@ public:
                                                    size_t cache_data_length = 0) override;
 
   SwapChain* GetSwapChain() const { return m_swap_chain.get(); }
+
+  static void SetOverlayCallback(OverlayRenderCallback cb);
 
   void Flush() override;
   void WaitForGPUIdle() override;

@@ -20,6 +20,12 @@ const Info<int> GFX_ADAPTER{{System::GFX, "Hardware", "Adapter"}, 0};
 
 const Info<bool> GFX_WIDESCREEN_HACK{{System::GFX, "Settings", "wideScreenHack"}, false};
 const Info<AspectMode> GFX_ASPECT_RATIO{{System::GFX, "Settings", "AspectRatio"}, AspectMode::Auto};
+const Info<ViewportMode> GFX_VIEWPORT_MODE{{System::GFX, "Settings", "ViewportMode"},
+                                           ViewportMode::Display};
+const Info<ViewportDisplaySize> GFX_VIEWPORT_DISPLAY_SIZE{
+    {System::GFX, "Settings", "ViewportDisplaySize"}, ViewportDisplaySize::FourThree};
+const Info<ViewportIntegerScale> GFX_VIEWPORT_INTEGER_SCALE{
+    {System::GFX, "Settings", "ViewportIntegerScale"}, ViewportIntegerScale::Auto};
 const Info<int> GFX_CUSTOM_ASPECT_RATIO_WIDTH{{System::GFX, "Settings", "CustomAspectRatioWidth"},
                                               1};
 const Info<int> GFX_CUSTOM_ASPECT_RATIO_HEIGHT{{System::GFX, "Settings", "CustomAspectRatioHeight"},

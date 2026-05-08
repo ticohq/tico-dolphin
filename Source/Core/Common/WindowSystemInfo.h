@@ -16,6 +16,9 @@ enum class WindowSystemType
 #ifdef __LIBRETRO__
   Libretro,
 #endif
+#ifdef __SWITCH__
+  Switch,
+#endif
 };
 
 struct WindowSystemInfo

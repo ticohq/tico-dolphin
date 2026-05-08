@@ -54,10 +54,20 @@ add_library(common
   Debug/Watches.h
   DirectIOFile.cpp
   DirectIOFile.h
-  DynamicLibrary.cpp
-  DynamicLibrary.h
-  ENet.cpp
-  ENet.h
+  DirectIOFile.cpp
+  DirectIOFile.h
+)
+
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+  target_sources(common PRIVATE
+    DynamicLibrary.cpp
+    DynamicLibrary.h
+    ENet.cpp
+    ENet.h
+  )
+endif()
+
+target_sources(common PRIVATE
   EnumFormatter.h
   EnumMap.h
   Event.h
@@ -115,8 +125,14 @@ add_library(common
   Mutex.h
   NandPaths.cpp
   NandPaths.h
+)
+if(NOT LIBRETRO)
+target_sources(common PRIVATE
   Network.cpp
   Network.h
+)
+endif()
+target_sources(common PRIVATE
   OneShotEvent.h
   PcapFile.cpp
   PcapFile.h
@@ -135,8 +151,14 @@ add_library(common
   Semaphore.h
   SettingsHandler.cpp
   SettingsHandler.h
+)
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+target_sources(common PRIVATE
   SFMLHelper.cpp
   SFMLHelper.h
+)
+endif()
+target_sources(common PRIVATE
   SmallVector.h
   SocketContext.cpp
   SocketContext.h
@@ -153,9 +175,15 @@ add_library(common
   Timer.h
   TimeUtil.cpp
   TimeUtil.h
+)
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+target_sources(common PRIVATE
   TransferableSharedMutex.h
   TraversalClient.cpp
   TraversalClient.h
+)
+endif()
+target_sources(common PRIVATE
   TraversalProto.h
   TypeUtils.h
   UPnP.cpp
@@ -180,14 +208,20 @@ endif()
 target_link_libraries(common
 PUBLIC
   ${CMAKE_THREAD_LIBS_INIT}
-  enet::enet
   fmt::fmt
   MbedTLS::mbedtls
   MINIZIP::minizip-ng
-  sfml-network
+)
 
-PRIVATE
-  CURL::libcurl
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+target_link_libraries(common PUBLIC
+  enet::enet
+  sfml-network
+)
+endif()
+
+target_link_libraries(common PRIVATE
+  $<$<TARGET_EXISTS:CURL::libcurl>:CURL::libcurl>
   FatFs
   spng::spng
   $<$<NOT:$<BOOL:${IOS}>>:watcher>
@@ -253,6 +287,11 @@ elseif(APPLE)
     Logging/ConsoleListenerNix.cpp
     MemArenaDarwin.cpp
   )
+elseif(SWITCH_STANDALONE)
+  target_sources(common PRIVATE
+    Logging/ConsoleListenerNix.cpp
+    MemArenaSwitch.cpp
+  )
 else()
   target_sources(common PRIVATE
     Logging/ConsoleListenerNix.cpp
@@ -297,24 +336,26 @@ target_sources(common PRIVATE
   GL/GLExtensions/GLExtensions.h
 )
 
-if(ENABLE_EGL AND EGL_FOUND)
+if(SWITCH_STANDALONE OR (ENABLE_EGL AND EGL_FOUND))
   target_sources(common PRIVATE
     GL/GLInterface/EGL.cpp
     GL/GLInterface/EGL.h
   )
-  if(ANDROID AND NOT LIBRETRO)
-    target_sources(common PRIVATE
-      GL/GLInterface/EGLAndroid.cpp
-      GL/GLInterface/EGLAndroid.h
-    )
-  elseif(ENABLE_X11 AND X11_FOUND)
-    target_sources(common PRIVATE
-      GL/GLInterface/EGLX11.cpp
-      GL/GLInterface/EGLX11.h
-    )
+  if(NOT SWITCH_STANDALONE)
+    if(ANDROID AND NOT LIBRETRO)
+      target_sources(common PRIVATE
+        GL/GLInterface/EGLAndroid.cpp
+        GL/GLInterface/EGLAndroid.h
+      )
+    elseif(ENABLE_X11 AND X11_FOUND)
+      target_sources(common PRIVATE
+        GL/GLInterface/EGLX11.cpp
+        GL/GLInterface/EGLX11.h
+      )
+    endif()
+    target_include_directories(common PRIVATE ${EGL_INCLUDE_DIRS})
+    target_link_libraries(common PUBLIC ${EGL_LIBRARIES})
   endif()
-  target_include_directories(common PRIVATE ${EGL_INCLUDE_DIRS})
-  target_link_libraries(common PUBLIC ${EGL_LIBRARIES})
 endif()
 
 if(WIN32)
@@ -420,7 +461,9 @@ if(MSVC)
   target_link_libraries(common PRIVATE use_pch)
 endif()
 
-if(LIBRETRO)
+if(LIBRETRO OR SWITCH_STANDALONE)
   target_include_directories(common PRIVATE ${CMAKE_SOURCE_DIR}/Externals/Libretro/Include)
+endif()
+if(LIBRETRO)
   target_link_libraries(common PRIVATE dolphin_libretro_videocontexts)
 endif()

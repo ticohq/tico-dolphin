@@ -1,4 +1,5 @@
 // Copyright 2008 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/PowerPC/JitCommon/JitCache.h"
@@ -190,17 +191,17 @@ void JitBaseBlockCache::FinalizeBlock(JitBlock& block, bool block_link,
   }
 
   const Common::Symbol* symbol = nullptr;
+  const auto block_size = block.near_end - block.near_begin;
   if (Common::JitRegister::IsEnabled() &&
       (symbol = m_jit.m_ppc_symbol_db.GetSymbolFromAddr(block.effectiveAddress)) != nullptr)
   {
-    Common::JitRegister::Register(block.normalEntry, block.near_end - block.normalEntry,
-                                  "JIT_PPC_{}_{:08x}", symbol->function_name,
-                                  block.physicalAddress);
+    Common::JitRegister::Register(block.near_begin, block_size, "JIT_PPC_{}_{:08x}",
+                                  symbol->function_name, block.physicalAddress);
   }
   else
   {
-    Common::JitRegister::Register(block.normalEntry, block.near_end - block.normalEntry,
-                                  "JIT_PPC_{:08x}", block.physicalAddress);
+    Common::JitRegister::Register(block.near_begin, block_size, "JIT_PPC_{:08x}",
+                                  block.physicalAddress);
   }
 }
 

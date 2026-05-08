@@ -6,7 +6,9 @@
 #include <algorithm>
 
 #include <imgui.h>
+#if !defined(LIBRETRO)
 #include <implot.h>
+#endif
 
 #include "Core/Config/GraphicsSettings.h"
 #include "VideoCommon/VideoConfig.h"
@@ -107,6 +109,7 @@ void PerformanceMetrics::SetLatestFramePresentationOffset(DT offset)
 
 void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
 {
+  return;
   m_vps_counter.UpdateStats();
   m_fps_counter.UpdateStats();
 
@@ -234,6 +237,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
       const double total_frame_time =
           DT_ms(std::max(m_fps_counter.GetSampleWindow(), m_vps_counter.GetSampleWindow())).count();
 
+#if !defined(LIBRETRO)
       if (ImPlot::BeginPlot("PerformanceGraphs", ImVec2(-1.0, -1.0),
                             ImPlotFlags_NoFrame | ImPlotFlags_NoTitle | ImPlotFlags_NoMenus |
                                 ImPlotFlags_NoInputs))
@@ -257,6 +261,7 @@ void PerformanceMetrics::DrawImGuiStats(const float backbuffer_scale)
         ImPlot::PopStyleVar(2);
         ImPlot::PopStyleColor(2);
       }
+#endif
       ImGui::PopStyleVar();
     }
     ImGui::End();

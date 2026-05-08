@@ -19,8 +19,10 @@
 #include "Common/GL/GLUtil.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
+#include "Common/Thread.h"
 #include "Common/Version.h"
 
+#include "Core/Config/MainSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/System.h"
 
@@ -84,6 +86,35 @@ static std::string GetGLSLVersionString()
     // Shouldn't ever hit this
     return "#version ERROR";
   }
+}
+
+static void WaitForSharedProgramCompletion()
+{
+#if defined(__SWITCH__)
+  // The main context can bind a newly linked shared program almost immediately after the worker
+  // thread publishes it. glFlush() alone is too weak here: it only queues the work, and the
+  // program can still be mid-link when the main thread starts drawing with it. The Switch EGL
+  // driver advertises sync objects, so wait on an explicit fence before handing the program off.
+  GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+  if (sync)
+  {
+    const GLenum wait_result =
+        glClientWaitSync(sync, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
+    glDeleteSync(sync);
+    if (wait_result == GL_ALREADY_SIGNALED || wait_result == GL_CONDITION_SATISFIED)
+      return;
+
+    WARN_LOG_FMT(VIDEO,
+                 "Shared-context shader fence wait returned {:#x}; falling back to glFinish().",
+                 static_cast<u32>(wait_result));
+  }
+  else
+  {
+    WARN_LOG_FMT(VIDEO, "Failed to create shared-context shader fence; falling back to glFinish().");
+  }
+#endif
+
+  glFinish();
 }
 
 void SHADER::SetProgramVariables()
@@ -601,7 +632,14 @@ PipelineProgram* ProgramShaderCache::GetPipelineProgram(const GLVertexFormat* ve
     // We temporarily change the vertex array to the pipeline's vertex format.
     // This can prevent the NVIDIA OpenGL driver from recompiling on first use.
     GLuint vao = vertex_format ? vertex_format->VAO : s_attributeless_VAO;
-    if (s_is_shared_context || vao != s_last_VAO)
+#if defined(__SWITCH__)
+    // Switch Mesa can crash if the async shared context binds a VAO created in the main context.
+    // Skip the VAO bind on the shared worker context and only use it on the main context.
+    const bool bind_vao = !s_is_shared_context && vao != s_last_VAO;
+#else
+    const bool bind_vao = s_is_shared_context || vao != s_last_VAO;
+#endif
+    if (bind_vao)
       glBindVertexArray(vao);
 
     // Attach shaders.
@@ -654,7 +692,7 @@ PipelineProgram* ProgramShaderCache::GetPipelineProgram(const GLVertexFormat* ve
   // If this is a shared context, ensure we sync before we return the program to
   // the main thread. If we don't do this, some driver can lock up (e.g. AMD).
   if (s_is_shared_context)
-    glFinish();
+    WaitForSharedProgramCompletion();
 
   auto ip = s_pipeline_programs.emplace(key, std::move(prog));
   return ip.first->second.get();
@@ -926,6 +964,13 @@ bool SharedContextAsyncShaderCompiler::WorkerThreadInitWorkerThread(void* param)
   GLContext* context = static_cast<GLContext*>(param);
   if (!context->MakeCurrent())
     return false;
+
+#ifdef __SWITCH__
+  // Standalone Switch already dedicates cores 0 and 1 to the CPU and video threads, and the
+  // frontend/main loop is pinned to core 2. Keep the shared OGL shader compiler worker on the
+  // remaining core so async compilation can't starve the host loop.
+  Common::SetCurrentThreadAffinity(2);
+#endif
 
   s_is_shared_context = true;
 

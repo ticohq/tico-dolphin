@@ -34,7 +34,7 @@
 
 #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
     !defined(__APPLE__) && !defined(_WIN32) && !defined(__QNXNTO__) && \
-    !defined(__HAIKU__) && !defined(__midipix__)
+    !defined(__HAIKU__) && !defined(__midipix__) && !defined(__SWITCH__)
 #error "This module only works on Unix and Windows, see MBEDTLS_TIMING_C in config.h"
 #endif
 
@@ -66,6 +66,10 @@ struct _hr_time
 };
 
 #endif /* _WIN32 && !EFIX64 && !EFI32 */
+
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
 
 #if !defined(HAVE_HARDCLOCK) && defined(MBEDTLS_HAVE_ASM) &&  \
     ( defined(_MSC_VER) && defined(_M_IX86) ) || defined(__WATCOMC__)
@@ -210,7 +214,7 @@ unsigned long mbedtls_timing_hardclock( void )
 }
 #endif /* !HAVE_HARDCLOCK && _MSC_VER && !EFIX64 && !EFI32 */
 
-#if !defined(HAVE_HARDCLOCK)
+#if !defined(HAVE_HARDCLOCK) && defined(__SWITCH__)
 
 #define HAVE_HARDCLOCK
 
@@ -307,6 +311,67 @@ unsigned long mbedtls_timing_get_timer( struct mbedtls_timing_hr_time *val, int 
     }
 }
 
+
+#ifdef __SWITCH__
+static bool timer_thread_created = false;
+static unsigned int alarmSecs = 0;
+static Thread timerThread;
+static Mutex timerMutex;
+static int timerMutexInit = 0;
+static alignas(0x1000) char timerThreadStack[0x4000];
+
+static void timer_thread_func(void *param)
+{
+  (void)param;
+  svcSleepThread((s64)alarmSecs * 1e9L);
+  mbedtls_timing_alarmed = 1;
+}
+
+static void __attribute__((destructor)) cleanup_timer_thread()
+{
+  if (timer_thread_created)
+  {
+    threadWaitForExit(&timerThread);
+    threadClose(&timerThread);
+  }
+}
+
+void mbedtls_set_alarm(int seconds)
+{
+  if (!timerMutexInit)
+  {
+    mutexInit(&timerMutex);
+    timerMutexInit = 1;
+  }
+
+  mutexLock(&timerMutex);
+
+  if (seconds == 0)
+  {
+    mbedtls_timing_alarmed = 1;
+    mutexUnlock(&timerMutex);
+    return;
+  }
+
+  mbedtls_timing_alarmed = 0;
+  alarmSecs = seconds;
+
+  if (timer_thread_created)
+  {
+    threadWaitForExit(&timerThread);
+    threadClose(&timerThread);
+  }
+
+  timer_thread_created = true;
+
+  threadCreate(&timerThread, timer_thread_func, NULL, timerThreadStack, 0x4000,
+               0x3b, -2);
+  threadStart(&timerThread);
+
+  mutexUnlock(&timerMutex);
+}
+#else
+
 static void sighandler( int signum )
 {
     mbedtls_timing_alarmed = 1;
@@ -325,6 +390,8 @@ void mbedtls_set_alarm( int seconds )
         mbedtls_timing_alarmed = 1;
     }
 }
+
+#endif /* __SWITCH__ */
 
 #endif /* _WIN32 && !EFIX64 && !EFI32 */
 

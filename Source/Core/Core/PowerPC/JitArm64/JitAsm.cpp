@@ -1,4 +1,5 @@
 // Copyright 2014 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/PowerPC/JitArm64/Jit.h"
@@ -40,12 +41,14 @@ void JitArm64::GenerateAsm()
   const u32 ALL_CALLEE_SAVED_FPR = 0x0000FF00;
   BitSet32 regs_to_save(ALL_CALLEE_SAVED);
   BitSet32 regs_to_save_fpr(ALL_CALLEE_SAVED_FPR);
-  enter_code = GetCodePtr();
+  enter_code = ConvertToExecutable(GetCodePtr());
 
   ABI_PushRegisters(regs_to_save);
   m_float_emit.ABI_PushRegisters(regs_to_save_fpr, ARM64Reg::X8);
 
   MOVP2R(PPC_REG, &m_ppc_state);
+
+  EmitUpdateMembase();
 
   // Store the stack pointer, so we can reset it if the BLR optimization fails.
   ADD(ARM64Reg::X8, ARM64Reg::SP, 0);
@@ -150,7 +153,7 @@ void JitArm64::GenerateAsm()
       CMP(feature_flags, feature_flags_2);
       FixupBranch feature_flags_mismatch = B(CC_NEQ);
 
-      // return blocks[block_num].normalEntry;
+      // normalEntry is stored as RX, so BR can use it directly.
       BR(entry);
 
       SetJumpTarget(not_found);
@@ -172,6 +175,7 @@ void JitArm64::GenerateAsm()
 
     FixupBranch no_block_available = CBZ(ARM64Reg::X0);
 
+    // Dispatch() returns normalEntry, which is RX, so BR can use it directly.
     BR(ARM64Reg::X0);
 
     SetJumpTarget(no_block_available);
@@ -239,7 +243,7 @@ void JitArm64::GenerateAsm()
 
   GenerateCommonAsm();
 
-  FlushIcache();
+  FlushIcacheWxX();
 }
 
 void JitArm64::GenerateCommonAsm()
@@ -815,6 +819,12 @@ void JitArm64::GenerateQuantizedLoads()
   single_load_quantized[5] = loadPairedU16One;
   single_load_quantized[6] = loadPairedS8One;
   single_load_quantized[7] = loadPairedS16One;
+
+  for (size_t i = 0; i < 8; ++i)
+  {
+    paired_load_quantized[i] = ConvertToExecutable(paired_load_quantized[i]);
+    single_load_quantized[i] = ConvertToExecutable(single_load_quantized[i]);
+  }
 }
 
 void JitArm64::GenerateQuantizedStores()
@@ -1035,4 +1045,11 @@ void JitArm64::GenerateQuantizedStores()
   single_store_quantized[5] = storeSingleU16;
   single_store_quantized[6] = storeSingleS8;
   single_store_quantized[7] = storeSingleS16;
+
+  // See note in GenerateQuantizedLoads — convert to RX so BLR works directly.
+  for (size_t i = 0; i < 8; ++i)
+  {
+    paired_store_quantized[i] = ConvertToExecutable(paired_store_quantized[i]);
+    single_store_quantized[i] = ConvertToExecutable(single_store_quantized[i]);
+  }
 }

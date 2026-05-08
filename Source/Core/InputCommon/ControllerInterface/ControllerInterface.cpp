@@ -74,12 +74,16 @@ void ControllerInterface::Initialize(const WindowSystemInfo& wsi)
   m_input_backends.emplace_back(ciface::Android::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_EVDEV
+#if !defined(__SWITCH__)
   m_input_backends.emplace_back(ciface::evdev::CreateInputBackend(this));
 #endif
+#endif
 #ifdef CIFACE_USE_PIPES
+#if !defined(__SWITCH__)
   m_input_backends.emplace_back(ciface::Pipes::CreateInputBackend(this));
 #endif
-#ifdef CIFACE_USE_DUALSHOCKUDPCLIENT
+#endif
+#if defined(CIFACE_USE_DUALSHOCKUDPCLIENT) && !defined(__LIBRETRO__) && !defined(__SWITCH__)
   m_input_backends.emplace_back(ciface::DualShockUDPClient::CreateInputBackend(this));
 #endif
 #ifdef CIFACE_USE_STEAMDECK
@@ -163,7 +167,9 @@ void ControllerInterface::RefreshDevices(RefreshReason reason)
   for (auto& backend : m_input_backends)
     backend->PopulateDevices();
 
+#ifndef __SWITCH__
   WiimoteReal::PopulateDevices();
+#endif
 
   if (m_populating_devices_counter.fetch_sub(1) == 1)
     InvokeDevicesChangedCallbacks();
@@ -260,7 +266,7 @@ bool ControllerInterface::AddDevice(std::shared_ptr<ciface::Core::Device> device
     const auto preferred_id = device->GetPreferredId();
     if (preferred_id.has_value() && !is_id_in_use(*preferred_id))
     {
-      // Use the device's preferred ID if available.
+       // Use the device's preferred ID if available.
       device->SetId(*preferred_id);
     }
     else

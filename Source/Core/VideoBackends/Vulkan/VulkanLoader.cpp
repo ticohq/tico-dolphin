@@ -9,6 +9,13 @@
 #include <dlfcn.h>
 #endif
 
+#if defined(__SWITCH__)
+extern "C" {
+PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char* pName);
+VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t* pSupportedVersion);
+}
+#endif
+
 #include "Common/DynamicLibrary.h"
 #if defined(__APPLE__)
 #include "Common/FileUtil.h"
@@ -39,11 +46,15 @@ static void ResetVulkanLibraryFunctionPointers()
 #undef VULKAN_MODULE_ENTRY_POINT
 }
 
+#if !defined(__SWITCH__)
 static Common::DynamicLibrary s_vulkan_module;
 
-static bool OpenVulkanLibrary(bool force_system_library)
+static bool OpenVulkanLibrary([[maybe_unused]] bool force_system_library)
 {
-#if defined(__APPLE__) && !defined(__LIBRETRO__)
+#if defined(__SWITCH__)
+  // NVK is statically linked — no shared library to open.
+  return true;
+#elif defined(__APPLE__) && !defined(__LIBRETRO__)
   // Check if a path to a specific Vulkan library has been specified.
   char* libvulkan_env = getenv("LIBVULKAN_PATH");
   if (libvulkan_env && s_vulkan_module.Open(libvulkan_env))
@@ -91,9 +102,55 @@ static bool OpenVulkanLibrary(bool force_system_library)
   return s_vulkan_module.Open(filename.c_str());
 #endif
 }
+#endif // !defined(__SWITCH__)
 
 bool LoadVulkanLibrary(bool force_system_library)
 {
+#if defined(__SWITCH__)
+  // NVK is statically linked. Dolphin already owns vk* function-pointer
+  // globals, so bootstrap through the non-conflicting ICD entrypoint.
+  (void)force_system_library;
+
+  uint32_t icd_version = 7;
+  vk_icdNegotiateLoaderICDInterfaceVersion(&icd_version);
+
+  vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+      vk_icdGetInstanceProcAddr(VK_NULL_HANDLE, "vkGetInstanceProcAddr"));
+  if (!vkGetInstanceProcAddr)
+  {
+    vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+        &::vk_icdGetInstanceProcAddr);
+  }
+  vkGetDeviceProcAddr = reinterpret_cast<PFN_vkGetDeviceProcAddr>(
+      vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkGetDeviceProcAddr"));
+
+  if (!vkGetInstanceProcAddr)
+  {
+    ERROR_LOG_FMT(VIDEO, "Vulkan: vkGetInstanceProcAddr is missing");
+    ResetVulkanLibraryFunctionPointers();
+    return false;
+  }
+
+  vkCreateInstance = reinterpret_cast<PFN_vkCreateInstance>(
+      vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateInstance"));
+  vkEnumerateInstanceExtensionProperties =
+      reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+          vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties"));
+  vkEnumerateInstanceLayerProperties =
+      reinterpret_cast<PFN_vkEnumerateInstanceLayerProperties>(
+          vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceLayerProperties"));
+  vkEnumerateInstanceVersion = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+      vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceVersion"));
+
+  if (!vkCreateInstance)
+  {
+    ERROR_LOG_FMT(VIDEO, "Vulkan: Failed to load vkCreateInstance");
+    ResetVulkanLibraryFunctionPointers();
+    return false;
+  }
+
+  return true;
+#else
   if (!s_vulkan_module.IsOpen() && !OpenVulkanLibrary(force_system_library))
     return false;
 
@@ -109,13 +166,19 @@ bool LoadVulkanLibrary(bool force_system_library)
 #undef VULKAN_MODULE_ENTRY_POINT
 
   return true;
+#endif
 }
 
 void UnloadVulkanLibrary()
 {
+#if defined(__SWITCH__)
+  // NVK is statically linked — nothing to unload.
+  ResetVulkanLibraryFunctionPointers();
+#else
   s_vulkan_module.Close();
   if (!s_vulkan_module.IsOpen())
     ResetVulkanLibraryFunctionPointers();
+#endif
 }
 
 bool LoadVulkanInstanceFunctions(VkInstance instance)
@@ -134,6 +197,14 @@ bool LoadVulkanInstanceFunctions(VkInstance instance)
   LoadFunction(reinterpret_cast<PFN_vkVoidFunction*>(&name), #name, required);
 #include "VideoBackends/Vulkan/VulkanEntryPoints.inl"
 #undef VULKAN_INSTANCE_ENTRY_POINT
+
+#if defined(__SWITCH__)
+  if (!vkGetDeviceProcAddr)
+  {
+    vkGetDeviceProcAddr = reinterpret_cast<PFN_vkGetDeviceProcAddr>(
+        vkGetInstanceProcAddr(instance, "vkGetDeviceProcAddr"));
+  }
+#endif
 
   return !required_functions_missing;
 }

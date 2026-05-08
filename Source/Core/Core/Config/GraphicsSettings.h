@@ -8,6 +8,9 @@
 #include "Common/Config/Config.h"
 
 enum class AspectMode : int;
+enum class ViewportMode : int;
+enum class ViewportDisplaySize : int;
+enum class ViewportIntegerScale : int;
 enum class ShaderCompilationMode : int;
 enum class StereoMode : int;
 enum class StereoPerEyeResolution : int;
@@ -32,6 +35,9 @@ extern const Info<int> GFX_ADAPTER;
 
 extern const Info<bool> GFX_WIDESCREEN_HACK;
 extern const Info<AspectMode> GFX_ASPECT_RATIO;
+extern const Info<ViewportMode> GFX_VIEWPORT_MODE;
+extern const Info<ViewportDisplaySize> GFX_VIEWPORT_DISPLAY_SIZE;
+extern const Info<ViewportIntegerScale> GFX_VIEWPORT_INTEGER_SCALE;
 extern const Info<int> GFX_CUSTOM_ASPECT_RATIO_WIDTH;
 extern const Info<int> GFX_CUSTOM_ASPECT_RATIO_HEIGHT;
 extern const Info<AspectMode> GFX_SUGGESTED_ASPECT_RATIO;

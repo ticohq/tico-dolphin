@@ -2,6 +2,11 @@ set(ZLIB_ENABLE_TESTS OFF)
 set(ZLIB_COMPAT ON)
 set(SKIP_INSTALL_ALL ON)
 
+# newlib (devkitA64) lacks posix_memalign; the static-library try-compile falsely detects it
+if(SWITCH_STANDALONE)
+  set(HAVE_POSIX_MEMALIGN OFF CACHE BOOL "" FORCE)
+endif()
+
 option(BUILD_SHARED_LIBS "Build shared library" OFF)
 
 add_subdirectory(zlib-ng)

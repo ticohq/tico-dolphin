@@ -1,4 +1,5 @@
 // Copyright 2008 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/PowerPC/JitCommon/JitBase.h"
@@ -167,8 +168,12 @@ void JitBase::InitFastmemArena()
 
 void JitBase::InitBLROptimization()
 {
+#ifdef __SWITCH__
+  m_enable_blr_optimization = true;
+#else
   m_enable_blr_optimization =
       jo.enableBlocklink && !IsDebuggingEnabled() && EMM::IsExceptionHandlerSupported();
+#endif
   m_cleanup_after_stackfault = false;
 }
 
@@ -197,7 +202,11 @@ void JitBase::ProtectStack()
     return;
   }
 
+#ifdef __SWITCH__
+  const long page_size = 4096;
+#else
   const long page_size = sysconf(_SC_PAGESIZE);
+#endif
   if (page_size <= 0)
   {
     PanicAlertFmt("Failed to get page size");
@@ -216,6 +225,9 @@ void JitBase::ProtectStack()
     return;
   }
 
+#ifdef __SWITCH__
+  m_stack_guard = nullptr;
+#else
   m_stack_guard = reinterpret_cast<u8*>(stack_guard_addr);
   if (!Common::ReadProtectMemory(m_stack_guard, GUARD_SIZE))
   {
@@ -223,6 +235,7 @@ void JitBase::ProtectStack()
     m_enable_blr_optimization = false;
     return;
   }
+#endif
 #endif
 }
 

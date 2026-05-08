@@ -51,9 +51,18 @@ add_library(inputcommon
   ControllerEmu/ControlGroup/Triggers.h
   ControllerEmu/Setting/NumericSetting.cpp
   ControllerEmu/Setting/NumericSetting.h
+  ControllerEmu/Setting/NumericSetting.h
+)
+
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+target_sources(inputcommon PRIVATE
   ControllerInterface/DualShockUDPClient/DualShockUDPClient.cpp
   ControllerInterface/DualShockUDPClient/DualShockUDPClient.h
   ControllerInterface/DualShockUDPClient/DualShockUDPProto.h
+)
+endif()
+
+target_sources(inputcommon PRIVATE
   ControllerInterface/ControllerInterface.cpp
   ControllerInterface/ControllerInterface.h
   ControllerInterface/CoreDevice.cpp
@@ -83,9 +92,12 @@ PUBLIC
 
 PRIVATE
   fmt::fmt
-  sfml-network
   spng::spng
 )
+
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+target_link_libraries(inputcommon PRIVATE sfml-network)
+endif()
 
 if(WIN32)
   if(NOT LIBRETRO)
@@ -157,11 +169,11 @@ elseif(ANDROID)
   )
 endif()
 
-if(NOT ANDROID AND NOT IOS AND LIBUSB_FOUND)
+if(NOT ANDROID AND NOT IOS AND NOT SWITCH_STANDALONE AND LIBUSB_FOUND)
   target_link_libraries(inputcommon PUBLIC LibUSB::LibUSB)
 endif()
 
-if(LIBEVDEV_FOUND AND LIBUDEV_FOUND)
+if(LIBEVDEV_FOUND AND LIBUDEV_FOUND AND NOT SWITCH_STANDALONE)
   target_sources(inputcommon
   PRIVATE
     ControllerInterface/evdev/evdev.cpp
@@ -179,7 +191,7 @@ if(LIBEVDEV_FOUND AND LIBUDEV_FOUND)
   )
 endif()
 
-if(UNIX)
+if(UNIX AND NOT SWITCH_STANDALONE)
   target_sources(inputcommon PRIVATE
     ControllerInterface/Pipes/Pipes.cpp
     ControllerInterface/Pipes/Pipes.h

@@ -23,6 +23,10 @@ if(LIBRETRO)
   add_subdirectory(DolphinLibretro)
 endif()
 
+if(SWITCH_STANDALONE)
+  add_subdirectory(DolphinNX)
+endif()
+
 if (APPLE OR WIN32)
   add_subdirectory(UpdaterCommon)
 endif()

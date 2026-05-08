@@ -55,6 +55,19 @@
 #include "Core/HW/GBAPad.h"
 #include "Core/HW/GCKeyboard.h"
 #include "Core/HW/GCPad.h"
+#ifdef __SWITCH__
+#include <cstdio>
+#include <pthread.h>
+extern "C" {
+void flockfile(FILE* filehandle)
+{
+}
+void funlockfile(FILE* filehandle)
+{
+}
+}
+#endif
+
 #include "Core/HW/HW.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/HW/VideoInterface.h"
@@ -91,6 +104,10 @@
 #include "VideoCommon/VideoBackendBase.h"
 #include "VideoCommon/VideoEvents.h"
 
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+#include "DolphinNX/BootTrace.h"
+#endif
+
 namespace Core
 {
 static bool s_wants_determinism;
@@ -103,18 +120,18 @@ std::unique_ptr<BootParameters> g_boot_params;
 #ifndef __LIBRETRO__
 static
 #endif
-std::thread s_emu_thread;
+    std::thread s_emu_thread;
 static Common::HookableEvent<Core::State> s_state_changed_event;
 
 static bool s_is_throttler_temp_disabled = false;
 #ifndef __LIBRETRO__
 static
 #endif
-bool s_frame_step = false;
+    bool s_frame_step = false;
 #ifndef __LIBRETRO__
 static
 #endif
-std::atomic<bool> s_stop_frame_step;
+    std::atomic<bool> s_stop_frame_step;
 
 // Threads other than the CPU thread must hold this when taking on the role of the CPU thread.
 // The CPU thread is not required to hold this when doing normal work, but must hold it if writing
@@ -145,8 +162,8 @@ static thread_local bool tls_is_gpu_thread = false;
 #ifndef __LIBRETRO__
 static
 #endif
-void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot,
-               WindowSystemInfo wsi);
+    void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot,
+                   WindowSystemInfo wsi);
 
 bool GetIsThrottlerTempDisabled()
 {
@@ -266,10 +283,50 @@ bool Init(Core::System& system, std::unique_ptr<BootParameters> boot, const Wind
   s_state.store(State::Starting);
 
 #ifdef __LIBRETRO__
-    // Do not launch EmuThread — Libretro handles it manually
-    g_boot_params = std::move(boot);
+  // Do not launch EmuThread — Libretro handles it manually
+  g_boot_params = std::move(boot);
+#elif defined(__SWITCH__)
+  struct EmuThreadArgs
+  {
+    Core::System* system;
+    std::unique_ptr<BootParameters> boot;
+    WindowSystemInfo wsi;
+  };
+  auto* args = new EmuThreadArgs{&system, std::move(boot), prepared_wsi};
+  s_emu_thread = std::thread([args]() {
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+    DolphinNX::BootTrace::Log("[BootTrace] Shell emu thread started\n");
+#endif
+    auto entry = +[](void* raw) -> void* {
+      std::unique_ptr<EmuThreadArgs> a(static_cast<EmuThreadArgs*>(raw));
+      EmuThread(*a->system, std::move(a->boot), a->wsi);
+      return nullptr;
+    };
+
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 1024 * 1024);
+
+    pthread_t inner;
+    if (pthread_create(&inner, &attr, entry, args) == 0)
+    {
+      pthread_attr_destroy(&attr);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+      DolphinNX::BootTrace::Log("[BootTrace] Inner emu pthread created\n");
+#endif
+      pthread_join(inner, nullptr);
+    }
+    else
+    {
+      pthread_attr_destroy(&attr);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+      DolphinNX::BootTrace::Log("[BootTrace] Inner emu pthread creation failed, using shell thread\n");
+#endif
+      entry(args);
+    }
+  });
 #else
-    s_emu_thread = std::thread(EmuThread, std::ref(system), std::move(boot), prepared_wsi);
+  s_emu_thread = std::thread(EmuThread, std::ref(system), std::move(boot), prepared_wsi);
 #endif
 
   return true;
@@ -353,6 +410,13 @@ static void CpuThread(Core::System& system, const std::optional<std::string> sav
   else
     Common::SetCurrentThreadName("CPU-GPU thread");
 
+#ifdef __SWITCH__
+  Common::SetCurrentThreadAffinity(0);
+#if !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] CpuThread entered on core 0\n");
+#endif
+#endif
+
 #ifdef USE_ANALYTICS
   // This needs to be delayed until after the video backend is ready.
   DolphinAnalytics::Instance().ReportGameStart();
@@ -386,6 +450,10 @@ static void CpuThread(Core::System& system, const std::optional<std::string> sav
     s_state.compare_exchange_strong(expected, State::Running);
   }
 
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] CpuThread promoted core state to Running\n");
+#endif
+
   {
 #ifndef _WIN32
     std::string gdb_socket = Config::Get(Config::MAIN_GDB_SOCKET);
@@ -416,7 +484,13 @@ static void CpuThread(Core::System& system, const std::optional<std::string> sav
     return;
 #endif
   // Enter CPU run loop. When we leave it - we are done.
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] CpuThread entering CPU::Run\n");
+#endif
   system.GetCPU().Run();
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] CpuThread exited CPU::Run\n");
+#endif
 
 #ifdef USE_MEMORYWATCHER
   s_memory_watcher.reset();
@@ -494,7 +568,7 @@ static void FifoPlayerThread(Core::System& system, const std::optional<std::stri
   };
 
   const auto deinit_video = [] {
-    // Clear on screen messages that haven't expired
+  // Clear on screen messages that haven't expired
 #ifndef __LIBRETRO__
     OSD::ClearMessages();
 
@@ -509,16 +583,30 @@ static void FifoPlayerThread(Core::System& system, const std::optional<std::stri
     // Spawn the GPU thread.
     std::thread gpu_thread{[&] {
       Common::SetCurrentThreadName("Video thread");
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+      Common::SetCurrentThreadAffinity(1);
+      DolphinNX::BootTrace::Log("[BootTrace] GPU thread entered on core 1\n");
+#endif
 
       const bool is_init = init_video();
       init_from_thread.set_value(is_init);
+
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+      DolphinNX::BootTrace::Log("[BootTrace] GPU init result=%d\n", is_init ? 1 : 0);
+#endif
 
       if (!is_init)
         return;
 
 #ifndef __LIBRETRO__
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+      DolphinNX::BootTrace::Log("[BootTrace] GPU loop starting\n");
+#endif
       system.GetFifo().RunGpuLoop();
       INFO_LOG_FMT(CONSOLE, "{}", StopMessage(false, "Video Loop Ended"));
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+      DolphinNX::BootTrace::Log("[BootTrace] GPU loop exited\n");
+#endif
 
       deinit_video();
 #endif
@@ -526,6 +614,9 @@ static void FifoPlayerThread(Core::System& system, const std::optional<std::stri
 
     if (init_from_thread.get_future().get())
     {
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+      DolphinNX::BootTrace::Log("[BootTrace] Video guard initialized\n");
+#endif
       // Return a scope guard that signals the GPU thread to stop then joins it.
       return std::make_unique<GuardType>([&, gpu_thread = std::move(gpu_thread)]() mutable {
         INFO_LOG_FMT(CONSOLE, "{}", StopMessage(true, "Wait for Video Loop to exit ..."));
@@ -552,10 +643,12 @@ static void FifoPlayerThread(Core::System& system, const std::optional<std::stri
 #ifndef __LIBRETRO__
 static
 #endif
-void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot,
-               WindowSystemInfo wsi)
+    void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot, WindowSystemInfo wsi)
 {
   NotifyStateChanged(State::Starting);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] EmuThread begin\n");
+#endif
   Common::ScopeGuard flag_guard{[] {
     {
       std::lock_guard lock(s_core_mutex);
@@ -620,11 +713,23 @@ void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot,
   system.GetMovie().Init(*boot);
   Common::ScopeGuard movie_guard([&system] { system.GetMovie().Shutdown(); });
 
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] InitSoundStream begin\n");
+#endif
   AudioCommon::InitSoundStream(system);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] InitSoundStream done\n");
+#endif
   Common::ScopeGuard audio_guard([&system] { AudioCommon::ShutdownSoundStream(system); });
 
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] HW::Init begin\n");
+#endif
   HW::Init(system,
            NetPlay::IsNetPlayRunning() ? &(boot_session_data.GetNetplaySettings()->sram) : nullptr);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] HW::Init done\n");
+#endif
 
   Common::ScopeGuard hw_guard{[&system] {
     INFO_LOG_FMT(CONSOLE, "{}", StopMessage(false, "Shutting down HW"));
@@ -644,26 +749,42 @@ void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot,
 
   // In single-core mode: This holds a video backend shutdown function.
   // In dual-core mode: This holds a GPU thread stopping function (which does the backend shutdown).
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] GetInitializedVideoGuard begin\n");
+#endif
   const auto video_guard = GetInitializedVideoGuard(system, wsi);
   if (!video_guard)
   {
     PanicAlertFmt("Failed to initialize video backend!");
     return;
   }
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] GetInitializedVideoGuard done\n");
+#endif
 
   if (cpu_info.HTT)
     Config::SetBaseOrCurrent(Config::MAIN_DSP_THREAD, cpu_info.num_cores > 4);
   else
     Config::SetBaseOrCurrent(Config::MAIN_DSP_THREAD, cpu_info.num_cores > 2);
 
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] DSP initialize begin\n");
+#endif
   if (!system.GetDSP().GetDSPEmulator()->Initialize(system.IsWii(),
                                                     Config::Get(Config::MAIN_DSP_THREAD)))
   {
     PanicAlertFmt("Failed to initialize DSP emulation!");
     return;
   }
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] DSP initialize done\n");
+  DolphinNX::BootTrace::Log("[BootTrace] PostInitSoundStream begin\n");
+#endif
 
   AudioCommon::PostInitSoundStream(system);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] PostInitSoundStream done\n");
+#endif
 
   // Set execution state to known values (CPU/FIFO/Audio Paused)
   system.GetCPU().Break();
@@ -682,29 +803,39 @@ void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot,
   {
     ASSERT(IsCPUThread());
     CPUThreadGuard guard(system);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+    DolphinNX::BootTrace::Log("[BootTrace] CBoot::BootUp begin\n");
+#endif
     if (!CBoot::BootUp(system, guard, std::move(boot)))
       return;
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+    DolphinNX::BootTrace::Log("[BootTrace] CBoot::BootUp done\n");
+#endif
   }
 
   // Initialise Wii filesystem contents.
   // This is done here after Boot and not in BootManager to ensure that we operate
   // with the correct title context since save copying requires title directories to exist.
   auto bsd_ptr = std::make_shared<BootSessionData>(std::move(boot_session_data));
-  Common::ScopeGuard wiifs_guard {
-    [bsd_ptr]() {
-      if (!bsd_ptr)
-        return;
-      Core::CleanUpWiiFileSystemContents(*bsd_ptr);
-      bsd_ptr->InvokeWiiSyncCleanup();
-    }
-  };
+  Common::ScopeGuard wiifs_guard{[bsd_ptr]() {
+    if (!bsd_ptr)
+      return;
+    Core::CleanUpWiiFileSystemContents(*bsd_ptr);
+    bsd_ptr->InvokeWiiSyncCleanup();
+  }};
   if (system.IsWii())
     Core::InitializeWiiFileSystemContents(savegame_redirect, boot_session_data);
   else
     wiifs_guard.Dismiss();
 
   // This adds the SyncGPU handler to CoreTiming, so now CoreTiming::Advance might block.
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] Fifo::Prepare begin\n");
+#endif
   system.GetFifo().Prepare();
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] Fifo::Prepare done\n");
+#endif
 
   const Common::EventHook frame_presented =
       GetVideoEvents().after_present_event.Register(&Core::Callback_FramePresented);
@@ -720,38 +851,44 @@ void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot,
   }
 
   UpdateTitle(system);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] UpdateTitle done\n");
+#endif
 
 #ifdef __LIBRETRO__
   // these are not needed if EmuThread is launched as a std::thread
   if (!s_emu_thread.joinable())
   {
-    s_emu_thread_scope_guards.emplace_back(Common::MoveOnlyFunction<void()>(
-      [g = std::move(flag_guard)]() mutable { g.Exit(); }));
+    s_emu_thread_scope_guards.emplace_back(
+        Common::MoveOnlyFunction<void()>([g = std::move(flag_guard)]() mutable { g.Exit(); }));
 
-    s_emu_thread_scope_guards.emplace_back(Common::MoveOnlyFunction<void()>(
-      [g = std::move(movie_guard)]() mutable { g.Exit(); }));
+    s_emu_thread_scope_guards.emplace_back(
+        Common::MoveOnlyFunction<void()>([g = std::move(movie_guard)]() mutable { g.Exit(); }));
 
-    s_emu_thread_scope_guards.emplace_back(Common::MoveOnlyFunction<void()>(
-      [g = std::move(hw_guard)]() mutable { g.Exit(); }));
+    s_emu_thread_scope_guards.emplace_back(
+        Common::MoveOnlyFunction<void()>([g = std::move(hw_guard)]() mutable { g.Exit(); }));
 
     if (system.IsDualCoreMode() && video_guard)
     {
       auto* vg_ptr = video_guard.get();
-      s_emu_thread_scope_guards.emplace_back(Common::MoveOnlyFunction<void()>(
-        [vg_ptr]() {
-          if (vg_ptr) vg_ptr->Exit();
+      s_emu_thread_scope_guards.emplace_back(Common::MoveOnlyFunction<void()>([vg_ptr]() {
+        if (vg_ptr)
+          vg_ptr->Exit();
       }));
     }
 
-    s_emu_thread_scope_guards.emplace_back(Common::MoveOnlyFunction<void()>(
-      [g = std::move(audio_guard)]() mutable { g.Exit(); }));
+    s_emu_thread_scope_guards.emplace_back(
+        Common::MoveOnlyFunction<void()>([g = std::move(audio_guard)]() mutable { g.Exit(); }));
 
-    s_emu_thread_scope_guards.emplace_back(Common::MoveOnlyFunction<void()>(
-      [g = std::move(wiifs_guard)]() mutable { g.Exit(); }));
+    s_emu_thread_scope_guards.emplace_back(
+        Common::MoveOnlyFunction<void()>([g = std::move(wiifs_guard)]() mutable { g.Exit(); }));
   }
 #endif
 
   // Become the CPU thread.
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  DolphinNX::BootTrace::Log("[BootTrace] Handing off to CpuThread\n");
+#endif
   cpu_thread_func(system, savestate_path, delete_savestate);
 }
 

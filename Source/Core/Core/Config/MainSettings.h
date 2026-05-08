@@ -25,6 +25,9 @@
 #ifdef __LIBRETRO__
   #define BACKEND_LIBRETRO "Libretro"
 #endif
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  #define BACKEND_SWITCHNX "SwitchNX"
+#endif
 
 namespace PowerPC
 {

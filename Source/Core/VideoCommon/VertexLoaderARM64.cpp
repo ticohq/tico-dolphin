@@ -4,12 +4,79 @@
 #include "VideoCommon/VertexLoaderARM64.h"
 
 #include <array>
+#include <mutex>
 
 #include "Common/CommonTypes.h"
+#include "Common/MemoryUtil.h"
 #include "VideoCommon/CPMemory.h"
 #include "VideoCommon/VertexLoaderManager.h"
 
 using namespace Arm64Gen;
+
+#ifdef __SWITCH__
+static constexpr size_t VTX_POOL_SLOT_SIZE = 4096;
+static constexpr size_t VTX_POOL_SLOTS = 1024;
+static constexpr size_t VTX_POOL_SIZE = VTX_POOL_SLOT_SIZE * VTX_POOL_SLOTS;
+
+static std::mutex s_vtx_pool_mutex;
+static u8* s_vtx_pool_rw = nullptr;
+static u8* s_vtx_pool_rx = nullptr;
+static size_t s_vtx_pool_high_water = 0;
+static std::vector<size_t> s_vtx_pool_free_slots;
+
+static std::pair<u8*, u8*> AllocVertexLoaderSlot()
+{
+  std::lock_guard<std::mutex> lock(s_vtx_pool_mutex);
+  if (!s_vtx_pool_rw)
+  {
+    Common::ExecutableMemory mem = Common::AllocateExecutableMemory(VTX_POOL_SIZE);
+    s_vtx_pool_rw = static_cast<u8*>(mem.rw_ptr);
+    s_vtx_pool_rx = static_cast<u8*>(mem.rx_ptr);
+    s_vtx_pool_high_water = 0;
+    s_vtx_pool_free_slots.clear();
+    ASSERT_MSG(VIDEO, s_vtx_pool_rw != nullptr, "Failed to allocate vertex loader JIT pool");
+  }
+
+  size_t slot;
+  if (!s_vtx_pool_free_slots.empty())
+  {
+    slot = s_vtx_pool_free_slots.back();
+    s_vtx_pool_free_slots.pop_back();
+  }
+  else
+  {
+    ASSERT_MSG(VIDEO, s_vtx_pool_high_water < VTX_POOL_SLOTS,
+               "Vertex loader JIT pool exhausted ({} slots, no recyclable entries)",
+               VTX_POOL_SLOTS);
+    slot = s_vtx_pool_high_water++;
+  }
+
+  const size_t offset = slot * VTX_POOL_SLOT_SIZE;
+  return {s_vtx_pool_rw + offset, s_vtx_pool_rx + offset};
+}
+
+static void FreeVertexLoaderSlot(u8* rw)
+{
+  std::lock_guard<std::mutex> lock(s_vtx_pool_mutex);
+  if (!s_vtx_pool_rw || rw < s_vtx_pool_rw || rw >= s_vtx_pool_rw + VTX_POOL_SIZE)
+    return;
+  const size_t slot = static_cast<size_t>(rw - s_vtx_pool_rw) / VTX_POOL_SLOT_SIZE;
+  s_vtx_pool_free_slots.push_back(slot);
+}
+
+void VertexLoaderARM64::ShutdownSwitchJitPool()
+{
+  std::lock_guard<std::mutex> lock(s_vtx_pool_mutex);
+  if (s_vtx_pool_rw)
+  {
+    Common::FreeExecutableMemory(s_vtx_pool_rw, VTX_POOL_SIZE);
+    s_vtx_pool_rw = nullptr;
+    s_vtx_pool_rx = nullptr;
+  }
+  s_vtx_pool_high_water = 0;
+  s_vtx_pool_free_slots.clear();
+}
+#endif
 
 constexpr ARM64Reg src_reg = ARM64Reg::X0;
 constexpr ARM64Reg dst_reg = ARM64Reg::X1;
@@ -52,12 +119,32 @@ alignas(16) static const float scale_factors[] = {
 VertexLoaderARM64::VertexLoaderARM64(const TVtxDesc& vtx_desc, const VAT& vtx_att)
     : VertexLoaderBase(vtx_desc, vtx_att), m_float_emit(this)
 {
+#ifdef __SWITCH__
+  auto [rw, rx] = AllocVertexLoaderSlot();
+  region = rw;
+  rx_region = rx;
+  region_size = VTX_POOL_SLOT_SIZE;
+  total_region_size = VTX_POOL_SLOT_SIZE;
+  m_is_child = true;
+
+  SetExecutableCodeOffset(rx - rw);
+  SetCodePtr(region, region + region_size);
+#else
   AllocCodeSpace(4096);
+#endif
   const Common::ScopedJITPageWriteAndNoExecute enable_jit_page_writes(GetRegionPtr());
   ClearCodeSpace();
   GenerateVertexLoader();
   WriteProtect(true);
 }
+
+#ifdef __SWITCH__
+VertexLoaderARM64::~VertexLoaderARM64()
+{
+  if (region)
+    FreeVertexLoaderSlot(region);
+}
+#endif
 
 // Returns the register to use as the base and an offset from that register.
 // For indexed attributes, the index is read into scratch1_reg, and then scratch1_reg with no offset
@@ -517,7 +604,7 @@ void VertexLoaderARM64::GenerateVertexLoader()
     RET(ARM64Reg::X30);
   }
 
-  FlushIcache();
+  FlushIcacheWxX();
 
   ASSERT_MSG(VIDEO, m_vertex_size == m_src_ofs,
              "Vertex size from vertex loader ({}) does not match expected vertex size ({})!\nVtx "
@@ -530,5 +617,5 @@ void VertexLoaderARM64::GenerateVertexLoader()
 int VertexLoaderARM64::RunVertices(const u8* src, u8* dst, int count)
 {
   m_numLoadedVertices += count;
-  return ((int (*)(const u8* src, u8* dst, int count))region)(src, dst, count - 1);
+  return ((int (*)(const u8* src, u8* dst, int count))GetRxRegionPtr())(src, dst, count - 1);
 }

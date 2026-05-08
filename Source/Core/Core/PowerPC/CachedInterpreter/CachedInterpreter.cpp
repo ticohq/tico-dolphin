@@ -25,6 +25,8 @@
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
 
+#define SWITCH_DEBUG_LOG(...) ((void)0)
+
 CachedInterpreter::CachedInterpreter(Core::System& system) : JitBase(system), m_block_cache(*this)
 {
 }
@@ -57,6 +59,7 @@ void CachedInterpreter::ExecuteOneBlock()
   const u8* normal_entry = m_block_cache.Dispatch();
   if (!normal_entry)
   {
+    SWITCH_DEBUG_LOG("  -> Dispatch returned NULL, calling Jit(0x%08x)\n", m_ppc_state.pc);
     Jit(m_ppc_state.pc);
     return;
   }

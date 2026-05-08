@@ -98,6 +98,12 @@ option(USE_MGBA "Enables GBA controllers emulation using libmgba" ON)
 option(ENABLE_AUTOUPDATE "Enables support for automatic updates" ON)
 option(USE_RETRO_ACHIEVEMENTS "Enables integration with retroachievements.org" ON)
 option(LIBRETRO "Build as a libretro library" OFF)
+option(SWITCH_STANDALONE "Build standalone Switch NX executable (no libretro)" OFF)
+
+if(SWITCH_STANDALONE)
+  add_compile_definitions(__SWITCH__)
+  enable_language(ASM)
+endif()
 
 # Maintainers: if you consider blanket disabling this for your users, please
 # consider the following points:
@@ -230,7 +236,7 @@ elseif(_ARCH_64 AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64")
   set(_M_ARM_64 1)
   add_definitions(-D_M_ARM_64=1)
   # CRC instruction set is used in the CRC32 hash function
-  check_and_add_flag(HAVE_ARCH_ARMV8 -march=armv8-a+crc)
+    check_and_add_flag(HAVE_ARCH_ARMV8 -march=armv8-a+crc)
 else()
   message(FATAL_ERROR "You're building on an unsupported platform: "
       "'${CMAKE_SYSTEM_PROCESSOR}' with ${CMAKE_SIZEOF_VOID_P}-byte pointers."
@@ -501,7 +507,7 @@ if(LIBRETRO)
   set(USE_RETRO_ACHIEVEMENTS OFF CACHE BOOL "" FORCE)
   set(USE_UPNP OFF CACHE BOOL "" FORCE)
   add_definitions(-D__LIBRETRO__)
-  check_and_add_flag(FPIC -fpic)
+  check_and_add_flag(FPIC -fPIE)
   if(APPLE)
     set(MACOS_CODE_SIGNING OFF CACHE BOOL "" FORCE)
     set(USE_BUNDLED_MOLTENVK OFF CACHE BOOL "" FORCE)
@@ -531,6 +537,40 @@ if(LIBRETRO)
     endif()
     set(USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE)
   endif()
+endif()
+
+if(SWITCH_STANDALONE)
+  message(STATUS "Building standalone Switch NX executable (no libretro)")
+  set(ENABLE_ALSA OFF CACHE BOOL "" FORCE)
+  set(ENABLE_ANALYTICS OFF CACHE BOOL "" FORCE)
+  set(ENABLE_AUTOUPDATE OFF CACHE BOOL "" FORCE)
+  set(ENABLE_CLI_TOOL OFF CACHE BOOL "" FORCE)
+  set(ENABLE_CUBEB OFF CACHE BOOL "" FORCE)
+  set(ENABLE_EVDEV OFF CACHE BOOL "" FORCE)
+  set(ENCODE_FRAMEDUMPS OFF CACHE BOOL "" FORCE)
+  set(ENABLE_LLVM OFF CACHE BOOL "" FORCE)
+  set(ENABLE_NOGUI OFF CACHE BOOL "" FORCE)
+  set(ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+  set(ENABLE_QT OFF CACHE BOOL "" FORCE)
+  set(ENABLE_PULSEAUDIO OFF CACHE BOOL "" FORCE)
+  set(ENABLE_SDL OFF CACHE BOOL "" FORCE)  # Don't build bundled SDL — use portlibs SDL2
+  # Vulkan enabled — NVK statically linked via MESA_NVK_DIR
+  set(USE_DISCORD_PRESENCE OFF CACHE BOOL "" FORCE)
+  set(USE_RETRO_ACHIEVEMENTS OFF CACHE BOOL "" FORCE)
+  set(USE_UPNP OFF CACHE BOOL "" FORCE)
+  set(USE_MGBA OFF CACHE BOOL "" FORCE)
+  set(USE_SFML OFF CACHE BOOL "" FORCE)
+  check_and_add_flag(FPIC -fPIE)
+  # Force bundled libraries (no system packages on Switch)
+  set(USE_SYSTEM_MBEDTLS OFF CACHE BOOL "" FORCE)
+  set(USE_SYSTEM_CURL OFF CACHE BOOL "" FORCE)  # Bundled curl uses bundled mbedtls, not OpenSSL
+  set(USE_SYSTEM_LZ4 OFF CACHE BOOL "" FORCE)
+  set(USE_SYSTEM_LZO OFF CACHE BOOL "" FORCE)
+  set(USE_SYSTEM_LIBLZMA OFF CACHE BOOL "" FORCE)
+  set(USE_SYSTEM_ZSTD OFF CACHE BOOL "" FORCE)
+  set(USE_SYSTEM_FMT OFF CACHE BOOL "" FORCE)
+  # No /dev/urandom on Switch
+  add_definitions(-DMBEDTLS_NO_PLATFORM_ENTROPY)
 endif()
 
 if(ENABLE_HEADLESS)
@@ -583,7 +623,10 @@ if(ENABLE_X11)
   endif()
 endif()
 
-if(ENABLE_EGL)
+if(SWITCH_STANDALONE)
+  # Vulkan backend — no EGL needed
+  message(STATUS "Vulkan backend enabled (Switch standalone)")
+elseif(ENABLE_EGL)
   find_package(EGL)
   if(EGL_FOUND)
     add_definitions(-DHAVE_EGL=1)
@@ -640,7 +683,7 @@ if(ENABLE_EVDEV)
     add_definitions(-DHAVE_LIBUDEV=1)
     add_definitions(-DHAVE_LIBEVDEV=1)
   else()
-    if(NOT LIBRETRO)
+    if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
       message(FATAL_ERROR "Couldn't find libevdev and/or libudev. Can't build evdev controller backend.\nDisable ENABLE_EVDEV if you wish to build without controller support")
     endif()
   endif()
@@ -696,7 +739,9 @@ dolphin_find_optional_system_library_pkgconfig(FMT
 )
 
 add_subdirectory(Externals/imgui)
-add_subdirectory(Externals/implot)
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+  add_subdirectory(Externals/implot)
+endif()
 
 dolphin_find_optional_system_library(glslang Externals/glslang DOLPHIN_TRY_VERSIONS 15 16)
 
@@ -734,7 +779,9 @@ endif()
 
 dolphin_find_optional_system_library(pugixml Externals/pugixml)
 
-dolphin_find_optional_system_library_pkgconfig(ENET libenet>=1.3.18 enet::enet Externals/enet)
+if(NOT SWITCH_STANDALONE)
+  dolphin_find_optional_system_library_pkgconfig(ENET libenet>=1.3.18 enet::enet Externals/enet)
+endif()
 
 dolphin_find_optional_system_library_pkgconfig(xxhash libxxhash>=0.8.2 xxhash::xxhash Externals/xxhash)
 
@@ -774,7 +821,7 @@ if(ENABLE_CUBEB)
   add_definitions(-DHAVE_CUBEB)
 endif()
 
-if(NOT ANDROID AND NOT IOS)
+if(NOT ANDROID AND NOT IOS AND NOT SWITCH_STANDALONE)
   dolphin_find_optional_system_library(LibUSB Externals/libusb)
   add_definitions(-D__LIBUSB__)
 endif()
@@ -782,9 +829,6 @@ endif()
 if(ENABLE_SDL)
   dolphin_find_optional_system_library(SDL3 Externals/SDL 3.2.0)
 endif()
-
-dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
-
 if(USE_UPNP)
   dolphin_find_optional_system_library(MINIUPNPC Externals/miniupnpc 1.6)
   add_definitions(-DUSE_UPNP)
@@ -792,10 +836,15 @@ endif()
 
 dolphin_find_optional_system_library(MBEDTLS Externals/mbedtls 2.28)
 
-dolphin_find_optional_system_library(CURL Externals/curl)
+if(NOT SWITCH_STANDALONE)
+  dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
+  dolphin_find_optional_system_library(CURL Externals/curl)
+endif()
 
 if(NOT ANDROID AND NOT IOS)
-  dolphin_find_optional_system_library(HIDAPI Externals/hidapi)
+  if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+    dolphin_find_optional_system_library(HIDAPI Externals/hidapi)
+  endif()
 endif()
 
 if(USE_DISCORD_PRESENCE)

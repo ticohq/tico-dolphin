@@ -9,11 +9,34 @@
 #include "Common/Logging/Log.h"
 #include "Common/Thread.h"
 
+#include "Core/Config/GraphicsSettings.h"
 #include "Core/Core.h"
 #include "Core/System.h"
 
+#include "VideoCommon/VideoConfig.h"
+
 namespace VideoCommon
 {
+static bool ShouldStartWorkerThreads()
+{
+  if (!g_backend_info.bSupportsBackgroundCompiling)
+    return false;
+
+#if defined(__SWITCH__)
+  switch (Config::Get(Config::GFX_SHADER_COMPILATION_MODE))
+  {
+  case ShaderCompilationMode::Synchronous:
+  case ShaderCompilationMode::SynchronousUberShaders:
+    return false;
+  case ShaderCompilationMode::AsynchronousUberShaders:
+  case ShaderCompilationMode::AsynchronousSkipRendering:
+    break;
+  }
+#endif
+
+  return true;
+}
+
 AsyncShaderCompiler::AsyncShaderCompiler()
 {
 }
@@ -129,6 +152,9 @@ bool AsyncShaderCompiler::StartWorkerThreads(u32 num_worker_threads)
   if (num_worker_threads == 0)
     return true;
 
+  if (!ShouldStartWorkerThreads())
+    return true;
+
   for (u32 i = 0; i < num_worker_threads; i++)
   {
     void* thread_param = nullptr;
@@ -206,6 +232,9 @@ void AsyncShaderCompiler::WorkerThreadExit(void* param)
 void AsyncShaderCompiler::WorkerThreadEntryPoint(void* param)
 {
   Common::SetCurrentThreadName("AsyncShaderCompiler Worker");
+#ifdef __SWITCH__
+  Common::SetCurrentThreadAffinity(2);
+#endif
 
   // Initialize worker thread with backend-specific method.
   if (!WorkerThreadInitWorkerThread(param))

@@ -57,7 +57,8 @@ u32 DSPHLE::DSP_UpdateRate()
 {
   // AX HLE uses 3ms (Wii) or 5ms (GC) timing period
   // But to be sure, just update the HLE every ms.
-  return m_system.GetSystemTimers().GetTicksPerSecond() / 1000;
+  const u32 period_ms = m_wii ? 3 : 5;
+  return m_system.GetSystemTimers().GetTicksPerSecond() / (1000 / period_ms);
 }
 
 void DSPHLE::SendMailToDSP(u32 mail)

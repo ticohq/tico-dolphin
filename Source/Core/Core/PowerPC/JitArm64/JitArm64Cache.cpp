@@ -1,4 +1,5 @@
 // Copyright 2014 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/PowerPC/JitArm64/JitArm64Cache.h"
@@ -41,6 +42,8 @@ void JitArm64BlockCache::WriteLinkBlock(Arm64Gen::ARM64XEmitter& emit,
   }
   else
   {
+    const u8* dest_rw = static_cast<JitArm64&>(m_jit).ConvertToWritable(dest->normalEntry);
+
     if (source.call)
     {
       // The "fast" BL should be the last instruction, so that the return address matches the
@@ -49,21 +52,21 @@ void JitArm64BlockCache::WriteLinkBlock(Arm64Gen::ARM64XEmitter& emit,
       emit.B(source.exitFarcode);
       DEBUG_ASSERT(emit.GetCodePtr() == start + BLOCK_LINK_FAST_BL_OFFSET || emit.HasWriteFailed());
       emit.SetJumpTarget(fast);
-      emit.BL(dest->normalEntry);
+      emit.BL(dest_rw);
     }
     else
     {
       // Are we able to jump directly to the block?
-      s64 block_distance = ((s64)dest->normalEntry - (s64)emit.GetCodePtr()) >> 2;
+      s64 block_distance = ((s64)dest_rw - (s64)emit.GetCodePtr()) >> 2;
       if (block_distance >= -0x40000 && block_distance <= 0x3FFFF)
       {
-        emit.B(CC_GT, dest->normalEntry);
+        emit.B(CC_GT, dest_rw);
         emit.B(source.exitFarcode);
       }
       else
       {
         FixupBranch slow = emit.B(CC_LE);
-        emit.B(dest->normalEntry);
+        emit.B(dest_rw);
         emit.SetJumpTarget(slow);
         emit.B(source.exitFarcode);
       }
@@ -88,16 +91,27 @@ void JitArm64BlockCache::WriteLinkBlock(const JitBlock::LinkData& source, const 
   ARM64XEmitter emit(location, location + BLOCK_LINK_SIZE);
 
   WriteLinkBlock(emit, source, dest);
-  emit.FlushIcache();
+  // Flush with W^X-aware addresses
+  u8* rw_start = location;
+  u8* rw_end = const_cast<u8*>(emit.GetCodePtr());
+  u8* rx_start = static_cast<JitArm64&>(m_jit).ConvertToExecutable(rw_start);
+  u8* rx_end = static_cast<JitArm64&>(m_jit).ConvertToExecutable(rw_end);
+  emit.FlushIcacheSection(rw_start, rw_end, rx_start, rx_end);
 }
 
 void JitArm64BlockCache::WriteDestroyBlock(const JitBlock& block)
 {
+  // normalEntry is stored as RX; convert to RW so the emitter can write into it.
+  u8* rw_start = static_cast<JitArm64&>(m_jit).ConvertToWritable(block.normalEntry);
   // Only clear the entry point as we might still be within this block.
-  ARM64XEmitter emit(block.normalEntry, block.normalEntry + 4);
-  const Common::ScopedJITPageWriteAndNoExecute enable_jit_page_writes(block.normalEntry);
+  ARM64XEmitter emit(rw_start, rw_start + 4);
+  const Common::ScopedJITPageWriteAndNoExecute enable_jit_page_writes(rw_start);
   emit.BRK(0x123);
-  emit.FlushIcache();
+  // Flush with W^X-aware addresses: RW (where written) and RX (where executed)
+  u8* rw_end = const_cast<u8*>(emit.GetCodePtr());
+  u8* rx_start = static_cast<JitArm64&>(m_jit).ConvertToExecutable(rw_start);
+  u8* rx_end = static_cast<JitArm64&>(m_jit).ConvertToExecutable(rw_end);
+  emit.FlushIcacheSection(rw_start, rw_end, rx_start, rx_end);
 }
 
 void JitArm64BlockCache::DestroyBlock(JitBlock& block)

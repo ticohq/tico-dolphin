@@ -1,9 +1,11 @@
 // Copyright 2008 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <bitset>
 #include <chrono>
 #include <cstring>
@@ -181,6 +183,8 @@ public:
   // assembly version.)
   const u8* Dispatch();
 
+
+
   void InvalidateICache(u32 address, u32 length, bool forced);
   void InvalidateICacheLine(u32 address);
   void ErasePhysicalRange(u32 address, u32 length);
@@ -236,4 +240,6 @@ private:
   // in case the shm memory region couldn't be allocated.
   std::array<JitBlock*, FAST_BLOCK_MAP_FALLBACK_ELEMENTS>
       m_fast_block_map_fallback{};  // start_addr & mask -> number
+
+
 };

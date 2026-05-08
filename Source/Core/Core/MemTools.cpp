@@ -1,4 +1,5 @@
 // Copyright 2008 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/MemTools.h"
@@ -8,9 +9,24 @@
 #include "Common/CommonFuncs.h"
 #include "Common/MsgHandler.h"
 
+#include "Core/Core.h"
 #include "Core/MachineContext.h"
 #include "Core/PowerPC/JitInterface.h"
 #include "Core/System.h"
+
+#ifdef __SWITCH__
+#include "Core/HW/Memmap.h"
+#include "Core/PowerPC/PowerPC.h"
+
+static uintptr_t s_lazy_region_base = 0;
+static size_t s_lazy_region_size = 0;
+
+void EMM::SetLazyRegionInfo(uintptr_t base, size_t size)
+{
+  s_lazy_region_base = base;
+  s_lazy_region_size = size;
+}
+#endif
 
 #if defined(__FreeBSD__) || defined(__NetBSD__)
 #include <signal.h>
@@ -342,6 +358,193 @@ void UninstallExceptionHandler()
 #ifdef __APPLE__
   sigaction(SIGBUS, &old_sa_bus, nullptr);
 #endif
+}
+
+bool IsExceptionHandlerSupported()
+{
+  return true;
+}
+
+#elif defined(__SWITCH__)
+// Nintendo Switch exception handler using libnx
+#include <switch.h>
+
+// Exception stack for libnx - must be aligned and global.
+// 64KB to handle Dolphin's HandleFault + logging without overflow.
+extern "C" {
+alignas(16) u8 __nx_exception_stack[0x10000];
+u64 __nx_exception_stack_size = sizeof(__nx_exception_stack);
+void __libnx_exception_handler(ThreadExceptionDump* ctx);
+}
+
+// After modifying exception dump, use this to directly restore context and jump.
+// This bypasses libnx's svcBreak that would otherwise be called.
+//
+// ThreadExceptionDump layout (AArch64):
+//   +0:    error_desc (u32) + pad[3] = 16 bytes
+//   +16:   cpu_gprs[29] = 232 bytes           (+16 to +248)
+//   +248:  fp (8), +256: lr (8), +264: sp (8), +272: pc (8)
+//   +280:  padding (8)
+//   +288:  fpu_gprs[32] = 512 bytes            (+288 to +800)
+//   +800:  pstate (u32), afsr0, afsr1, esr
+//   +816:  far (8)
+[[noreturn]] static void RestoreContextAndJump(ThreadExceptionDump* ctx)
+{
+  __asm__ volatile(
+      // Use x21 as our base pointer throughout
+      "mov x21, %0\n"
+
+      // === Restore NEON/FPU registers first (while x21 is still our base) ===
+      // fpu_gprs[0] at offset 288
+      "ldp q0,  q1,  [x21, #288]\n"
+      "ldp q2,  q3,  [x21, #320]\n"
+      "ldp q4,  q5,  [x21, #352]\n"
+      "ldp q6,  q7,  [x21, #384]\n"
+      "ldp q8,  q9,  [x21, #416]\n"
+      "ldp q10, q11, [x21, #448]\n"
+      "ldp q12, q13, [x21, #480]\n"
+      "ldp q14, q15, [x21, #512]\n"
+      "ldp q16, q17, [x21, #544]\n"
+      "ldp q18, q19, [x21, #576]\n"
+      "ldp q20, q21, [x21, #608]\n"
+      "ldp q22, q23, [x21, #640]\n"
+      "ldp q24, q25, [x21, #672]\n"
+      "ldp q26, q27, [x21, #704]\n"
+      "ldp q28, q29, [x21, #736]\n"
+      "ldp q30, q31, [x21, #768]\n"
+
+      // === Restore NZCV condition flags from pstate ===
+      // pstate is at offset 800 (u32), NZCV are bits [31:28]
+      "ldr w16, [x21, #800]\n"
+      "msr nzcv, x16\n"
+
+      // === Prepare SP and PC ===
+      "ldr x16, [x21, #264]\n"   // x16 = new SP
+      "ldr x17, [x21, #272]\n"   // x17 = new PC
+      // Push target PC onto the new stack (pre-decrement, 16-byte aligned)
+      "str x17, [x16, #-16]!\n"
+      "mov x17, x16\n"           // x17 = adjusted SP
+
+      // === Restore GPRs ===
+      "ldr x30, [x21, #256]\n"   // LR
+      "ldr x29, [x21, #248]\n"   // FP
+      "ldp x0,  x1,  [x21, #16]\n"
+      "ldp x2,  x3,  [x21, #32]\n"
+      "ldp x4,  x5,  [x21, #48]\n"
+      "ldp x6,  x7,  [x21, #64]\n"
+      "ldp x8,  x9,  [x21, #80]\n"
+      "ldp x10, x11, [x21, #96]\n"
+      "ldp x12, x13, [x21, #112]\n"
+      "ldp x14, x15, [x21, #128]\n"
+      "ldr x16, [x21, #144]\n"   // x16 restored (clobbers our temp)
+      // x17 still holds adjusted SP — sacrifice x17 (AAPCS64 scratch)
+      "ldp x18, x19, [x21, #160]\n"
+      "ldr x20, [x21, #176]\n"
+      "ldp x22, x23, [x21, #192]\n"
+      "ldp x24, x25, [x21, #208]\n"
+      "ldp x26, x27, [x21, #224]\n"
+      "ldr x28, [x21, #240]\n"
+
+      // Set SP to the adjusted new stack (x17 still valid, not yet overwritten)
+      "mov sp, x17\n"
+
+      // Restore x21 last (we lose our base pointer)
+      "ldr x21, [x21, #184]\n"
+
+      // Pop target PC into x17 (scratch) and jump
+      "ldr x17, [sp], #16\n"
+      "br x17\n"
+      :
+      : "r"(ctx)
+      : "memory");
+
+  __builtin_unreachable();
+}
+
+// libnx calls this when an exception occurs on any thread.
+// For fastmem faults from JIT code, we backpatch and resume.
+// For all other faults, we return and let libnx call svcBreak (clean crash).
+extern "C" void __libnx_exception_handler(ThreadExceptionDump* ctx)
+{
+  uintptr_t fault_address = ctx->far.x;
+
+  // Lazy entry-points arena: the JitArm64 dispatcher reads m_entry_points_ptr
+  // unconditionally on every dispatch, so uncommitted pages in the
+  // LazyMemoryRegion fault on first read. Commit a 64 KiB-aligned window
+  // around the fault to amortise the exception-handler round-trip across
+  // the next ~15 cold dispatches in the same neighbourhood. The kernel's
+  // MapPhysicalMemory implementation skips already-mapped pages within the
+  // requested range (mesosphere kern_k_page_table_base.cpp:4480) so a
+  // partial overlap with previously-committed pages still succeeds. We
+  // fall back to a single-page commit only on resource-limit failure.
+  if (s_lazy_region_size != 0 && fault_address >= s_lazy_region_base &&
+      fault_address < s_lazy_region_base + s_lazy_region_size) [[unlikely]]
+  {
+    constexpr uintptr_t kCommitWindow = 64 * 1024;
+    uintptr_t window_start = fault_address & ~(kCommitWindow - 1);
+    if (window_start < s_lazy_region_base)
+      window_start = s_lazy_region_base;
+    uintptr_t window_end = window_start + kCommitWindow;
+    if (window_end > s_lazy_region_base + s_lazy_region_size)
+      window_end = s_lazy_region_base + s_lazy_region_size;
+
+    void* batch_addr = reinterpret_cast<void*>(window_start);
+    if (R_SUCCEEDED(svcMapPhysicalMemory(batch_addr, window_end - window_start)))
+    {
+      RestoreContextAndJump(ctx);
+      // Never returns
+    }
+
+    // Batch commit failed — most likely process physical-memory limit hit.
+    // Try just the faulting page so forward progress is preserved.
+    void* single_addr = reinterpret_cast<void*>(fault_address & ~uintptr_t{0xFFF});
+    if (R_SUCCEEDED(svcMapPhysicalMemory(single_addr, 0x1000)))
+    {
+      RestoreContextAndJump(ctx);
+      // Never returns
+    }
+    // svcMapPhysicalMemory still failed — fall through to the unhandled-fault
+    // path and let libnx svcBreak produce a clean crash report.
+  }
+
+  // Build SContext from ThreadExceptionDump for Dolphin's HandleFault
+  SContext sctx;
+  for (int i = 0; i < 29; i++)
+    sctx.regs[i] = ctx->cpu_gprs[i].x;
+  sctx.fp = ctx->fp.x;
+  sctx.lr = ctx->lr.x;
+  sctx.sp = ctx->sp.x;
+  sctx.pc = ctx->pc.x;
+  sctx.pstate = ctx->pstate;
+  sctx.far = ctx->far.x;
+
+  // Try to handle via Dolphin's JIT fault handler (backpatching)
+  if (Core::System::GetInstance().GetJitInterface().HandleFault(fault_address, &sctx)) [[likely]]
+  {
+    // Copy modified registers back to exception dump
+    ctx->pc.x = sctx.pc;
+    for (int i = 0; i < 29; i++)
+      ctx->cpu_gprs[i].x = sctx.regs[i];
+    ctx->fp.x = sctx.fp;
+    ctx->lr.x = sctx.lr;
+    ctx->sp.x = sctx.sp;
+
+    RestoreContextAndJump(ctx);
+    // Never returns
+  }
+
+  // Unhandled fault — return so libnx invokes svcBreak with a clean
+  // Atmosphère crash report.
+}
+
+void InstallExceptionHandler()
+{
+  // libnx automatically uses __libnx_exception_handler if it exists
+}
+
+void UninstallExceptionHandler()
+{
+  // No action needed - can't uninstall libnx exception handler
 }
 
 bool IsExceptionHandlerSupported()

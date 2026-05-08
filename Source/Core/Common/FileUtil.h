@@ -236,7 +236,7 @@ std::string GetThemeDir(const std::string& theme_name);
 // Returns the path to where the sys file are
 const std::string& GetSysDirectory();
 
-#if defined(__LIBRETRO__) && !defined(ANDROID)
+#if (defined(__LIBRETRO__) || defined(__SWITCH__)) && !defined(ANDROID)
 void SetSysDirectory(const std::string& path);
 #endif
 

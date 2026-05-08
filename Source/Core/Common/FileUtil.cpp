@@ -38,6 +38,7 @@
 #include <share.h>
 #include <shellapi.h>
 #else
+#include <cerrno>
 #include <libgen.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -63,13 +64,27 @@ namespace fs = std::filesystem;
 
 namespace File
 {
+namespace
+{
+bool HasDevicePathPrefix(std::string_view path)
+{
+#ifdef _WIN32
+  return false;
+#else
+  const size_t colon = path.find(':');
+  return colon != std::string::npos && colon + 1 < path.size() &&
+         (path[colon + 1] == '/' || path[colon + 1] == '\\');
+#endif
+}
+}  // namespace
+
 #ifdef ANDROID
 static std::string s_android_sys_directory;
 static std::string s_android_driver_directory;
 static std::string s_android_lib_directory;
 #endif
 
-#if defined(__LIBRETRO__) && !defined(ANDROID)
+#if (defined(__LIBRETRO__) || defined(__SWITCH__)) && !defined(ANDROID)
 static std::string s_libretro_sys_directory;
 #endif
 
@@ -285,6 +300,28 @@ bool DeleteDir(const std::string& filename, IfAbsentBehavior behavior)
 bool Rename(const std::string& srcFilename, const std::string& destFilename)
 {
   DEBUG_LOG_FMT(COMMON, "{}: {} --> {}", __func__, srcFilename, destFilename);
+
+#ifndef _WIN32
+  if (HasDevicePathPrefix(srcFilename) || HasDevicePathPrefix(destFilename))
+  {
+    if (std::rename(srcFilename.c_str(), destFilename.c_str()) == 0)
+      return true;
+
+    const int first_errno = errno;
+    const bool dest_is_file = FileInfo(destFilename).IsFile();
+    if (dest_is_file && Delete(destFilename, IfAbsentBehavior::NoConsoleWarning) &&
+        std::rename(srcFilename.c_str(), destFilename.c_str()) == 0)
+    {
+      return true;
+    }
+
+    const int final_errno = errno != 0 ? errno : first_errno;
+    ERROR_LOG_FMT(COMMON, "{} failed: {} --> {}: {}", __func__, srcFilename, destFilename,
+                  std::strerror(final_errno));
+    return false;
+  }
+#endif
+
   std::error_code error;
   std::filesystem::rename(StringToPath(srcFilename), StringToPath(destFilename), error);
   if (error)
@@ -323,13 +360,9 @@ bool RenameSync(const std::string& srcFilename, const std::string& destFilename)
     close(fd);
   }
 #else
-  char* path = strdup(srcFilename.c_str());
-  FSyncPath(path);
-  FSyncPath(dirname(path));
-  free(path);
-  path = strdup(destFilename.c_str());
-  FSyncPath(dirname(path));
-  free(path);
+  FSyncPath(srcFilename.c_str());
+  FSyncPath(fs::path(srcFilename).parent_path().string().c_str());
+  FSyncPath(fs::path(destFilename).parent_path().string().c_str());
 #endif
   return true;
 }
@@ -448,9 +481,19 @@ FSTEntry ScanDirectoryTree(std::string directory, bool recursive)
   };
 
   auto dirent_to_fstent = [&](const fs::directory_entry& entry) {
+    std::error_code type_error;
+    const bool is_directory = entry.is_directory(type_error);
+
+    std::error_code fifo_error;
+    const bool is_fifo = !type_error && entry.is_fifo(fifo_error);
+
+    std::error_code size_error;
+    const std::uintmax_t size =
+        (type_error || fifo_error || is_directory || is_fifo) ? 0 : entry.file_size(size_error);
+
     return FSTEntry{
-        .isDirectory = entry.is_directory(),
-        .size = entry.is_directory() || entry.is_fifo() ? 0 : entry.file_size(),
+        .isDirectory = is_directory,
+        .size = size_error ? 0 : size,
         .physicalName = path_to_physical_name(entry.path()),
         .virtualName = PathToString(entry.path().filename()),
     };
@@ -669,6 +712,11 @@ std::string CreateTempDir()
 
 std::string GetTempFilenameForAtomicWrite(std::string path)
 {
+#ifndef _WIN32
+  if (HasDevicePathPrefix(path))
+    return std::move(path) + ".xxx";
+#endif
+
   std::error_code error;
   auto absolute_path = fs::absolute(StringToPath(path), error);
   if (!error)
@@ -785,7 +833,7 @@ static std::string CreateSysDirectoryPath()
 #elif defined ANDROID
   const std::string sys_directory = s_android_sys_directory + DIR_SEP;
   ASSERT_MSG(COMMON, !s_android_sys_directory.empty(), "Sys directory has not been set");
-#elif defined __LIBRETRO__
+#elif defined(__LIBRETRO__) || defined(__SWITCH__)
   const std::string sys_directory = s_libretro_sys_directory + DIR_SEP;
 #else
   const std::string sys_directory = SYSDATA_DIR DIR_SEP;
@@ -801,7 +849,7 @@ const std::string& GetSysDirectory()
   return sys_directory;
 }
 
-#if defined(__LIBRETRO__) && !defined(ANDROID)
+#if (defined(__LIBRETRO__) || defined(__SWITCH__)) && !defined(ANDROID)
 void SetSysDirectory(const std::string& path)
 {
   INFO_LOG_FMT(COMMON, "Setting Sys directory to {}", path);

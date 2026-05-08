@@ -218,6 +218,15 @@ bool DirectIOFile::OffsetRead(u64 offset, u8* out_ptr, u64 size)
 {
 #if defined(_WIN32)
   return OverlappedTransfer<ReadFile>(m_handle, offset, out_ptr, size);
+#elif defined(__SWITCH__)
+  auto original = lseek(m_fd, 0, SEEK_CUR);
+  if (original == -1)
+    return false;
+  if (lseek(m_fd, off_t(offset), SEEK_SET) == -1)
+    return false;
+  bool ret = read(m_fd, out_ptr, size) == ssize_t(size);
+  lseek(m_fd, original, SEEK_SET);
+  return ret;
 #else
   return pread(m_fd, out_ptr, size, off_t(offset)) == ssize_t(size);
 #endif
@@ -227,6 +236,15 @@ bool DirectIOFile::OffsetWrite(u64 offset, const u8* in_ptr, u64 size)
 {
 #if defined(_WIN32)
   return OverlappedTransfer<WriteFile>(m_handle, offset, in_ptr, size);
+#elif defined(__SWITCH__)
+  auto original = lseek(m_fd, 0, SEEK_CUR);
+  if (original == -1)
+    return false;
+  if (lseek(m_fd, off_t(offset), SEEK_SET) == -1)
+    return false;
+  bool ret = write(m_fd, in_ptr, size) == ssize_t(size);
+  lseek(m_fd, original, SEEK_SET);
+  return ret;
 #else
   return pwrite(m_fd, in_ptr, size, off_t(offset)) == ssize_t(size);
 #endif

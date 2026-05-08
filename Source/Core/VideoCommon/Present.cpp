@@ -100,6 +100,22 @@ static void TryToSnapToXFBSize(int& width, int& height, int xfb_width, int xfb_h
   }
 }
 
+static int GetViewportIntegerScaleValue(ViewportIntegerScale integer_scale, int max_scale)
+{
+  max_scale = std::max(max_scale, 1);
+
+  switch (integer_scale)
+  {
+  case ViewportIntegerScale::OneX:
+    return 1;
+  case ViewportIntegerScale::TwoX:
+    return std::min(2, max_scale);
+  case ViewportIntegerScale::Auto:
+  default:
+    return max_scale;
+  }
+}
+
 Presenter::Presenter()
 {
   auto& video_events = GetVideoEvents();
@@ -722,6 +738,39 @@ void Presenter::UpdateDrawRectangle()
   // This also fails to acknowledge "g_ActiveConfig.bCrop".
   g_controller_interface.SetAspectRatioAdjustment(draw_aspect_ratio / win_aspect_ratio);
 
+  if (Config::Get(Config::GFX_VIEWPORT_MODE) == ViewportMode::Integer && m_xfb_entry)
+  {
+    const int xfb_width = m_xfb_rect.GetWidth();
+    const int xfb_height = m_xfb_rect.GetHeight();
+    int int_draw_width = 1;
+    int int_draw_height = 1;
+
+    if (xfb_width > 0 && xfb_height > 0)
+    {
+      const int max_scale =
+          std::min(static_cast<int>(win_width) / xfb_width, static_cast<int>(win_height) / xfb_height);
+      const int scale = GetViewportIntegerScaleValue(
+          Config::Get(Config::GFX_VIEWPORT_INTEGER_SCALE), max_scale);
+      int_draw_width = xfb_width * scale;
+      int_draw_height = xfb_height * scale;
+
+      if (max_scale < 1)
+      {
+        const float fit = std::min(win_width / xfb_width, win_height / xfb_height);
+        int_draw_width = std::max(1, static_cast<int>(std::floor(xfb_width * fit)));
+        int_draw_height = std::max(1, static_cast<int>(std::floor(xfb_height * fit)));
+      }
+    }
+
+    m_target_rectangle.left =
+        static_cast<int>(std::round(win_width / 2.0 - int_draw_width / 2.0));
+    m_target_rectangle.top =
+        static_cast<int>(std::round(win_height / 2.0 - int_draw_height / 2.0));
+    m_target_rectangle.right = m_target_rectangle.left + int_draw_width;
+    m_target_rectangle.bottom = m_target_rectangle.top + int_draw_height;
+    return;
+  }
+
   float draw_width = draw_aspect_ratio;
   float draw_height = 1;
 
@@ -804,6 +853,14 @@ std::tuple<int, int> Presenter::CalculateOutputDimensions(int width, int height,
   // Protect against zero width and height, a minimum of 1 will do
   width = std::max(width, 1);
   height = std::max(height, 1);
+
+  if (Config::Get(Config::GFX_VIEWPORT_MODE) == ViewportMode::Integer)
+  {
+    const int max_scale = std::min(m_backbuffer_width / width, m_backbuffer_height / height);
+    const int scale = GetViewportIntegerScaleValue(Config::Get(Config::GFX_VIEWPORT_INTEGER_SCALE),
+                                                   max_scale);
+    return std::make_tuple(width * scale, height * scale);
+  }
 
   auto [scaled_width, scaled_height] = ScaleToDisplayAspectRatio(width, height, allow_stretch);
 

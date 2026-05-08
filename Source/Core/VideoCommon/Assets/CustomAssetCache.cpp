@@ -12,8 +12,16 @@
 
 namespace VideoCommon
 {
+
+static bool s_resource_manager_initialized = false;
+
 void CustomAssetCache::Initialize()
 {
+  INFO_LOG_FMT(VIDEO, "CustomResourceManager::Initialize: Disabled for Switch.");
+  s_resource_manager_initialized = false;
+  return;
+
+  /*
   // Use half of available system memory but leave at least 2GiB unused for system stability.
   constexpr size_t must_keep_unused = 2 * size_t(1024 * 1024 * 1024);
 
@@ -26,10 +34,15 @@ void CustomAssetCache::Initialize()
     ERROR_LOG_FMT(VIDEO, "Not enough system memory for custom resources.");
 
   m_asset_loader.Initialize();
+
+  */
 }
 
 void CustomAssetCache::Shutdown()
 {
+  if (!s_resource_manager_initialized)
+    return;
+
   Reset();
 
   m_asset_loader.Shutdown();
@@ -37,6 +50,9 @@ void CustomAssetCache::Shutdown()
 
 void CustomAssetCache::Reset()
 {
+  if (!s_resource_manager_initialized)
+    return;
+
   m_asset_loader.Reset(true);
 
   m_active_assets = {};

@@ -125,6 +125,35 @@ VkSurfaceKHR SwapChain::CreateVulkanSurface(VkInstance instance, const WindowSys
   }
 #endif
 
+#if defined(VK_USE_PLATFORM_VI_NN)
+  if (wsi.type == WindowSystemType::Switch)
+  {
+    void* window = wsi.render_surface ? wsi.render_surface : wsi.render_window;
+    if (!window)
+    {
+      ERROR_LOG_FMT(VIDEO, "vkCreateViSurfaceNN failed: Switch WSI window is null");
+      return VK_NULL_HANDLE;
+    }
+
+    VkViSurfaceCreateInfoNN surface_create_info = {
+        VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN,  // VkStructureType               sType
+        nullptr,                                       // const void*                   pNext
+        0,                                             // VkViSurfaceCreateFlagsNN      flags
+        window                                         // void*                         window
+    };
+
+    VkSurfaceKHR surface;
+    VkResult res = vkCreateViSurfaceNN(instance, &surface_create_info, nullptr, &surface);
+    if (res != VK_SUCCESS)
+    {
+      LOG_VULKAN_ERROR(res, "vkCreateViSurfaceNN failed: ");
+      return VK_NULL_HANDLE;
+    }
+
+    return surface;
+  }
+#endif
+
   return VK_NULL_HANDLE;
 }
 
@@ -306,7 +335,6 @@ bool SwapChain::CreateSwapChain()
                           surface_capabilities.maxImageExtent.width);
   size.height = std::clamp(size.height, surface_capabilities.minImageExtent.height,
                            surface_capabilities.maxImageExtent.height);
-
   // Prefer identity transform if possible
   VkSurfaceTransformFlagBitsKHR transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
   if (!(surface_capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR))
@@ -401,6 +429,7 @@ bool SwapChain::CreateSwapChain()
   m_width = size.width;
   m_height = size.height;
   m_layers = image_layers;
+
   return true;
 }
 

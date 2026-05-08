@@ -374,6 +374,13 @@ bool VulkanContext::SelectInstanceExtensions(std::vector<const char*>* extension
     return false;
   }
 #endif
+#if defined(VK_USE_PLATFORM_VI_NN)
+  if (wstype == WindowSystemType::Switch &&
+      !AddExtension(VK_NN_VI_SURFACE_EXTENSION_NAME, true))
+  {
+    return false;
+  }
+#endif
 
   AddExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, false);
   if (wstype != WindowSystemType::Headless)
@@ -847,7 +854,7 @@ bool VulkanContext::CreateAllocator(u32 vk_api_version)
   allocator_info.instance = m_instance;
   allocator_info.vulkanApiVersion = vk_api_version;
   allocator_info.pTypeExternalMemoryHandleTypes = nullptr;
-#ifdef __LIBRETRO__
+#if defined(__LIBRETRO__) || defined(__SWITCH__)
   PFN_vkGetInstanceProcAddr gip = vkGetInstanceProcAddr;
   PFN_vkGetDeviceProcAddr gdp = vkGetDeviceProcAddr;
 

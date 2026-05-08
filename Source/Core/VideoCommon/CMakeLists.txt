@@ -117,10 +117,20 @@ add_library(videocommon
   LightingShaderGen.h
   LookUpTables.h
   NativeVertexFormat.h
+  LookUpTables.h
+  NativeVertexFormat.h
+)
+
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+target_sources(videocommon PRIVATE
   NetPlayChatUI.cpp
   NetPlayChatUI.h
   NetPlayGolfUI.cpp
   NetPlayGolfUI.h
+)
+endif()
+
+target_sources(videocommon PRIVATE
   OnScreenDisplay.cpp
   OnScreenDisplay.h
   OnScreenUI.cpp
@@ -245,10 +255,14 @@ PRIVATE
   spng::spng
   xxhash::xxhash
   imgui
-  implot
   glslang::SPIRV
   tinygltf
 )
+if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
+  target_link_libraries(videocommon PRIVATE implot)
+else()
+  target_compile_definitions(videocommon PRIVATE LIBRETRO)
+endif()
 
 if(_M_X86_64)
   target_sources(videocommon PRIVATE

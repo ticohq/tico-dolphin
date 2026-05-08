@@ -42,7 +42,8 @@ u16 CMailHandler::ReadDSPMailboxHigh()
   {
     m_last_mail = m_pending_mails.front().first;
   }
-  return u16(m_last_mail >> 0x10);
+  u16 val = u16(m_last_mail >> 0x10);
+  return val;
 }
 
 u16 CMailHandler::ReadDSPMailboxLow()

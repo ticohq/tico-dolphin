@@ -30,6 +30,27 @@ enum class AspectMode : int
   Raw,            // Forced squared pixels
 };
 
+enum class ViewportMode : int
+{
+  Display,
+  Integer
+};
+
+enum class ViewportDisplaySize : int
+{
+  Stretch,
+  FourThree,
+  SixteenNine,
+  Original
+};
+
+enum class ViewportIntegerScale : int
+{
+  Auto,
+  OneX,
+  TwoX
+};
+
 enum class StereoMode : int
 {
   Off,

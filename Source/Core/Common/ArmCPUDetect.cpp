@@ -1,4 +1,5 @@
 // Copyright 2013 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Common/CPUDetect.h"
@@ -214,6 +215,8 @@ static std::string MIDRToString(u64 midr)
 }
 
 #endif
+
+extern CPUInfo cpu_info;
 
 CPUInfo cpu_info;
 

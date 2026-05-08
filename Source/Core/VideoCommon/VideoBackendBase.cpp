@@ -226,10 +226,12 @@ const std::vector<std::unique_ptr<VideoBackendBase>>& VideoBackendBase::GetAvail
 #if defined(__APPLE__) && !defined(__LIBRETRO__)
     backends.emplace(backends.begin(), std::make_unique<Metal::VideoBackend>());
 #endif
-#ifdef HAS_OPENGL
+#ifdef HAS_SW_RENDERER
     backends.push_back(std::make_unique<SW::VideoSoftware>());
 #endif
+#ifdef HAS_NULL_RENDERER
     backends.push_back(std::make_unique<Null::VideoBackend>());
+#endif
 
     if (!backends.empty())
       g_video_backend = backends.front().get();
@@ -339,17 +341,66 @@ bool VideoBackendBase::InitializeShared(std::unique_ptr<AbstractGfx> gfx,
   g_graphics_mod_manager = std::make_unique<GraphicsModManager>();
   g_widescreen = std::make_unique<WidescreenManager>();
 
-  if (!g_vertex_manager->Initialize() || !g_shader_cache->Initialize() ||
-      !g_perf_query->Initialize() || !g_presenter->Initialize() ||
-      !g_framebuffer_manager->Initialize(g_ActiveConfig.iEFBScale) ||
-      !g_texture_cache->Initialize() ||
-      (g_backend_info.bSupportsBBox && !g_bounding_box->Initialize()) ||
-      !g_graphics_mod_manager->Initialize())
+  INFO_LOG_FMT(VIDEO, "InitializeShared: Initializing VertexManager...");
+  if (!g_vertex_manager->Initialize())
   {
-    PanicAlertFmtT("Failed to initialize renderer classes");
-    Shutdown();
+    ERROR_LOG_FMT(VIDEO, "VertexManager failed");
     return false;
   }
+
+  INFO_LOG_FMT(VIDEO, "InitializeShared: Initializing ShaderCache...");
+  if (!g_shader_cache->Initialize())
+  {
+    ERROR_LOG_FMT(VIDEO, "ShaderCache failed");
+    return false;
+  }
+
+  INFO_LOG_FMT(VIDEO, "InitializeShared: Initializing PerfQuery...");
+  if (!g_perf_query->Initialize())
+  {
+    ERROR_LOG_FMT(VIDEO, "PerfQuery failed");
+    return false;
+  }
+
+  INFO_LOG_FMT(VIDEO, "InitializeShared: Initializing Presenter...");
+  if (!g_presenter->Initialize())
+  {
+    ERROR_LOG_FMT(VIDEO, "Presenter failed");
+    return false;
+  }
+
+  INFO_LOG_FMT(VIDEO, "InitializeShared: Initializing FramebufferManager...");
+  if (!g_framebuffer_manager->Initialize(g_ActiveConfig.iEFBScale))
+  {
+    ERROR_LOG_FMT(VIDEO, "FramebufferManager failed");
+    return false;
+  }
+
+  INFO_LOG_FMT(VIDEO, "InitializeShared: Initializing TextureCache...");
+  if (!g_texture_cache->Initialize())
+  {
+    ERROR_LOG_FMT(VIDEO, "TextureCache failed");
+    return false;
+  }
+
+  if (g_backend_info.bSupportsBBox)
+  {
+    INFO_LOG_FMT(VIDEO, "InitializeShared: Initializing BoundingBox...");
+    if (!g_bounding_box->Initialize())
+    {
+      ERROR_LOG_FMT(VIDEO, "BoundingBox failed");
+      return false;
+    }
+  }
+
+  INFO_LOG_FMT(VIDEO, "InitializeShared: Initializing GraphicsModManager...");
+  if (!g_graphics_mod_manager->Initialize())
+  {
+    ERROR_LOG_FMT(VIDEO, "GraphicsModManager failed");
+    return false;
+  }
+
+  INFO_LOG_FMT(VIDEO, "InitializeShared: Initialization Complete");
 
 #ifdef __LIBRETRO__
   if(is_initialized)

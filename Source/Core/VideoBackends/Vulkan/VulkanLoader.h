@@ -17,6 +17,10 @@
 #define VK_USE_PLATFORM_ANDROID_KHR
 #endif
 
+#if defined(__SWITCH__)
+#define VK_USE_PLATFORM_VI_NN
+#endif
+
 #if defined(__APPLE__)
 #define VK_USE_PLATFORM_METAL_EXT
 #endif
@@ -65,8 +69,15 @@
 #endif  // #ifdef __GNUC__
 
 #define VMA_VULKAN_VERSION 1002000
+#if defined(__SWITCH__)
+// Switch uses static ICD linking — VMA must fetch functions via
+// vkGetInstanceProcAddr / vkGetDeviceProcAddr passed in VmaVulkanFunctions.
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+#else
 #define VMA_STATIC_VULKAN_FUNCTIONS 1
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
+#endif
 #undef VK_NO_PROTOTYPES
 #include "vk_mem_alloc.h"
 

@@ -28,6 +28,16 @@
 
 namespace Vulkan
 {
+namespace
+{
+OverlayRenderCallback s_overlay_callback;
+}
+
+void VKGfx::SetOverlayCallback(OverlayRenderCallback cb)
+{
+  s_overlay_callback = std::move(cb);
+}
+
 VKGfx::VKGfx(std::unique_ptr<SwapChain> swap_chain, float backbuffer_scale)
     : m_swap_chain(std::move(swap_chain)), m_backbuffer_scale(backbuffer_scale)
 {
@@ -319,6 +329,14 @@ void VKGfx::PresentBackbuffer()
 
   if (m_swap_chain->IsCurrentImageValid())
   {
+    // Overlay hook: render pass has been ended and the swapchain image is still
+    // in COLOR_ATTACHMENT_OPTIMAL. The callback may start/end its own render pass.
+    if (s_overlay_callback)
+    {
+      if (auto* fb = m_swap_chain->GetCurrentFramebuffer())
+        s_overlay_callback(fb, g_command_buffer_mgr->GetCurrentCommandBuffer());
+    }
+
     // Transition the backbuffer to PRESENT_SRC to ensure all commands drawing
     // to it have finished before present.
     if (auto* tex = m_swap_chain->GetCurrentTexture())

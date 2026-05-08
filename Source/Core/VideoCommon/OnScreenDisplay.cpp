@@ -154,6 +154,7 @@ void AddMessage(std::string message, u32 ms, u32 argb,
 
 void DrawMessages()
 {
+  return;
   const bool draw_messages = Config::Get(Config::MAIN_OSD_MESSAGES);
   const float current_x =
       LEFT_MARGIN * ImGui::GetIO().DisplayFramebufferScale.x + s_obscured_pixels_left;

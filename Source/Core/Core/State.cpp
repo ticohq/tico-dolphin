@@ -498,6 +498,14 @@ static void SaveAsFromCore(Core::System& system, std::string filename)
 
 void SaveAs(Core::System& system, std::string filename)
 {
+  if (Core::GetState(system) == Core::State::Paused)
+  {
+    auto lock = GetStateSaveTaskLock();
+    const Core::CPUThreadGuard guard(system);
+    SaveAsFromCore(system, std::move(filename));
+    return;
+  }
+
   Core::RunOnCPUThread(
       system, [&system, filename = std::move(filename), lock = GetStateSaveTaskLock()]() mutable {
         SaveAsFromCore(system, std::move(filename));
@@ -873,6 +881,13 @@ void LoadAs(Core::System& system, std::string filename)
 {
   if (!CheckIfStateLoadIsAllowed(system))
     return;
+
+  if (Core::GetState(system) == Core::State::Paused)
+  {
+    const Core::CPUThreadGuard guard(system);
+    LoadAsFromCore(system, std::move(filename));
+    return;
+  }
 
   Core::RunOnCPUThread(system, [&system, filename = std::move(filename)]() mutable {
     LoadAsFromCore(system, std::move(filename));

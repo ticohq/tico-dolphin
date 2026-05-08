@@ -1,4 +1,5 @@
 // Copyright 2014 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/PowerPC/JitArm64/Jit.h"
@@ -161,8 +162,8 @@ void JitArm64::EmitBackpatchRoutine(u32 flags, MemAccessMode mode, ARM64Reg RS, 
 
       if (jo.fastmem && !emitting_routine)
       {
-        FastmemArea* fastmem_area = &m_fault_to_handler[fast_access_end];
-        fastmem_area->fast_access_code = fast_access_start;
+        FastmemArea* fastmem_area = &m_fault_to_handler[ConvertToExecutable(fast_access_end)];
+        fastmem_area->fast_access_code = ConvertToExecutable(fast_access_start);
         fastmem_area->slow_access_code = GetCodePtr();
       }
     }
@@ -329,6 +330,7 @@ void JitArm64::FlushPPCStateBeforeSlowAccess(ARM64Reg temp_gpr, ARM64Reg temp_fp
 
 bool JitArm64::HandleFastmemFault(SContext* ctx)
 {
+  // The fault PC is the RX address; the map is now keyed by RX.
   const u8* pc = reinterpret_cast<const u8*>(ctx->CTX_PC);
   auto slow_handler_iter = m_fault_to_handler.upper_bound(pc);
 
@@ -336,25 +338,34 @@ bool JitArm64::HandleFastmemFault(SContext* ctx)
   if (slow_handler_iter == m_fault_to_handler.end())
     return false;
 
-  const u8* fastmem_area_start = slow_handler_iter->second.fast_access_code;
-  const u8* fastmem_area_end = slow_handler_iter->first;
+  const u8* fastmem_area_start_rx = slow_handler_iter->second.fast_access_code;
+  const u8* fastmem_area_end_rx = slow_handler_iter->first;
 
   // no overlapping fastmem area found
-  if (pc < fastmem_area_start)
+  if (pc < fastmem_area_start_rx)
+  {
     return false;
+  }
+
+  // Patch the fastmem path in the RW mapping; FlushIcacheSection invalidates the RX side.
+  u8* rw_start = const_cast<u8*>(ConvertToWritable(fastmem_area_start_rx));
+  u8* rw_end_bound = const_cast<u8*>(ConvertToWritable(fastmem_area_end_rx));
 
   const Common::ScopedJITPageWriteAndNoExecute enable_jit_page_writes(GetRegionPtr());
-  ARM64XEmitter emitter(const_cast<u8*>(fastmem_area_start), const_cast<u8*>(fastmem_area_end));
+  ARM64XEmitter emitter(rw_start, rw_end_bound);
 
+  // slow_access_code is stored as RW so this relative BL encodes correctly from rw_start.
   emitter.BL(slow_handler_iter->second.slow_access_code);
 
-  while (emitter.GetCodePtr() < fastmem_area_end)
+  while (emitter.GetCodePtr() < rw_end_bound)
     emitter.NOP();
 
   m_fault_to_handler.erase(slow_handler_iter);
 
-  emitter.FlushIcache();
+  u8* rw_end = const_cast<u8*>(emitter.GetCodePtr());
+  emitter.FlushIcacheSection(rw_start, rw_end, const_cast<u8*>(fastmem_area_start_rx),
+                             ConvertToExecutable(rw_end));
 
-  ctx->CTX_PC = reinterpret_cast<std::uintptr_t>(fastmem_area_start);
+  ctx->CTX_PC = reinterpret_cast<std::uintptr_t>(fastmem_area_start_rx);
   return true;
 }

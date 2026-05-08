@@ -1,4 +1,5 @@
 // Copyright 2008 Dolphin Emulator Project
+// Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Common/MemoryUtil.h"
@@ -9,6 +10,23 @@
 #include "Common/CommonFuncs.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
+
+#ifdef __SWITCH__
+#include <map>
+#include <mutex>
+#include <switch.h>
+
+namespace
+{
+struct SwitchJITAllocation
+{
+  Jit jit;  // libnx JIT object
+};
+
+std::map<void*, SwitchJITAllocation> g_switch_jit_allocations;
+std::mutex g_switch_jit_mutex;
+}  // namespace
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -24,7 +42,9 @@
 #elif defined __HAIKU__
 #include <OS.h>
 #else
+#ifndef __SWITCH__
 #include <sys/sysinfo.h>
+#endif
 #endif
 #endif
 
@@ -41,10 +61,42 @@ namespace Common
 static JITMemoryTracker g_jit_memory_tracker;
 #endif
 
-void* AllocateExecutableMemory(size_t size)
+ExecutableMemory AllocateExecutableMemory(size_t size)
 {
+  void* ptr = nullptr;
+  void* rx_ptr = nullptr;
 #if defined(_WIN32)
-  void* ptr = VirtualAlloc(nullptr, size, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+  ptr = VirtualAlloc(nullptr, size, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+  rx_ptr = ptr;
+#elif defined(__SWITCH__)
+  Jit jit;
+  Result rc = jitCreate(&jit, size);
+  if (R_FAILED(rc))
+  {
+    PanicAlertFmt("jitCreate failed: 0x{:X}", rc);
+    return {nullptr, nullptr};
+  }
+
+  // Transition to writable so we can write code
+  rc = jitTransitionToWritable(&jit);
+  if (R_FAILED(rc))
+  {
+    jitClose(&jit);
+    PanicAlertFmt("jitTransitionToWritable failed: 0x{:X}", rc);
+    return {nullptr, nullptr};
+  }
+
+  ptr = jitGetRwAddr(&jit);      // Writable address for code generation
+  rx_ptr = jitGetRxAddr(&jit);   // Executable address for execution
+
+  // Track allocation for proper cleanup
+  {
+    std::lock_guard<std::mutex> lock(g_switch_jit_mutex);
+    g_switch_jit_allocations[ptr] = {jit};
+  }
+
+  INFO_LOG_FMT(MEMMAP, "Switch JIT: Allocated {} bytes - RW={}, RX={}", size, fmt::ptr(ptr),
+               fmt::ptr(rx_ptr));
 #else
   int map_flags = MAP_ANON | MAP_PRIVATE;
 #if defined(__APPLE__) && !defined(IPHONEOS)
@@ -57,9 +109,10 @@ void* AllocateExecutableMemory(size_t size)
   map_prot |= PROT_WRITE;
 #endif
 
-  void* ptr = mmap(nullptr, size, map_prot, map_flags, -1, 0);
+  ptr = mmap(nullptr, size, map_prot, map_flags, -1, 0);
   if (ptr == MAP_FAILED)
     ptr = nullptr;
+  rx_ptr = nullptr;
 #endif
 
   if (ptr == nullptr)
@@ -69,7 +122,12 @@ void* AllocateExecutableMemory(size_t size)
   g_jit_memory_tracker.RegisterJITRegion(ptr, size);
 #endif
 
-  return ptr;
+#ifndef __SWITCH__
+  // On most platforms, RW and RX are the same pointer.
+  rx_ptr = ptr;
+#endif
+
+  return {ptr, rx_ptr};
 }
 #ifndef IPHONEOS
 // This function is used to provide a counter for the JITPageWrite*Execute*
@@ -155,6 +213,8 @@ void* AllocateMemoryPages(size_t size)
 {
 #ifdef _WIN32
   void* ptr = VirtualAlloc(nullptr, size, MEM_COMMIT, PAGE_READWRITE);
+#elif defined(__SWITCH__)
+  void* ptr = memalign(0x1000, (size + 0xFFF) & ~0xFFF);
 #else
   void* ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
 
@@ -172,6 +232,8 @@ void* AllocateAlignedMemory(size_t size, size_t alignment)
 {
 #ifdef _WIN32
   void* ptr = _aligned_malloc(size, alignment);
+#elif defined(__SWITCH__)
+  void* ptr = memalign(alignment, size);
 #else
   void* ptr = nullptr;
   if (posix_memalign(&ptr, alignment, size) != 0)
@@ -194,6 +256,8 @@ bool FreeMemoryPages(void* ptr, size_t size)
       PanicAlertFmt("FreeMemoryPages failed!\nVirtualFree: {}", GetLastErrorString());
       return false;
     }
+#elif defined(__SWITCH__)
+    free(ptr);
 #else
     if (munmap(ptr, size) != 0)
     {
@@ -221,6 +285,45 @@ void FreeAlignedMemory(void* ptr)
   }
 }
 
+void FreeExecutableMemory(void* ptr, size_t size)
+{
+#ifdef __SWITCH__
+  if (!ptr)
+    return;
+
+  SwitchJITAllocation alloc;
+  bool found = false;
+
+  {
+    std::lock_guard<std::mutex> lock(g_switch_jit_mutex);
+    auto it = g_switch_jit_allocations.find(ptr);
+    if (it != g_switch_jit_allocations.end())
+    {
+      alloc = it->second;
+      g_switch_jit_allocations.erase(it);
+      found = true;
+    }
+  }
+
+  if (found)
+  {
+    Result rc = jitClose(&alloc.jit);
+    if (R_FAILED(rc))
+    {
+      ERROR_LOG_FMT(MEMMAP, "Switch JIT: jitClose failed: 0x{:X}", rc);
+    }
+    INFO_LOG_FMT(MEMMAP, "Switch JIT: Freed JIT buffer at {}", fmt::ptr(ptr));
+  }
+  else
+  {
+    WARN_LOG_FMT(MEMMAP, "Switch JIT: FreeExecutableMemory called with unknown pointer {}",
+                 fmt::ptr(ptr));
+  }
+#else
+  FreeMemoryPages(ptr, size);
+#endif
+}
+
 bool ReadProtectMemory(void* ptr, size_t size)
 {
 #ifdef _WIN32
@@ -230,6 +333,8 @@ bool ReadProtectMemory(void* ptr, size_t size)
     PanicAlertFmt("ReadProtectMemory failed!\nVirtualProtect: {}", GetLastErrorString());
     return false;
   }
+#elif defined(__SWITCH__)
+  return false;
 #else
   if (mprotect(ptr, size, PROT_NONE) != 0)
   {
@@ -249,6 +354,8 @@ bool WriteProtectMemory(void* ptr, size_t size, bool allowExecute)
     PanicAlertFmt("WriteProtectMemory failed!\nVirtualProtect: {}", GetLastErrorString());
     return false;
   }
+#elif defined(__SWITCH__)
+  // RW/RX dual mapping handles W^X.
 #elif !(defined(_M_ARM_64) && defined(__APPLE__) && !defined(IPHONEOS))
   // MacOS 11.2 on ARM does not allow for changing the access permissions of pages
   // that were marked executable, instead it uses the protections offered by MAP_JIT
@@ -271,6 +378,8 @@ bool UnWriteProtectMemory(void* ptr, size_t size, bool allowExecute)
     PanicAlertFmt("UnWriteProtectMemory failed!\nVirtualProtect: {}", GetLastErrorString());
     return false;
   }
+#elif defined(__SWITCH__)
+  // RW/RX dual mapping handles W^X.
 #elif !(defined(_M_ARM_64) && defined(__APPLE__) && !defined(IPHONEOS))
   // MacOS 11.2 on ARM does not allow for changing the access permissions of pages
   // that were marked executable, instead it uses the protections offered by MAP_JIT
@@ -310,6 +419,10 @@ size_t MemPhysical()
   system_info sysinfo;
   get_system_info(&sysinfo);
   return static_cast<size_t>(sysinfo.max_pages * B_PAGE_SIZE);
+#elif defined(__SWITCH__)
+  u64 size = 0;
+  svcGetInfo(&size, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+  return static_cast<size_t>(size);
 #else
   struct sysinfo memInfo;
   sysinfo(&memInfo);
