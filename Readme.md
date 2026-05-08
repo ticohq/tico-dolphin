@@ -3,6 +3,7 @@
 <source media="(prefers-color-scheme: light)" srcset="https://i.imgur.com/4cpzGnB.png">  
 <img src="https://i.imgur.com/8qsV6MH.png" width="200">  
 </picture>  
+
 *Part of the Tico ecosystem* — https://www.ticoverse.com
 
 **Dolphin** is a widely used emulator for the Nintendo GameCube and Wii, known for its accuracy, compatibility, and active development.
