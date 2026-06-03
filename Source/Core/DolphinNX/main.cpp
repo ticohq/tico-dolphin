@@ -707,6 +707,10 @@ int main(int argc, char* argv[])
         if (overlay_just_opened && Core::GetState(system) == Core::State::Running)
         {
           Core::SetState(system, Core::State::Paused);
+          // Wait for the GPU thread to finish its in-flight frame before the main
+          // thread starts driving presents via g_presenter->Present(). Without this,
+          // both threads can call DrawCallback / ImGui concurrently.
+          system.GetFifo().FlushGpu();
           overlay_paused_core = true;
           just_paused_for_overlay = true;
           LOG("Overlay: paused emulation on open\n");

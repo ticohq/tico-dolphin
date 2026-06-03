@@ -28,6 +28,7 @@
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
 #include "Core/HW/EXI/EXI_Device.h"
+#include "Core/HW/SI/SI_Device.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "DiscIO/Enums.h"
 #include "VideoCommon/VideoConfig.h"
@@ -927,6 +928,17 @@ private:
     Config::SetBase(Config::GFX_TEXFMT_OVERLAY_CENTER, false);
     Config::SetBase(Config::GFX_ENABLE_WIREFRAME, false);
     Config::SetBase(Config::GFX_MODS_ENABLE, false);
+
+    // For GC games, enable all 4 SI ports before the game boots. GC games probe
+    // the serial interface during the IPL / early init and won't see controllers
+    // added later. Enabling them here ensures all 4 ports are active from the
+    // first SI poll, so multi-player works. For Wii games this block is skipped
+    // because Wiimotes connect dynamically and don't have this timing constraint.
+    if (is_gamecube_disc)
+    {
+      for (int port = 0; port < 4; ++port)
+        Config::SetBase(Config::GetInfoForSIDevice(port), SerialInterface::SIDEVICE_GC_CONTROLLER);
+    }
 
     Core::SetIsThrottlerTempDisabled(false);
   }

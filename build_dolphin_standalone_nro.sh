@@ -63,7 +63,7 @@ cp -R "${SCRIPT_DIR}/Source/Core/DolphinNX/Assets/lang" "${ROMFS_DIR}/"
 nacptool --create \
   "tico Dolphin" \
   "ticoverse.com, dolphin-emu" \
-  "0.0.4" \
+  "0.0.5" \
   "${BUILD_DIR}/dolphin.nacp"
 
 cp "${BUILD_DIR}/Binaries/dolphin-nx" "${BUILD_DIR}/Binaries/dolphin-nx.debug.elf"
