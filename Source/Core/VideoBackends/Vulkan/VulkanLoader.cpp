@@ -25,9 +25,17 @@ VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t* pSupporte
 #include "VideoCommon/VideoConfig.h"
 #endif
 
+// Switch: asm-label rename avoids colliding with the static NVK ICD's real vk*
+// functions under -flto. Must match the extern declarations in VulkanLoader.h.
+#if defined(__SWITCH__)
+#define VULKAN_MODULE_ENTRY_POINT(name, required) PFN_##name name asm("dolphin_dispatch_" #name);
+#define VULKAN_INSTANCE_ENTRY_POINT(name, required) PFN_##name name asm("dolphin_dispatch_" #name);
+#define VULKAN_DEVICE_ENTRY_POINT(name, required) PFN_##name name asm("dolphin_dispatch_" #name);
+#else
 #define VULKAN_MODULE_ENTRY_POINT(name, required) PFN_##name name;
 #define VULKAN_INSTANCE_ENTRY_POINT(name, required) PFN_##name name;
 #define VULKAN_DEVICE_ENTRY_POINT(name, required) PFN_##name name;
+#endif
 #include "VideoBackends/Vulkan/VulkanEntryPoints.inl"
 #undef VULKAN_DEVICE_ENTRY_POINT
 #undef VULKAN_INSTANCE_ENTRY_POINT

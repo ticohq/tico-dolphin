@@ -9,7 +9,9 @@
 #include <optional>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <chrono>
+#include <dirent.h>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
@@ -483,6 +485,163 @@ static int ExitSwitchFrontend(int exit_code)
   return exit_code;
 }
 
+// ---------------------------------------------------------------------------
+// GC Sys installer
+//
+// Dolphin needs its "Sys" tree (GameSettings, Shaders, Resources, GC/Wii config,
+// ...) at sdmc:/tico/system/gc/Sys before File::SetSysDirectory. It is shipped in
+// this NRO's RomFS (romfs:/Sys, from Data/Sys) and copied to the SD on first run --
+// the same pattern the PPSSPP core uses for its assets. A version marker keeps
+// normal launches from re-walking RomFS. Bump kGcSysVersion when Data/Sys changes.
+// ---------------------------------------------------------------------------
+static constexpr const char* kGcSysSource = "romfs:/Sys";
+static constexpr const char* kGcSysDest = "sdmc:/tico/system/gc/Sys";
+static constexpr const char* kGcSysMarker = "sdmc:/tico/system/gc/.sys_version";
+static constexpr const char* kGcSysVersion = "gc-sys-v1";
+
+static constexpr const char* kGcSysSentinel = "sdmc:/tico/system/gc/Sys/ApprovedInis.json";
+
+static bool PathIsDir(const char* p)
+{
+  struct stat st{};
+  return stat(p, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+static bool PathIsFile(const char* p)
+{
+  struct stat st{};
+  return stat(p, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0;
+}
+
+static void EnsureDir(const std::string& p)
+{
+  mkdir(p.c_str(), 0777);
+}
+
+static bool CopyOneFile(const std::string& src, const std::string& dst)
+{
+  FILE* in = fopen(src.c_str(), "rb");
+  if (!in)
+    return false;
+  remove(dst.c_str());
+  FILE* out = fopen(dst.c_str(), "wb");
+  if (!out)
+  {
+    fclose(in);
+    return false;
+  }
+  static char buf[64 * 1024];
+  bool ok = true;
+  size_t n;
+  while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
+  {
+    if (fwrite(buf, 1, n, out) != n)
+    {
+      ok = false;
+      break;
+    }
+  }
+  if (ferror(in))
+    ok = false;
+  fclose(in);
+  if (fclose(out) != 0)
+    ok = false;
+  if (!ok)
+    remove(dst.c_str());
+  return ok;
+}
+
+static bool CopyTreeRecursive(const std::string& src, const std::string& dst)
+{
+  EnsureDir(dst);
+  DIR* d = opendir(src.c_str());
+  if (!d)
+    return false;
+  bool ok = true;
+  while (struct dirent* e = readdir(d))
+  {
+    if (!std::strcmp(e->d_name, ".") || !std::strcmp(e->d_name, ".."))
+      continue;
+    const std::string s = src + "/" + e->d_name;
+    const std::string t = dst + "/" + e->d_name;
+    struct stat st{};
+    if (stat(s.c_str(), &st) != 0)
+    {
+      ok = false;
+      break;
+    }
+    if (S_ISDIR(st.st_mode))
+    {
+      if (!CopyTreeRecursive(s, t))
+      {
+        ok = false;
+        break;
+      }
+    }
+    else if (S_ISREG(st.st_mode))
+    {
+      if (!CopyOneFile(s, t))
+      {
+        ok = false;
+        break;
+      }
+    }
+  }
+  closedir(d);
+  return ok;
+}
+
+static bool GcSysMarkerMatches()
+{
+  FILE* f = fopen(kGcSysMarker, "rb");
+  if (!f)
+    return false;
+  char buf[64] = {0};
+  const size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+  fclose(f);
+  std::string v(buf, n);
+  while (!v.empty() && (v.back() == '\n' || v.back() == '\r' || v.back() == ' ' || v.back() == '\t'))
+    v.pop_back();
+  return v == kGcSysVersion;
+}
+
+// Copies romfs:/Sys -> sdmc:/tico/system/gc/Sys on first run (or after a version
+// bump). Safe to call every boot: the marker check makes the common case a no-op.
+static void EnsureGcSysInstalled()
+{
+  if (GcSysMarkerMatches() && PathIsFile(kGcSysSentinel))
+  {
+    LOG("GC Sys already installed (version=%s)\n", kGcSysVersion);
+    return;
+  }
+  if (!PathIsDir(kGcSysSource))
+  {
+    LOG("GC Sys source missing in RomFS (%s) -- skipping install\n", kGcSysSource);
+    return;
+  }
+
+  EnsureDir("sdmc:/tico");
+  EnsureDir("sdmc:/tico/system");
+  EnsureDir("sdmc:/tico/system/gc");
+
+  LOG("Installing GC Sys: %s -> %s\n", kGcSysSource, kGcSysDest);
+  if (!CopyTreeRecursive(kGcSysSource, kGcSysDest))
+  {
+    LOG("GC Sys install FAILED\n");
+    return;
+  }
+
+  remove(kGcSysMarker);
+  if (FILE* f = fopen(kGcSysMarker, "wb"))
+  {
+    fputs(kGcSysVersion, f);
+    fputc('\n', f);
+    fclose(f);
+  }
+  fsdevCommitDevice("sdmc");
+  LOG("GC Sys install complete (version=%s)\n", kGcSysVersion);
+}
+
 int main(int argc, char* argv[])
 {
   appletLockExit();
@@ -552,6 +711,9 @@ int main(int argc, char* argv[])
 
     const std::string user_dir = "sdmc:/tico/system/gc/User";
     const std::string sys_dir = "sdmc:/tico/system/gc/Sys";
+
+    // Seed Dolphin's Sys tree onto the SD from RomFS before anything reads it.
+    EnsureGcSysInstalled();
 
     LOG("SetSysDirectory: %s\n", sys_dir.c_str());
     File::SetSysDirectory(sys_dir);

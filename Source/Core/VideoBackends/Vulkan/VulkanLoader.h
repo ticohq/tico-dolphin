@@ -38,9 +38,21 @@
 #endif
 
 // We abuse the preprocessor here to only need to specify function names once.
+#if defined(__SWITCH__)
+// The statically-linked NVK ICD exports real vk* functions, which collide with our
+// pointer storage of the same name under -flto. Rename just the linker symbol via
+// an asm label; the C++ identifier (and every call site) is unchanged.
+#define VULKAN_MODULE_ENTRY_POINT(name, required)                                                    \
+  extern PFN_##name name asm("dolphin_dispatch_" #name);
+#define VULKAN_INSTANCE_ENTRY_POINT(name, required)                                                  \
+  extern PFN_##name name asm("dolphin_dispatch_" #name);
+#define VULKAN_DEVICE_ENTRY_POINT(name, required)                                                    \
+  extern PFN_##name name asm("dolphin_dispatch_" #name);
+#else
 #define VULKAN_MODULE_ENTRY_POINT(name, required) extern PFN_##name name;
 #define VULKAN_INSTANCE_ENTRY_POINT(name, required) extern PFN_##name name;
 #define VULKAN_DEVICE_ENTRY_POINT(name, required) extern PFN_##name name;
+#endif
 #include "VideoBackends/Vulkan/VulkanEntryPoints.inl"
 #undef VULKAN_DEVICE_ENTRY_POINT
 #undef VULKAN_INSTANCE_ENTRY_POINT
@@ -78,8 +90,20 @@
 #define VMA_STATIC_VULKAN_FUNCTIONS 1
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
 #endif
+#if !defined(__SWITCH__)
+// Desktop VMA needs the static prototypes visible; Switch VMA is dynamic, so
+// keep VK_NO_PROTOTYPES defined there to avoid an LTO collision with our
+// entry-point variables (VulkanEntryPoints.inl).
 #undef VK_NO_PROTOTYPES
+#endif
 #include "vk_mem_alloc.h"
+
+// Restore VK_NO_PROTOTYPES unconditionally: a later direct vulkan_core.h include
+// (e.g. CommandBufferManager.cpp) would otherwise re-emit prototypes and collide
+// with our entry-point variables at LTO.
+#ifndef VK_NO_PROTOTYPES
+#define VK_NO_PROTOTYPES
+#endif
 
 #ifdef _MSVC_LANG
 #pragma warning(pop)

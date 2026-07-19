@@ -56,14 +56,16 @@ cmake --build "${BUILD_DIR}" --target dolphin-nx -j"$(nproc)"
 echo ""
 echo "=== Packaging NRO ==="
 
-rm -rf "${ROMFS_DIR}/fonts" "${ROMFS_DIR}/lang"
+rm -rf "${ROMFS_DIR}/fonts" "${ROMFS_DIR}/lang" "${ROMFS_DIR}/Sys"
 mkdir -p "${ROMFS_DIR}"
 cp -R "${SCRIPT_DIR}/Source/Core/DolphinNX/Assets/fonts" "${ROMFS_DIR}/"
 cp -R "${SCRIPT_DIR}/Source/Core/DolphinNX/Assets/lang" "${ROMFS_DIR}/"
+# Dolphin's Sys tree, seeded to sdmc:/tico/system/gc/Sys on first run (see main.cpp).
+cp -R "${SCRIPT_DIR}/Data/Sys" "${ROMFS_DIR}/"
 nacptool --create \
   "tico Dolphin" \
   "ticoverse.com, dolphin-emu" \
-  "0.0.5" \
+  "0.0.6" \
   "${BUILD_DIR}/dolphin.nacp"
 
 cp "${BUILD_DIR}/Binaries/dolphin-nx" "${BUILD_DIR}/Binaries/dolphin-nx.debug.elf"

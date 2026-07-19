@@ -12,6 +12,7 @@ add_executable(dolphin-nx
   Host.cpp
   Audio.cpp
   Input.cpp
+  ControllerProfiles.cpp
   NetPlayStubs.cpp
   TicoCore.cpp
   Overlay/Overlay.cpp
