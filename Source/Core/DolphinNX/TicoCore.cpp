@@ -51,13 +51,12 @@ constexpr std::array<const char*, 6> kConfigPaths = {{
 
 constexpr std::string_view kDefaultWritableConfigPath = "sdmc:/tico/config/cores/dolphin.jsonc";
 
-constexpr std::array<std::string_view, 30> kFixedBaseOptions = {{
+constexpr std::array<std::string_view, 29> kFixedBaseOptions = {{
     "dolphin_cpu_core",
     "dolphin_main_cpu_thread",
     "dolphin_fastmem",
     "dolphin_fastmem_arena",
     "dolphin_main_accurate_cpu_cache",
-    "dolphin_cheats_enabled",
     "dolphin_enable_savestates",
     "dolphin_dsp_hle",
     "dolphin_dsp_thread",
@@ -84,13 +83,14 @@ constexpr std::array<std::string_view, 30> kFixedBaseOptions = {{
     "dolphin_mods_enable",
 }};
 
-constexpr std::array<std::pair<std::string_view, std::string_view>, 73> kDefaultOptions = {{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 74> kDefaultOptions = {{
     {"display_mode", "Display"},
     {"display_size", "4:3"},
     {"integer_scale", "Auto"},
     {"dolphin_cpu_clock_rate", "1.0"},
     {"dolphin_emulation_speed", "1.0"},
     {"dolphin_precision_frame_timing", "disabled"},
+    {"dolphin_cheats_enabled", "disabled"},
     {"dolphin_cheats_import", "enabled"},
     {"dolphin_skip_gc_bios", "disabled"},
     {"dolphin_language", "1"},
@@ -160,7 +160,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 73> kDefault
     {"dolphin_save_load_settings", "disabled"},
 }};
 
-static_assert(kDefaultOptions.size() == 73);
+static_assert(kDefaultOptions.size() == 74);
 
 std::string StripJsonComments(std::string_view input)
 {
@@ -962,6 +962,9 @@ private:
     Config::SetBase(Config::MAIN_PRECISION_FRAME_TIMING,
                     GetBool("dolphin_precision_frame_timing",
                             Config::Get(Config::MAIN_PRECISION_FRAME_TIMING)));
+    Config::SetBase(Config::MAIN_ENABLE_CHEATS,
+                    GetBool("dolphin_cheats_enabled",
+                            Config::Get(Config::MAIN_ENABLE_CHEATS)));
     Config::SetBase(Config::MAIN_MMU,
                     GetBool("dolphin_main_mmu", Config::Get(Config::MAIN_MMU)));
     Config::SetBase(Config::MAIN_SYNC_GPU,
