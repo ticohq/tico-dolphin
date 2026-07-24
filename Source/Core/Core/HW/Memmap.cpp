@@ -299,12 +299,13 @@ void MemoryManager::UpdateDBATMappings(const PowerPC::BatTable& dbat_table)
         if (intersection_start < intersection_end)
         {
           // Found an overlapping region; map it.
+          u32 mapped_logical_address = logical_address + intersection_start - translated_address;
+          u32 mapped_size = intersection_end - intersection_start;
 
           if (m_is_fastmem_arena_initialized)
           {
             u32 position = physical_region.shm_position + intersection_start - mapping_address;
-            u8* base = m_logical_base + logical_address + intersection_start - translated_address;
-            u32 mapped_size = intersection_end - intersection_start;
+            u8* base = m_logical_base + mapped_logical_address;
 
             void* mapped_pointer = m_arena.MapInMemoryRegion(position, mapped_size, base, true);
             if (!mapped_pointer)
@@ -321,20 +322,10 @@ void MemoryManager::UpdateDBATMappings(const PowerPC::BatTable& dbat_table)
             }
           }
 
-          const u32 start_page = logical_address >> PowerPC::BAT_INDEX_SHIFT;
-          const u32 page_count = logical_size >> PowerPC::BAT_INDEX_SHIFT;
-          for (u32 page = 0; page < page_count; ++page)
-          {
-            const u32 page_offset = page << PowerPC::BAT_INDEX_SHIFT;
-            const u32 phys_offset =
-                (translated_address + page_offset) - physical_region.physical_address;
-            if (translated_address + page_offset >= intersection_start &&
-                translated_address + page_offset < intersection_end)
-            {
-              m_logical_page_mappings[start_page + page] =
-                  *physical_region.out_pointer + phys_offset;
-            }
-          }
+          u32 bat_index = mapped_logical_address / PowerPC::BAT_PAGE_SIZE;
+          u8* target_address = *physical_region.out_pointer + intersection_start - mapping_address;
+          for (u32 j = 0; j < mapped_size / PowerPC::BAT_PAGE_SIZE; ++j)
+            m_logical_page_mappings[bat_index + j] = target_address + j * PowerPC::BAT_PAGE_SIZE;
         }
       }
     }
@@ -388,7 +379,7 @@ bool MemoryManager::TryAddLargePageTableMapping(u32 logical_address, u32 transla
   return CanCreateHostMappingForGuestPages(entries);
 }
 
-bool MemoryManager::CanCreateHostMappingForGuestPages(const std::vector<u32>& entries) const
+bool MemoryManager::CanCreateHostMappingForGuestPages(std::span<const u32> entries) const
 {
   const u32 translated_address = entries[0];
   if ((translated_address & (m_page_size - 1)) != 0)
@@ -460,7 +451,9 @@ void MemoryManager::RemovePageTableMappings(const std::set<u32>& mappings)
   switch (m_host_page_type)
   {
   case HostPageType::SmallPages:
-    return RemoveHostPageTableMappings(mappings);
+    for (u32 logical_address : mappings)
+      RemoveHostPageTableMapping(logical_address);
+    return;
   case HostPageType::LargePages:
     for (u32 logical_address : mappings)
       RemoveLargePageTableMapping(logical_address);
@@ -475,15 +468,7 @@ void MemoryManager::RemoveLargePageTableMapping(u32 logical_address)
   RemoveLargePageTableMapping(logical_address, m_large_readable_pages);
   RemoveLargePageTableMapping(logical_address, m_large_writeable_pages);
 
-  const u32 aligned_logical_address = logical_address & ~(m_page_size - 1);
-  const auto it = m_page_table_mapped_entries.find(aligned_logical_address);
-  if (it != m_page_table_mapped_entries.end())
-  {
-    const LogicalMemoryView& entry = it->second;
-    m_arena.UnmapFromMemoryRegion(entry.mapped_pointer, entry.mapped_size, entry.shm_offset);
-
-    m_page_table_mapped_entries.erase(it);
-  }
+  RemoveHostPageTableMapping(logical_address & ~(m_page_size - 1));
 }
 
 void MemoryManager::RemoveLargePageTableMapping(u32 logical_address,
@@ -494,18 +479,16 @@ void MemoryManager::RemoveLargePageTableMapping(u32 logical_address,
     it->second[(logical_address & (m_page_size - 1)) / PowerPC::HW_PAGE_SIZE] = INVALID_MAPPING;
 }
 
-void MemoryManager::RemoveHostPageTableMappings(const std::set<u32>& mappings)
+void MemoryManager::RemoveHostPageTableMapping(u32 logical_address)
 {
-  if (mappings.empty())
-    return;
+  const auto it = m_page_table_mapped_entries.find(logical_address);
+  if (it != m_page_table_mapped_entries.end())
+  {
+    const LogicalMemoryView& entry = it->second;
+    m_arena.UnmapFromMemoryRegion(entry.mapped_pointer, entry.mapped_size, entry.shm_offset);
 
-  std::erase_if(m_page_table_mapped_entries, [this, &mappings](const auto& pair) {
-    const auto& [logical_address, entry] = pair;
-    const bool remove = mappings.contains(logical_address);
-    if (remove)
-      m_arena.UnmapFromMemoryRegion(entry.mapped_pointer, entry.mapped_size, entry.shm_offset);
-    return remove;
-  });
+    m_page_table_mapped_entries.erase(it);
+  }
 }
 
 void MemoryManager::RemoveAllPageTableMappings()

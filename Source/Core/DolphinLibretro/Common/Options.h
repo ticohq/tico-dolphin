@@ -1,9 +1,10 @@
 #pragma once
 
 #include <cassert>
-#include <libretro.h>
 #include <string>
 #include <vector>
+
+#include <libretro.h>
 
 #include "Common/Logging/Log.h"
 #include "Core/PowerPC/PowerPC.h"
@@ -12,6 +13,18 @@
 
 #define MODIFIER_DISABLED_CONTROL "Disabled"
 #define MODIFIER_NO_MODIFIER "None"
+
+struct CachedOption
+{
+  std::string raw;
+  long int_value = 0;
+  double double_value = 0.0;
+  bool bool_value = false;
+
+  bool has_int = false;
+  bool has_double = false;
+  bool has_bool = false;
+};
 
 namespace Libretro
 {
@@ -127,8 +140,8 @@ namespace core {
   constexpr const char FASTMEM_ARENA[] = "dolphin_fastmem_arena";
   constexpr const char MAIN_ACCURATE_CPU_CACHE[] = "dolphin_main_accurate_cpu_cache";
   constexpr const char CHEATS_ENABLED[] = "dolphin_cheats_enabled";
-  constexpr const char CHEATS_IMPORT[] = "dolphin_cheats_import";
   constexpr const char SKIP_GC_BIOS[] = "dolphin_skip_gc_bios";
+  constexpr const char DISC_BASED_GAMES_BOOT_TO_WII_MENU[] = "dolphin_disc_based_games_boot_to_wii_menu";
   constexpr const char LANGUAGE[] = "dolphin_language";
   constexpr const char FAST_DISC_SPEED[] = "dolphin_fast_disc_speed";
   constexpr const char MAIN_MMU[] = "dolphin_main_mmu";
@@ -151,6 +164,16 @@ namespace core {
 namespace main_interface {
   constexpr const char OSD_ENABLED[] = "dolphin_osd_enabled";
   constexpr const char LOG_LEVEL[] = "dolphin_log_level";
+  constexpr const char LOG_BOOT[] = "dolphin_log_boot_enabled";
+  constexpr const char LOG_CORE[] = "dolphin_log_core_enabled";
+  constexpr const char LOG_VIDEO[] = "dolphin_log_video_enabled";
+  constexpr const char LOG_COMMON[] = "dolphin_log_common_enabled";
+  constexpr const char LOG_HOST_GPU[] = "dolphin_log_host_gpu_enabled";
+  constexpr const char LOG_MEMMAP[] = "dolphin_log_memmap_enabled";
+  constexpr const char LOG_DSPINTERFACE[] = "dolphin_log_dspinterface_enabled";
+  constexpr const char LOG_DSPHLE[] = "dolphin_log_dsphle_enabled";
+  constexpr const char LOG_DSPLLE[] = "dolphin_log_dsplle_enabled";
+  constexpr const char LOG_DSP_MAIL[] = "dolphin_log_dsp_mail_enabled";
   constexpr const char ENABLE_DEBUGGING[] = "dolphin_debug_mode_enabled";
 }  // namespace main_interface
 
@@ -254,6 +277,13 @@ namespace gfx_hacks {
 }  // namespace gfx_hacks
 
 // ======================================================
+// Graphics > Game Specific
+// ======================================================
+namespace gfx_gamespecific {
+  constexpr const char GFX_PERF_QUERIES_ENABLE[] = "dolphin_per_queries_enable";
+}  // namespace gfx_gamespecific
+
+// ======================================================
 // Wiimote IR / Gyro / Swing
 // ======================================================
 namespace wiimote {
@@ -272,9 +302,25 @@ namespace wiimote {
   constexpr const char IR_MODIFIER[] = "dolphin_ir_modifier";
   constexpr const char SWING_MODIFIER[] = "dolphin_swing_modifier";
   constexpr const char SWING_ANGLE[] = "dolphin_swing_angle";
+}  // namespace wiimote
 
+// ======================================================
+// RetroArch unique settings
+// ======================================================
+namespace retroarch_core {
+  constexpr const char CHEATS_IMPORT[] = "dolphin_cheats_import";
   // preserve settings
   constexpr const char SAVE_LOAD_SETTINGS[] = "dolphin_save_load_settings";
+
+#if defined(HAS_OPENGL) && defined(__WEBOS__)
+  constexpr const char SUPPORTS_BINDING_LAYOUT[] = "dolphin_supports_binding_layout";
+  constexpr const char SUPPORTS_COPY_SUB_IMAGE[] = "dolphin_supports_copy_sub_image";
+  constexpr const char SUPPORTS_GL_BASE_VERTEX[] = "dolphin_supports_gl_base_vertex";
+#endif
+
+  constexpr const char ENABLE_LIBRETRO_VFS[] = "dolphin_libretro_vfs_enabled";
+
 }  // namespace wiimote
+
 }  // namespace Options
 }  // namespace Libretro

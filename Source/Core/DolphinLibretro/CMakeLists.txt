@@ -15,14 +15,14 @@ if(ENABLE_VULKAN)
   )
 endif()
 
-include_directories(${CMAKE_SOURCE_DIR}/Externals/Libretro/Include)
+include_directories(${CMAKE_SOURCE_DIR}/Externals/libretro-common/include)
 
 if(ENABLE_VULKAN)
 	include_directories(${CMAKE_SOURCE_DIR}/Externals/Vulkan-Headers/include)
 	include_directories(${CMAKE_SOURCE_DIR}/Externals/VulkanMemoryAllocator/include)
 endif()
 
-target_include_directories(dolphin_libretro PRIVATE ${CMAKE_SOURCE_DIR}/Externals/Libretro/Include)
+target_include_directories(dolphin_libretro PRIVATE ${CMAKE_SOURCE_DIR}/Externals/libretro-common/include)
 
 set(LIBRARY_OUTPUT_PATH "${CMAKE_BINARY_DIR}")
 
@@ -61,7 +61,7 @@ else()
 	 )
 endif()
 
-set(LIBRETRO_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/Externals/Libretro/Include)
+set(LIBRETRO_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/Externals/libretro-common/include)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/Common)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/VideoContexts)
@@ -84,4 +84,10 @@ endif()
 
 if(MINGW AND CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options(dolphin_libretro PRIVATE -Wl,--allow-multiple-definition)
+endif()
+
+if(APPLE)
+  target_sources(dolphin_libretro PRIVATE
+    ${CMAKE_SOURCE_DIR}/Source/Core/Common/CommonFuncsObjC.mm
+  )
 endif()

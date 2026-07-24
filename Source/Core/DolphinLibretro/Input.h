@@ -28,6 +28,7 @@ struct WiimoteUpdateFlags
 };
 
 void refresh_all_wiimote_flags(unsigned port, unsigned device);
+void poll_microphone();
 
 namespace Libretro
 {

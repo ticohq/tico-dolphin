@@ -21,6 +21,7 @@
 #include "Common/StringUtil.h"
 #include "Common/Version.h"
 #include "Common/WorkQueueThread.h"
+#include "Core/AchievementApprovedHash.h"
 #include "Core/ActionReplay.h"
 #include "Core/Config/AchievementSettings.h"
 #include "Core/Config/FreeLookSettings.h"
@@ -101,23 +102,24 @@ picojson::value AchievementManager::LoadApprovedList()
 {
   picojson::value temp;
   std::string error;
-  if (!JsonFromFile(fmt::format("{}{}{}", File::GetSysDirectory(), DIR_SEP, APPROVED_LIST_FILENAME),
+  if (!JsonFromFile(fmt::format("{}{}{}", File::GetSysDirectory(), DIR_SEP,
+                                ACHIEVEMENT_APPROVED_LIST_FILENAME),
                     &temp, &error))
   {
     WARN_LOG_FMT(ACHIEVEMENTS, "Failed to load approved game settings list {}",
-                 APPROVED_LIST_FILENAME);
+                 ACHIEVEMENT_APPROVED_LIST_FILENAME);
     WARN_LOG_FMT(ACHIEVEMENTS, "Error: {}", error);
     return {};
   }
   auto context = Common::SHA1::CreateContext();
   context->Update(temp.serialize());
   auto digest = context->Finish();
-  if (digest != APPROVED_LIST_HASH)
+  if (digest != ACHIEVEMENT_APPROVED_LIST_HASH)
   {
     WARN_LOG_FMT(ACHIEVEMENTS, "Failed to verify approved game settings list {}",
-                 APPROVED_LIST_FILENAME);
+                 ACHIEVEMENT_APPROVED_LIST_FILENAME);
     WARN_LOG_FMT(ACHIEVEMENTS, "Expected hash {}, found hash {}",
-                 Common::SHA1::DigestToString(APPROVED_LIST_HASH),
+                 Common::SHA1::DigestToString(ACHIEVEMENT_APPROVED_LIST_HASH),
                  Common::SHA1::DigestToString(digest));
     return {};
   }
@@ -168,6 +170,8 @@ void AchievementManager::LoadGame(const DiscIO::Volume* volume)
     WARN_LOG_FMT(ACHIEVEMENTS, "Software format unsupported by AchievementManager.");
     if (rc_client_get_game_info(m_client))
     {
+      OSD::AddMessage("Unsupported media change; disabling achievements.", OSD::Duration::VERY_LONG,
+                      OSD::Color::RED);
       CloseGame();
     }
     else
@@ -1173,26 +1177,35 @@ void AchievementManager::HandleAchievementTriggeredEvent(const rc_client_event_t
 
 void AchievementManager::HandleLeaderboardStartedEvent(const rc_client_event_t* client_event)
 {
-  OSD::AddMessage(fmt::format("Attempting leaderboard: {} - {}", client_event->leaderboard->title,
-                              client_event->leaderboard->description),
-                  OSD::Duration::VERY_LONG, OSD::Color::GREEN);
+  if (Config::Get(Config::RA_LEADERBOARD_TRACKER_ENABLED))
+  {
+    OSD::AddMessage(fmt::format("Attempting leaderboard: {} - {}", client_event->leaderboard->title,
+                                client_event->leaderboard->description),
+                    OSD::Duration::VERY_LONG, OSD::Color::GREEN);
+  }
   AchievementManager::GetInstance().FetchBoardInfo(client_event->leaderboard->id);
 }
 
 void AchievementManager::HandleLeaderboardFailedEvent(const rc_client_event_t* client_event)
 {
-  OSD::AddMessage(fmt::format("Failed leaderboard: {}", client_event->leaderboard->title),
-                  OSD::Duration::VERY_LONG, OSD::Color::RED);
+  if (Config::Get(Config::RA_LEADERBOARD_TRACKER_ENABLED))
+  {
+    OSD::AddMessage(fmt::format("Failed leaderboard: {}", client_event->leaderboard->title),
+                    OSD::Duration::VERY_LONG, OSD::Color::RED);
+  }
   AchievementManager::GetInstance().FetchBoardInfo(client_event->leaderboard->id);
 }
 
 void AchievementManager::HandleLeaderboardSubmittedEvent(const rc_client_event_t* client_event)
 {
   auto& instance = AchievementManager::GetInstance();
-  OSD::AddMessage(fmt::format("Scored {} on leaderboard: {}",
-                              client_event->leaderboard->tracker_value,
-                              client_event->leaderboard->title),
-                  OSD::Duration::VERY_LONG, OSD::Color::YELLOW);
+  if (Config::Get(Config::RA_LEADERBOARD_TRACKER_ENABLED))
+  {
+    OSD::AddMessage(fmt::format("Scored {} on leaderboard: {}",
+                                client_event->leaderboard->tracker_value,
+                                client_event->leaderboard->title),
+                    OSD::Duration::VERY_LONG, OSD::Color::YELLOW);
+  }
   instance.FetchBoardInfo(client_event->leaderboard->id);
   instance.update_event.Trigger(UpdatedItems{.leaderboards = {client_event->leaderboard->id}});
 }
@@ -1347,7 +1360,7 @@ u32 AchievementManager::MemoryPeeker(u32 address, u8* buffer, u32 num_bytes, rc_
 }
 
 void AchievementManager::FetchBadge(AchievementManager::Badge* badge, u32 badge_type,
-                                    const AchievementManager::BadgeNameFunction function,
+                                    AchievementManager::BadgeNameFunction function,
                                     UpdatedItems callback_data)
 {
   if (!m_client || !HasAPIToken())

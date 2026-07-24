@@ -156,10 +156,13 @@ NetKDRequestDevice::NetKDRequestDevice(EmulationKernel& ios, const std::string& 
     : EmulationDevice(ios, device_name), m_config{ios.GetFS()}, m_dl_list{ios.GetFS()},
       m_send_list{ios.GetFS()}, m_friend_list{ios.GetFS()}, m_time_device{time_device}
 {
+#if defined(__LIBRETRO__) && defined(SKIP_WICONNECT24_WORKER_THREAD)
+  return;
+#endif
   // Enable all NWC24 permissions
   m_scheduler_buffer[1] = Common::swap32(-1);
 
-  m_work_queue.Reset("WiiConnect24 Worker", [this](AsyncTask task) {
+  m_work_queue.Reset("WiiConnect24 Worker", [this](const AsyncTask& task) {
     const IPCReply reply = task.handler();
     {
       std::lock_guard lg(m_async_reply_lock);
@@ -207,6 +210,9 @@ void NetKDRequestDevice::Update()
 
 void NetKDRequestDevice::SchedulerTimer()
 {
+#if defined(__LIBRETRO__) && defined(SKIP_KDSCHEDULER_TIMER_THREAD)
+  return;
+#endif
   u32 mail_time_state = 0;
   u32 download_time_state = 0;
   Common::SetCurrentThreadName("KD Scheduler Timer");

@@ -27,9 +27,6 @@
 #include "Core/GeckoCode.h"
 #include "Core/GeckoCodeConfig.h"
 #include "Core/HW/CPU.h"
-#include "Core/HW/EXI/EXI.h"
-#include "Core/HW/EXI/EXI_Device.h"
-#include "Core/HW/EXI/EXI_DeviceMic.h"
 #include "Core/HW/Memmap.h"
 #include "Core/HW/ProcessorInterface.h"
 #include "Core/HW/VideoInterface.h"
@@ -182,49 +179,63 @@ void retro_run(void)
   Libretro::Input::InitSensors();
   Libretro::Options::CheckForUpdatedVariables();
   Libretro::FrameTiming::CheckForFastForwarding();
+  if (Libretro::Options::IsUpdated(Libretro::Options::main_interface::LOG_LEVEL))
+  {
 #if defined(_DEBUG)
-  Common::Log::LogManager::GetInstance()->SetConfigLogLevel(Common::Log::LogLevel::LDEBUG);
+    Common::Log::LogManager::GetInstance()->SetConfigLogLevel(Common::Log::LogLevel::LDEBUG);
 #else
-  Common::Log::LogManager::GetInstance()->SetConfigLogLevel(
-    static_cast<Common::Log::LogLevel>(
+    Common::Log::LogManager::GetInstance()->SetConfigLogLevel(
+      static_cast<Common::Log::LogLevel>(
         Libretro::Options::GetCached<int>(
-            Libretro::Options::main_interface::LOG_LEVEL, static_cast<int>(Common::Log::LogLevel::LINFO))));
+          Libretro::Options::main_interface::LOG_LEVEL, static_cast<int>(Common::Log::LogLevel::LINFO))));
 #endif
-  double cpuClock = Libretro::Options::GetCached<double>(
-    Libretro::Options::core::CPU_CLOCK_RATE);
-  Config::SetCurrent(Config::MAIN_OVERCLOCK, cpuClock);
-  Config::SetCurrent(Config::MAIN_OVERCLOCK_ENABLE, cpuClock != 1.0);
-  g_Config.bWidescreenHack = Libretro::Options::GetCached<bool>(
-    Libretro::Options::gfx_settings::WIDESCREEN_HACK);
+  }
 
-  const bool crop_overscan = Libretro::Options::GetCached<bool>(
-    Libretro::Options::gfx_settings::CROP_OVERSCAN);
+  if (Libretro::Options::IsUpdated(Libretro::Options::core::CPU_CLOCK_RATE))
+  {
+    double cpuClock = Libretro::Options::GetCached<double>(
+      Libretro::Options::core::CPU_CLOCK_RATE);
+    Config::SetCurrent(Config::MAIN_OVERCLOCK, cpuClock);
+    Config::SetCurrent(Config::MAIN_OVERCLOCK_ENABLE, cpuClock != 1.0);
+  }
 
-  if (crop_overscan && retro_get_region() == RETRO_REGION_NTSC)
-    g_Config.bCrop = true;
-  else
-    g_Config.bCrop = false;
+  if (Libretro::Options::IsUpdated(Libretro::Options::gfx_settings::WIDESCREEN_HACK))
+  {
+    g_Config.bWidescreenHack = Libretro::Options::GetCached<bool>(
+      Libretro::Options::gfx_settings::WIDESCREEN_HACK);
+  }
+
+  if (Libretro::Options::IsUpdated(Libretro::Options::gfx_settings::CROP_OVERSCAN))
+  {
+    const bool crop_overscan = Libretro::Options::GetCached<bool>(
+      Libretro::Options::gfx_settings::CROP_OVERSCAN);
+
+    if (crop_overscan && retro_get_region() == RETRO_REGION_NTSC)
+      g_Config.bCropToAspectRatio = true;
+    else
+      g_Config.bCropToAspectRatio = false;
+  }
 
   Libretro::Input::Update();
 
   Core::System& system = Core::System::GetInstance();
 
-  if (Core::GetState(Core::System::GetInstance()) == Core::State::Starting &&
+  if (Core::GetState(system) == Core::State::Starting &&
       !Libretro::g_emuthread_launched)
   {
     WindowSystemInfo wsi(WindowSystemType::Libretro, nullptr, nullptr, nullptr);
     if (system.IsDualCoreMode())
     {
       Core::s_emu_thread = std::thread(Core::EmuThread,
-        std::ref(Core::System::GetInstance()), std::move(Core::g_boot_params), wsi);
+        std::ref(system), std::move(Core::g_boot_params), wsi);
 
       // Wait until CPU thread has reached Run()
-      auto& cpu_manager = Core::System::GetInstance().GetCPU();
+      auto& cpu_manager = system.GetCPU();
       while (!cpu_manager.HasCPURunStateBeenReached())
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     else
-      Core::EmuThread(Core::System::GetInstance(), std::move(Core::g_boot_params), wsi);
+      Core::EmuThread(system, std::move(Core::g_boot_params), wsi);
 
     Libretro::g_emuthread_launched = true;
 
@@ -239,7 +250,7 @@ void retro_run(void)
       g_gfx = std::make_unique<Libretro::Video::NullGfx>();
     }
 
-    while (!Core::IsRunningOrStarting(Core::System::GetInstance()))
+    while (!Core::IsRunningOrStarting(system))
       Common::SleepCurrentThread(100);
 
     Libretro::g_core_refresh_rate = system.GetVideoInterface().GetTargetRefreshRate();
@@ -299,6 +310,13 @@ void retro_run(void)
     Libretro::environ_cb(cmd, &info);
   }
 
+  if (Libretro::Options::IsUpdated(Libretro::Options::gfx_settings::CROP_OVERSCAN))
+  {
+    retro_system_av_info info;
+    retro_get_system_av_info(&info);
+    Libretro::environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info);
+  }
+
   if (g_widescreen &&
       Libretro::widescreen != (g_widescreen->IsGameWidescreen() || g_Config.bWidescreenHack))
   {
@@ -320,15 +338,20 @@ void retro_run(void)
   }
 
   WiimoteUpdateFlags flags;
-  flags.irMode  = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_MODE);
-  flags.irOffset = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_OFFSET);
-  flags.irYaw = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_YAW);
-  flags.irPitch = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_PITCH);
-  flags.irDeadzone = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_DEADZONE);
-  flags.irModifier = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_MODIFIER);
-  flags.swingModifier = Libretro::Options::IsUpdated(Libretro::Options::wiimote::SWING_MODIFIER);
-  flags.swingAngle = Libretro::Options::IsUpdated(Libretro::Options::wiimote::SWING_ANGLE);
-  flags.sideways = Libretro::Options::IsUpdated(Libretro::Options::wiimote::HOTKEY_SIDEWAYS_TOGGLE);
+
+  if (system.IsWii())
+  {
+    flags.irMode  = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_MODE);
+    flags.irOffset = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_OFFSET);
+    flags.irYaw = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_YAW);
+    flags.irPitch = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_PITCH);
+    flags.irDeadzone = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_DEADZONE);
+    flags.irModifier = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_MODIFIER);
+    flags.swingModifier = Libretro::Options::IsUpdated(Libretro::Options::wiimote::SWING_MODIFIER);
+    flags.swingAngle = Libretro::Options::IsUpdated(Libretro::Options::wiimote::SWING_ANGLE);
+    flags.sideways = Libretro::Options::IsUpdated(Libretro::Options::wiimote::HOTKEY_SIDEWAYS_TOGGLE);
+  }
+
   flags.rumble = Libretro::Options::IsUpdated(Libretro::Options::sysconf::ENABLE_RUMBLE);
   flags.gcMicBtn = Libretro::Options::IsUpdated(Libretro::Options::sysconf_gc::HOTKEY_ACTIVATE_MICROPHONE);
 
@@ -436,28 +459,7 @@ void retro_run(void)
   }
 
   if (Libretro::Input::g_has_microphone_support)
-  {
-    bool wiiSpeakEnable = Libretro::Options::GetCached<bool>(Libretro::Options::sysconf::WII_SPEAK_ENABLE);
-    bool wiiLogiMicEnable = Libretro::Options::GetCached<bool>(Libretro::Options::sysconf::WII_LOGI_MICROPHONE_ENABLE);
-    bool gcMicEnable = Libretro::Options::GetCached<bool>(Libretro::Options::sysconf_gc::ENABLE_GAMECUBE_MIC);
-
-    if (system.IsWii() && (wiiSpeakEnable || wiiLogiMicEnable))
-    {
-      for (auto* mic : Libretro::Input::g_active_microphones)
-        mic->PollRetroArchMic();
-    }
-    else if(gcMicEnable)
-    {
-      // Poll GC mic
-      auto* exi_device = system.GetExpansionInterface().GetDevice(ExpansionInterface::Slot::B);
-      if (exi_device && Config::Get(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::B))
-        == ExpansionInterface::EXIDeviceType::Microphone)
-      {
-        auto* gc_mic = static_cast<ExpansionInterface::CEXIMic*>(exi_device);
-        gc_mic->PollLibretroMic();
-      }
-    }
-  }
+    poll_microphone();
 }
 
 size_t retro_serialize_size(void)
@@ -489,17 +491,24 @@ bool retro_serialize(void* data, size_t size)
   if (system.IsDualCoreMode())
     ar->SetPassthrough(true);
 
-  Core::RunOnCPUThread(Core::System::GetInstance(), [&] {
+  const bool was_cpu = Core::IsCPUThread();
+  if (!was_cpu)
+    Core::DeclareAsCPUThread();
 
+  Core::RunOnCPUThread(Core::System::GetInstance(), [&] {
     PointerWrap p((u8**)&data, size, PointerWrap::Mode::Write);
     State::DoState(Core::System::GetInstance(), p);
   }, true);
+
+  if (!was_cpu)
+    Core::UndeclareAsCPUThread();
 
   if (system.IsDualCoreMode())
     ar->SetPassthrough(false);
 
   return true;
 }
+
 bool retro_unserialize(const void* data, size_t size)
 {
   Core::System& system = Core::System::GetInstance();
@@ -508,10 +517,17 @@ bool retro_unserialize(const void* data, size_t size)
   if (system.IsDualCoreMode())
     ar->SetPassthrough(true);
 
+  const bool was_cpu = Core::IsCPUThread();
+  if (!was_cpu)
+    Core::DeclareAsCPUThread();
+
   Core::RunOnCPUThread(Core::System::GetInstance(), [&] {
     PointerWrap p((u8**)&data, size, PointerWrap::Mode::Read);
     State::DoState(Core::System::GetInstance(), p);
   }, true);
+
+  if (!was_cpu)
+    Core::UndeclareAsCPUThread();
 
   if (system.IsDualCoreMode())
     ar->SetPassthrough(false);
@@ -608,7 +624,7 @@ static void enable_cheat_by_code(bool enabled, const char* code)
 // reset cheats to off
 void retro_cheat_reset(void)
 {
-  const bool importCheats = Libretro::GetOption<bool>(Libretro::Options::core::CHEATS_IMPORT, true);
+  const bool importCheats = Libretro::GetOption<bool>(Libretro::Options::retroarch_core::CHEATS_IMPORT, true);
 
   if (!Config::AreCheatsEnabled() || !importCheats)
     return;
@@ -630,7 +646,7 @@ void retro_cheat_set(unsigned index, bool enabled, const char *code)
     return;
   }
 
-  const bool importCheats = Libretro::GetOption<bool>(Libretro::Options::core::CHEATS_IMPORT, true);
+  const bool importCheats = Libretro::GetOption<bool>(Libretro::Options::retroarch_core::CHEATS_IMPORT, true);
   if (!importCheats)
   {
     OSD::AddMessage("You cannot apply any cheats until you enabled the following option:\n"

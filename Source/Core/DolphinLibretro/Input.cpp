@@ -13,7 +13,9 @@
 #include "Core/Config/WiimoteSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/FreeLookManager.h"
+#include "Core/HW/EXI/EXI.h"
 #include "Core/HW/EXI/EXI_Device.h"
+#include "Core/HW/EXI/EXI_DeviceMic.h"
 #include "Core/HW/GBAPad.h"
 #include "Core/HW/GCKeyboard.h"
 #include "Core/HW/GCPad.h"
@@ -632,6 +634,8 @@ void Shutdown()
     g_init_wiimotes = false;
   }
 
+  s_sensor_init_pending = false;
+
 #if defined(__LIBUSB__)
   GCAdapter::ResetRumble();
 #endif
@@ -663,12 +667,28 @@ void UpdateAccelerometer(unsigned port)
 
   static const float G = 9.80665f;
 
-  for (int i = 0; i < 3; i++)
+  // read raw sensor values
+  float ax = sensor_interface.get_sensor_input(port, RETRO_SENSOR_ACCELEROMETER_X) * G;
+  float ay = sensor_interface.get_sensor_input(port, RETRO_SENSOR_ACCELEROMETER_Y) * G;
+  float az = sensor_interface.get_sensor_input(port, RETRO_SENSOR_ACCELEROMETER_Z) * G;
+
+  if (input_types[port] == RETRO_DEVICE_WIIMOTE_SW)
   {
-    float v = sensor_interface.get_sensor_input(port, RETRO_SENSOR_ACCELEROMETER_X + i) * G;
-    g_accel_pos[port][i] = std::max(0.0f, v);
-    g_accel_neg[port][i] = std::max(0.0f, -v);
+    float rx = -ay;   // rotate 90° clockwise
+    float ry =  ax;
+    ax = rx;
+    ay = ry;
   }
+
+  // write rotated values
+  g_accel_pos[port][0] = std::max(0.0f, ax);
+  g_accel_neg[port][0] = std::max(0.0f, -ax);
+
+  g_accel_pos[port][1] = std::max(0.0f, ay);
+  g_accel_neg[port][1] = std::max(0.0f, -ay);
+
+  g_accel_pos[port][2] = std::max(0.0f, az);
+  g_accel_neg[port][2] = std::max(0.0f, -az);
 }
 
 void UpdateGyro(unsigned port)
@@ -676,8 +696,21 @@ void UpdateGyro(unsigned port)
   if (!sensor_enabled[port][SENSOR_GYRO] || !sensor_interface.get_sensor_input)
     return;
 
-  for (int i = 0; i < 3; i++)
-    g_gyro[port][i] = sensor_interface.get_sensor_input(port, RETRO_SENSOR_GYROSCOPE_X + i);
+  float gx = sensor_interface.get_sensor_input(port, RETRO_SENSOR_GYROSCOPE_X);
+  float gy = sensor_interface.get_sensor_input(port, RETRO_SENSOR_GYROSCOPE_Y);
+  float gz = sensor_interface.get_sensor_input(port, RETRO_SENSOR_GYROSCOPE_Z);
+
+  if (input_types[port] == RETRO_DEVICE_WIIMOTE_SW)
+  {
+    float rx = -gy;   // rotate 90° clockwise
+    float ry =  gx;
+    gx = rx;
+    gy = ry;
+  }
+
+  g_gyro[port][0] = gx;
+  g_gyro[port][1] = gy;
+  g_gyro[port][2] = gz;
 }
 
 void ResetControllers(const WiimoteUpdateFlags& f)
@@ -952,7 +985,7 @@ void UpdateWiimoteMappings(const WiimoteUpdateFlags& f, unsigned port, unsigned 
   {
     wm->UpdateReferences(g_controller_interface);
 
-    bool saveOrLoad = Libretro::Options::GetCached<bool>(Libretro::Options::wiimote::SAVE_LOAD_SETTINGS);
+    bool saveOrLoad = Libretro::Options::GetCached<bool>(Libretro::Options::retroarch_core::SAVE_LOAD_SETTINGS);
     if (!saveOrLoad)
       ::Wiimote::GetConfig()->SaveConfig();
   }
@@ -1119,7 +1152,7 @@ void refresh_all_wiimote_flags(unsigned port, unsigned device)
 // a Device= line still bind to the correct libretro joypad.
 static WiimoteEmu::Wiimote* load_saved_controller_config(unsigned port, unsigned device)
 {
-  bool saveOrLoad = Libretro::Options::GetCached<bool>(Libretro::Options::wiimote::SAVE_LOAD_SETTINGS);
+  bool saveOrLoad = Libretro::Options::GetCached<bool>(Libretro::Options::retroarch_core::SAVE_LOAD_SETTINGS);
   if (!saveOrLoad)
     return nullptr;
 
@@ -1261,7 +1294,7 @@ void retro_set_controller_port_device_gc(unsigned port, unsigned device)
 
   gcPad->UpdateReferences(g_controller_interface);
 
-  bool saveOrLoad = Libretro::Options::GetCached<bool>(Libretro::Options::wiimote::SAVE_LOAD_SETTINGS);
+  bool saveOrLoad = Libretro::Options::GetCached<bool>(Libretro::Options::retroarch_core::SAVE_LOAD_SETTINGS);
   if (!saveOrLoad)
     return Pad::GetConfig()->SaveConfig();
 }
@@ -1506,10 +1539,8 @@ void retro_set_controller_port_device_wii(unsigned port, unsigned device)
 
   case RETRO_DEVICE_WIIMOTE_SW:
     wmExtension->SetSelectedAttachment(ExtensionNumber::NONE);
-    // Only set sideways if NOT using real sensor data due to extra rotation applied
-    if (!Libretro::Input::sensor_enabled[port][SENSOR_ACCELEROMETER])
-      static_cast<ControllerEmu::NumericSetting<bool>*>(wmOptions->numeric_settings[3].get())
-        ->SetValue(true);  // Sideways Wiimote
+    static_cast<ControllerEmu::NumericSetting<bool>*>(wmOptions->numeric_settings[3].get())
+      ->SetValue(true);  // Sideways Wiimote
     Config::SetBaseOrCurrent(Config::GetInfoForWiimoteSource(port), WiimoteSource::Emulated);
     WiimoteCommon::OnSourceChanged(port, WiimoteSource::Emulated);
     break;
@@ -1534,7 +1565,42 @@ void retro_set_controller_port_device_wii(unsigned port, unsigned device)
   }
 
   wm->UpdateReferences(g_controller_interface);
-  bool saveOrLoad = Libretro::Options::GetCached<bool>(Libretro::Options::wiimote::SAVE_LOAD_SETTINGS);
+  bool saveOrLoad = Libretro::Options::GetCached<bool>(Libretro::Options::retroarch_core::SAVE_LOAD_SETTINGS);
   if (!saveOrLoad)
     ::Wiimote::GetConfig()->SaveConfig();
+}
+
+void poll_microphone()
+{
+  static bool s_wii_speak_enabled = false;
+  static bool s_logi_microphone_enabled = false;
+  static bool s_gc_mic_enabled = false;
+
+  if (Libretro::Options::IsUpdated(Libretro::Options::sysconf::WII_SPEAK_ENABLE))
+    s_wii_speak_enabled = Libretro::Options::GetCached<bool>(Libretro::Options::sysconf::WII_SPEAK_ENABLE);
+
+  if (Libretro::Options::IsUpdated(Libretro::Options::sysconf::WII_LOGI_MICROPHONE_ENABLE))
+    s_logi_microphone_enabled = Libretro::Options::GetCached<bool>(Libretro::Options::sysconf::WII_LOGI_MICROPHONE_ENABLE);
+
+  if (Libretro::Options::IsUpdated(Libretro::Options::sysconf_gc::ENABLE_GAMECUBE_MIC))
+    s_gc_mic_enabled = Libretro::Options::GetCached<bool>(Libretro::Options::sysconf_gc::ENABLE_GAMECUBE_MIC);
+
+  Core::System& system = Core::System::GetInstance();
+
+  if (system.IsWii() && (s_wii_speak_enabled || s_logi_microphone_enabled))
+  {
+    for (auto* mic : Libretro::Input::g_active_microphones)
+      mic->PollRetroArchMic();
+  }
+  else if(s_gc_mic_enabled)
+  {
+    // Poll GC mic
+    auto* exi_device = system.GetExpansionInterface().GetDevice(ExpansionInterface::Slot::B);
+    if (exi_device && Config::Get(Config::GetInfoForEXIDevice(ExpansionInterface::Slot::B))
+      == ExpansionInterface::EXIDeviceType::Microphone)
+    {
+      auto* gc_mic = static_cast<ExpansionInterface::CEXIMic*>(exi_device);
+      gc_mic->PollLibretroMic();
+    }
+  }
 }

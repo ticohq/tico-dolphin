@@ -197,6 +197,7 @@ void UpdateTitle(Core::System& system);
 #ifdef __LIBRETRO__
   void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot,
                  WindowSystemInfo wsi);
+  void SingleCorePostRunShutdown();
   extern std::unique_ptr<BootParameters> g_boot_params;
   extern std::thread s_emu_thread;
   extern bool s_frame_step;

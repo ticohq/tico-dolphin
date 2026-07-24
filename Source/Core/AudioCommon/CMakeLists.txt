@@ -104,5 +104,5 @@ if(MSVC)
 endif()
 
 if(LIBRETRO)
-  target_include_directories(audiocommon PRIVATE ${CMAKE_SOURCE_DIR}/Externals/Libretro/Include)
+  target_include_directories(audiocommon PRIVATE ${CMAKE_SOURCE_DIR}/Externals/libretro-common/include)
 endif()

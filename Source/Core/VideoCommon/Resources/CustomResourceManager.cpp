@@ -12,6 +12,9 @@ namespace VideoCommon
 {
 void CustomResourceManager::Initialize()
 {
+#if defined(__LIBRETRO__) && defined(SKIP_RESOURCE_WORKER_THREAD)
+  return;
+#endif
   m_asset_cache.Initialize();
   m_worker_thread.Reset("resource-worker");
   m_host_config.bits = ShaderHostConfig::GetCurrent().bits;
@@ -51,7 +54,8 @@ void CustomResourceManager::Reset(bool isShutdown)
 void CustomResourceManager::Reset()
 #endif
 {
-  m_material_resources.clear();
+  m_draw_material_resources.clear();
+  m_postprocessing_material_resources.clear();
   m_shader_resources.clear();
   m_texture_data_resources.clear();
   m_texture_sampler_resources.clear();
@@ -116,11 +120,11 @@ TextureDataResource* CustomResourceManager::GetTextureDataFromAsset(
   return resource.get();
 }
 
-MaterialResource* CustomResourceManager::GetMaterialFromAsset(
+MaterialResource* CustomResourceManager::GetDrawMaterialFromAsset(
     const CustomAssetLibrary::AssetID& asset_id, const GXPipelineUid& pipeline_uid,
     std::shared_ptr<VideoCommon::CustomAssetLibrary> library)
 {
-  auto& resource = m_material_resources[asset_id][PipelineToHash(pipeline_uid)];
+  auto& resource = m_draw_material_resources[asset_id][PipelineToHash(pipeline_uid)];
   if (resource == nullptr)
   {
     resource = std::make_unique<MaterialResource>(
@@ -130,11 +134,24 @@ MaterialResource* CustomResourceManager::GetMaterialFromAsset(
   return resource.get();
 }
 
-ShaderResource*
-CustomResourceManager::GetShaderFromAsset(const CustomAssetLibrary::AssetID& asset_id,
-                                          std::size_t shader_key, const GXPipelineUid& pipeline_uid,
-                                          const std::string& preprocessor_settings,
-                                          std::shared_ptr<VideoCommon::CustomAssetLibrary> library)
+MaterialResource* CustomResourceManager::GetPostProcessingMaterialFromAsset(
+    const CustomAssetLibrary::AssetID& asset_id,
+    std::shared_ptr<VideoCommon::CustomAssetLibrary> library)
+{
+  auto& resource = m_postprocessing_material_resources[asset_id];
+  if (resource == nullptr)
+  {
+    resource =
+        std::make_unique<MaterialResource>(CreateResourceContext(asset_id, std::move(library)));
+  }
+  resource->Process();
+  return resource.get();
+}
+
+ShaderResource* CustomResourceManager::GetShaderFromAsset(
+    const CustomAssetLibrary::AssetID& asset_id, std::size_t shader_key,
+    const std::optional<GXPipelineUid>& pipeline_uid, const std::string& preprocessor_settings,
+    std::shared_ptr<VideoCommon::CustomAssetLibrary> library)
 {
   auto& resource = m_shader_resources[asset_id][shader_key];
   if (resource == nullptr)

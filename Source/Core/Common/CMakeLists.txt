@@ -238,6 +238,7 @@ if (APPLE)
   PRIVATE
     ${APPKIT_LIBRARY}
     ${COREFOUNDATION_LIBRARY}
+    ${FOUNDATION_LIBRARY}
     ${IOK_LIBRARY}
   )
 elseif(WIN32 AND NOT LIBRETRO)
@@ -284,6 +285,7 @@ elseif(IOS)
   )
 elseif(APPLE)
   target_sources(common PRIVATE
+    CommonFuncsObjC.mm
     Logging/ConsoleListenerNix.cpp
     MemArenaDarwin.cpp
   )
@@ -389,13 +391,7 @@ elseif(ENABLE_X11 AND X11_FOUND)
   target_sources(common PRIVATE
     GL/GLX11Window.cpp
     GL/GLX11Window.h
-    GL/GLInterface/GLX.cpp
-    GL/GLInterface/GLX.h
   )
-
-  # GLX has a hard dependency on libGL.
-  # Make sure to link to it if using GLX.
-  target_link_libraries(common PUBLIC ${OPENGL_LIBRARIES})
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -465,5 +461,6 @@ if(LIBRETRO OR SWITCH_STANDALONE)
   target_include_directories(common PRIVATE ${CMAKE_SOURCE_DIR}/Externals/Libretro/Include)
 endif()
 if(LIBRETRO)
+  target_include_directories(common PRIVATE ${CMAKE_SOURCE_DIR}/Externals/libretro-common/include)
   target_link_libraries(common PRIVATE dolphin_libretro_videocontexts)
 endif()

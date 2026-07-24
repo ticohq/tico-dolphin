@@ -32,6 +32,10 @@
 
 #include "Common/Assert.h"
 
+#ifdef __LIBRETRO__
+#include "DolphinLibretro/Common/VFile.h"
+#endif
+
 namespace File
 {
 DirectIOFile::DirectIOFile() = default;
@@ -78,6 +82,17 @@ bool DirectIOFile::Open(const std::string& path, AccessMode access_mode, OpenMod
   // This is not a sensible combination. Fail here to not rely on OS-specific behaviors.
   if (access_mode == AccessMode::Read && open_mode == OpenMode::Truncate)
     return false;
+
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    // used in Duplicate() later
+    m_path = path;
+
+    return Libretro::VFile::Open(path, access_mode, open_mode,
+                                m_vfs_handle, m_mode, m_hints, m_current_offset);
+  }
+#endif
 
 #if defined(_WIN32)
   DWORD desired_access = GENERIC_READ | GENERIC_WRITE;
@@ -168,6 +183,15 @@ bool DirectIOFile::Close()
 
   m_current_offset = 0;
 
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    int result = Libretro::VFile::Close(m_vfs_handle);
+    m_vfs_handle = nullptr;
+    return result == 0;
+  }
+#endif
+
 #if defined(_WIN32)
   return CloseHandle(std::exchange(m_handle, INVALID_HANDLE_VALUE)) != 0;
 #else
@@ -177,6 +201,11 @@ bool DirectIOFile::Close()
 
 bool DirectIOFile::IsOpen() const
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+    return m_vfs_handle != nullptr;
+#endif
+
 #if defined(_WIN32)
   return m_handle != INVALID_HANDLE_VALUE;
 #else
@@ -216,6 +245,17 @@ static bool OverlappedTransfer(HANDLE handle, u64 offset, auto* data_ptr, u64 si
 
 bool DirectIOFile::OffsetRead(u64 offset, u8* out_ptr, u64 size)
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    if (Libretro::VFile::Seek(m_vfs_handle, offset, SEEK_SET) < 0)
+      return false;
+
+    int64_t bytes_read = Libretro::VFile::ReadBytes(m_vfs_handle, out_ptr, size);
+    return bytes_read == static_cast<int64_t>(size);
+  }
+#endif
+
 #if defined(_WIN32)
   return OverlappedTransfer<ReadFile>(m_handle, offset, out_ptr, size);
 #elif defined(__SWITCH__)
@@ -234,6 +274,17 @@ bool DirectIOFile::OffsetRead(u64 offset, u8* out_ptr, u64 size)
 
 bool DirectIOFile::OffsetWrite(u64 offset, const u8* in_ptr, u64 size)
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    if (Libretro::VFile::Seek(m_vfs_handle, offset, SEEK_SET) < 0)
+      return false;
+
+    int64_t bytes_written = Libretro::VFile::WriteBytes(m_vfs_handle, in_ptr, size);
+    return bytes_written == static_cast<int64_t>(size);
+  }
+#endif
+
 #if defined(_WIN32)
   return OverlappedTransfer<WriteFile>(m_handle, offset, in_ptr, size);
 #elif defined(__SWITCH__)
@@ -252,6 +303,11 @@ bool DirectIOFile::OffsetWrite(u64 offset, const u8* in_ptr, u64 size)
 
 u64 DirectIOFile::GetSize() const
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+    return Libretro::VFile::GetSize(m_vfs_handle);
+#endif
+
 #if defined(_WIN32)
   LARGE_INTEGER result{};
   if (GetFileSizeEx(m_handle, &result) != 0)
@@ -293,6 +349,11 @@ bool DirectIOFile::Seek(s64 offset, SeekOrigin origin)
 
 bool DirectIOFile::Flush()
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+    return Libretro::VFile::Flush(m_vfs_handle) == 0;
+#endif
+
 #if defined(_WIN32)
   return FlushFileBuffers(m_handle) != 0;
 #else
@@ -302,6 +363,16 @@ bool DirectIOFile::Flush()
 
 void DirectIOFile::Swap(DirectIOFile& other)
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    std::swap(m_vfs_handle, other.m_vfs_handle);
+    std::swap(m_path, other.m_path);
+    std::swap(m_mode, other.m_mode);
+    std::swap(m_hints, other.m_hints);
+  }
+#endif
+
 #if defined(_WIN32)
   std::swap(m_handle, other.m_handle);
 #else
@@ -316,6 +387,30 @@ DirectIOFile DirectIOFile::Duplicate() const
 
   if (!IsOpen())
     return result;
+
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    // We need to reopen the file, since VFS handles cannot be duplicated.
+    result.m_vfs_handle = Libretro::VFile::Open(
+      m_path, m_mode, m_hints);
+
+    if (result.m_vfs_handle)
+    {
+      result.m_path = m_path;
+      result.m_mode = m_mode;
+      result.m_hints = m_hints;
+
+      // Restore offset if possible
+      Libretro::VFile::Seek(
+        result.m_vfs_handle,
+        m_current_offset,
+        SEEK_SET);
+      result.m_current_offset = m_current_offset;
+    }
+    return result;
+  }
+#endif
 
 #if defined(_WIN32)
   const auto current_process = GetCurrentProcess();
@@ -337,6 +432,11 @@ DirectIOFile DirectIOFile::Duplicate() const
 
 bool Resize(DirectIOFile& file, u64 size)
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+    return Libretro::VFile::Truncate(file.m_vfs_handle, size) == 0;
+#endif
+
 #if defined(_WIN32)
   // This operation is not "atomic", but it's the only thing we're using the file pointer for.
   // Concurrent `Resize` would need some external synchronization to prevent race regardless.
@@ -351,6 +451,11 @@ bool Resize(DirectIOFile& file, u64 size)
 bool Rename(DirectIOFile& file, const std::string& source_path [[maybe_unused]],
             const std::string& destination_path)
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+    return file.IsOpen() && Libretro::VFile::Rename(source_path, destination_path);
+#endif
+
 #if defined(_WIN32)
   const auto dest_name = UTF8ToWString(destination_path);
   const auto dest_name_byte_size = DWORD(dest_name.size() * sizeof(WCHAR));
@@ -372,6 +477,11 @@ bool Rename(DirectIOFile& file, const std::string& source_path [[maybe_unused]],
 
 bool Delete(DirectIOFile& file, const std::string& filename)
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+    return file.IsOpen() && Libretro::VFile::Delete(filename);
+#endif
+
 #if defined(_WIN32)
   FILE_DISPOSITION_INFO info{.DeleteFile = TRUE};
   return SetFileInformationByHandle(file.GetHandle(), FileDispositionInfo, &info, sizeof(info)) !=

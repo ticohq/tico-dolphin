@@ -463,7 +463,7 @@ DHCPBody::DHCPBody(u32 transaction, const MACAddress& client_address, u32 new_ip
 
 DHCPPacket::DHCPPacket() = default;
 
-DHCPPacket::DHCPPacket(const std::vector<u8>& data)
+DHCPPacket::DHCPPacket(std::span<const u8> data)
 {
   if (data.size() < DHCPBody::SIZE)
     return;
@@ -490,7 +490,7 @@ DHCPPacket::DHCPPacket(const std::vector<u8>& data)
   }
 }
 
-void DHCPPacket::AddOption(u8 fnc, const std::vector<u8>& params)
+void DHCPPacket::AddOption(u8 fnc, std::span<const u8> params)
 {
   if (params.size() > 255)
     return;
@@ -508,7 +508,7 @@ std::vector<u8> DHCPPacket::Build() const
   {
     result.insert(result.end(), opt.begin(), opt.end());
   }
-  const std::vector<u8> no_option = {255, 0, 0, 0};
+  constexpr auto no_option = std::to_array<u8>({255, 0, 0, 0});
   result.insert(result.end(), no_option.begin(), no_option.end());
 
   return result;

@@ -135,6 +135,19 @@ Result<u32> HostFileSystem::ReadBytesFromFile(Fd fd, u8* ptr, u32 count)
 
   // File might be opened twice, need to seek before we read
   handle->host_file->Seek(handle->file_offset, File::SeekOrigin::Begin);
+
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    const u32 actually_read_vfs = Libretro::VFile::ReadBytes(handle->host_file->GetVFSHandle(), ptr, count);
+
+    if (actually_read_vfs != count)
+      return std::unexpected{ResultCode::AccessDenied};
+
+    handle->file_offset += actually_read_vfs;
+    return actually_read_vfs;
+  }
+#endif
   const u32 actually_read = static_cast<u32>(fread(ptr, 1, count, handle->host_file->GetHandle()));
 
   if (actually_read != count && ferror(handle->host_file->GetHandle()))

@@ -6,6 +6,7 @@
 #include <fstream>
 
 #include "Common/CommonPaths.h"
+#include "Core/CommonTitles.h"
 #include "Common/FileUtil.h"
 #include "Common/Version.h"
 #include "Core/Boot/Boot.h"
@@ -25,6 +26,7 @@
 #include "DolphinLibretro/Audio.h"
 #include "DolphinLibretro/Input.h"
 #include "DolphinLibretro/Log.h"
+#include "DolphinLibretro/Common/VFile.h"
 #include "DolphinLibretro/Common/Globals.h"
 #include "DolphinLibretro/Common/Options.h"
 #include "DolphinLibretro/Video.h"
@@ -47,8 +49,6 @@ extern retro_environment_t environ_cb;
 
 // Disk swapping
 static void InitDiskControlInterface();
-static std::string NormalizePath(const std::string& path);
-static std::string DenormalizePath(const std::string& path);
 static unsigned disk_index = 0;
 static bool eject_state;
 static std::vector<std::string> disk_paths;
@@ -192,6 +192,10 @@ bool retro_load_game(const struct retro_game_info* game)
   else
     sys_dir = "dolphin-emu" DIR_SEP "Sys";
 
+  using namespace Libretro::Options;
+  Libretro::Options::Init();
+  Libretro::VFile::Init();
+
 #ifdef ANDROID
   static bool sysdir_set = false;
 
@@ -222,10 +226,6 @@ bool retro_load_game(const struct retro_game_info* game)
   INFO_LOG_FMT(COMMON, "SCM Git revision: {}", Common::GetScmRevGitStr());
   INFO_LOG_FMT(COMMON, "User Directory set to '{}'", user_dir);
   INFO_LOG_FMT(COMMON, "System Directory set to '{}'", sys_dir);
-
-  using namespace Libretro::Options;
-
-  Libretro::Options::Init();
 
   // Main.Core
   Config::SetBase(Config::MAIN_CPU_CORE,
@@ -489,6 +489,10 @@ bool retro_load_game(const struct retro_game_info* game)
       break;
   }
 
+  // Graphics.GameSpecific
+  Config::SetBase(Config::GFX_PERF_QUERIES_ENABLE,
+                 Libretro::GetOption<bool>(gfx_gamespecific::GFX_PERF_QUERIES_ENABLE, /*def=*/false));
+
   /* disable throttling emulation to match GetTargetRefreshRate() */
   Core::SetIsThrottlerTempDisabled(true);
   SConfig::GetInstance().bBootToPause = true;
@@ -521,7 +525,7 @@ bool retro_load_game(const struct retro_game_info* game)
   NOTICE_LOG_FMT(VIDEO, "Using GFX backend: {}", Config::Get(Config::MAIN_GFX_BACKEND));
 
   std::vector<std::string> normalized_game_paths;
-  normalized_game_paths.push_back(Libretro::NormalizePath(game->path));
+  normalized_game_paths.push_back(Libretro::VFile::NormalizePath(game->path));
   std::string folder_path_str;
   std::string filename_str;
   std::string extension;
@@ -554,7 +558,7 @@ bool retro_load_game(const struct retro_game_info* game)
   }
 
   for (auto& normalized_game_path : normalized_game_paths)
-    Libretro::disk_paths.push_back(Libretro::DenormalizePath(normalized_game_path));
+    Libretro::disk_paths.push_back(Libretro::VFile::DenormalizePath(normalized_game_path));
 
   Libretro::Input::Init(wsi);
 
@@ -571,8 +575,34 @@ bool retro_load_game(const struct retro_game_info* game)
       Libretro::GetOption<bool>(sysconf::WII_LOGI_MICROPHONE_ENABLE, /*def=*/false));
   }
 
-  if (!BootManager::BootCore(Core::System::GetInstance(),
-                             BootParameters::GenerateFromFile(normalized_game_paths), wsi))
+  const bool disc_based_games_boot_to_wii_menu = Libretro::GetOption<bool>(Libretro::Options::core::DISC_BASED_GAMES_BOOT_TO_WII_MENU, false);
+  std::unique_ptr<BootParameters> boot_params = BootParameters::GenerateFromFile(normalized_game_paths);
+
+  if (disc_based_games_boot_to_wii_menu)
+  {
+    bool is_disc_title = false;
+    if (!normalized_game_paths.empty())
+    {
+      auto volume = DiscIO::CreateDisc(normalized_game_paths.front());
+      if (volume && (volume->GetVolumeType() == DiscIO::Platform::WiiDisc || volume->GetVolumeType() == DiscIO::Platform::GameCubeDisc))
+        is_disc_title = true;
+      else
+        WARN_LOG_FMT(BOOT, "'Disc Based Games Boot to Wii System Menu' enabled but content is not a disc based game, ignoring Wii Menu");
+    }
+
+    const std::string wii_menu_tmd_file_name = Common::GetTMDFileName(Titles::SYSTEM_MENU, Common::FromWhichRoot::Configured);
+    const bool wii_menu_installed = File::Exists(wii_menu_tmd_file_name);
+    if (is_disc_title && !wii_menu_installed)
+      WARN_LOG_FMT(BOOT,"'Disc Based Games Boot to Wii System Menu' enabled but Wii Menu not found at save location: {}, booting directly instead", wii_menu_tmd_file_name);
+
+    if (is_disc_title && wii_menu_installed)
+    {
+      Config::SetBase(Config::MAIN_DEFAULT_ISO, normalized_game_paths.front());
+      boot_params = std::make_unique<BootParameters>(BootParameters::NANDTitle{Titles::SYSTEM_MENU});
+    }
+  }
+
+  if (!BootManager::BootCore(Core::System::GetInstance(), std::move(boot_params), wsi))
   {
     ERROR_LOG_FMT(BOOT, "Could not boot {}", game->path);
     return false;
@@ -580,7 +610,7 @@ bool retro_load_game(const struct retro_game_info* game)
 
   Libretro::Input::InitStage2();
 
-  const bool importCheats = Libretro::GetOption<bool>(core::CHEATS_IMPORT, true);
+  const bool importCheats = Libretro::GetOption<bool>(retroarch_core::CHEATS_IMPORT, true);
 
   if (importCheats)
   {
@@ -623,41 +653,22 @@ void retro_unload_game(void)
   Libretro::Log::Shutdown();
   UICommon::ShutdownControllers();
   UICommon::Shutdown();
+
+  if (!system.IsDualCoreMode())
+  {
+    Core::SingleCorePostRunShutdown();
+
+    // otherwise it is still called CPU-GPU Thread
+    Common::SetCurrentThreadName("retroarch");
+  }
+
+  Core::UndeclareAsCPUThread();
+  Core::UndeclareAsGPUThread();
 }
 
 namespace Libretro
 {
 // Disk swapping
-
-// Dolphin expects to be able to use "/" (DIR_SEP) everywhere.
-// RetroArch uses the OS separator.
-// Convert between them when switching between systems.
-std::string NormalizePath(const std::string& path)
-{
-  std::string newPath = path;
-#ifdef _MSC_VER
-  constexpr fs::path::value_type os_separator = fs::path::preferred_separator;
-  static_assert(os_separator == DIR_SEP_CHR || os_separator == '\\', "Unsupported path separator");
-  if (os_separator != DIR_SEP_CHR)
-    std::replace(newPath.begin(), newPath.end(), '\\', DIR_SEP_CHR);
-#endif
-
-  return newPath;
-}
-
-std::string DenormalizePath(const std::string& path)
-{
-  std::string newPath = path;
-#ifdef _MSC_VER
-  constexpr fs::path::value_type os_separator = fs::path::preferred_separator;
-  static_assert(os_separator == DIR_SEP_CHR || os_separator == '\\', "Unsupported path separator");
-  if (os_separator != DIR_SEP_CHR)
-    std::replace(newPath.begin(), newPath.end(), DIR_SEP_CHR, '\\');
-#endif
-
-  return newPath;
-}
-
 static bool retro_set_eject_state(bool ejected)
 {
   if (eject_state == ejected)
@@ -673,7 +684,7 @@ static bool retro_set_eject_state(bool ejected)
       system.GetDVDInterface().EjectDisc(guard, DVD::EjectCause::User);
     else if (disk_index < disk_paths.size())
     {
-      const std::string path = NormalizePath(disk_paths[disk_index]);
+      const std::string path = Libretro::VFile::NormalizePath(disk_paths[disk_index]);
       system.GetDVDInterface().ChangeDisc(guard, path);
     }
   }, true); // wait_for_completion = true

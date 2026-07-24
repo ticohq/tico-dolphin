@@ -53,16 +53,46 @@ LogListener::LogListener(retro_log_printf_t log) : m_log(log)
     static_cast<Common::Log::LogLevel>(
         Libretro::Options::GetCached<int>(
             Libretro::Options::main_interface::LOG_LEVEL, static_cast<int>(Common::Log::LogLevel::LINFO))));
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::BOOT, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::CORE, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::VIDEO, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::HOST_GPU, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::COMMON, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::MEMMAP, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::DSPINTERFACE, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::DSPHLE, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::DSPLLE, true);
-  Common::Log::LogManager::GetInstance()->SetEnable(Common::Log::LogType::DSP_MAIL, true);
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::BOOT,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_BOOT, true));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::CORE,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_CORE, true));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::VIDEO,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_VIDEO, true));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::COMMON,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_COMMON, true));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::HOST_GPU,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_HOST_GPU, false));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::MEMMAP,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_MEMMAP, false));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::DSPINTERFACE,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_DSPINTERFACE, false));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::DSPHLE,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_DSPHLE, false));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::DSPLLE,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_DSPLLE, false));
+
+  Common::Log::LogManager::GetInstance()->SetEnable(
+    Common::Log::LogType::DSP_MAIL,
+    Libretro::Options::GetCached<bool>(Libretro::Options::main_interface::LOG_DSP_MAIL, false));
 }
 
 LogListener::~LogListener()

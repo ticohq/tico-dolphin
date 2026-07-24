@@ -41,6 +41,7 @@ bool Video_InitializeBackend();
 bool SetHWRender(retro_hw_context_type type, const int version_major = -1, const int version_minor = -1);
 void ContextReset(void);
 void ContextDestroy(void);
+int GetAdjustedBaseHeight();
 
 class SWGfx : public SW::SWGfx
 {

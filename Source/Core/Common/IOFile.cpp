@@ -24,18 +24,34 @@
 #include "Common/CommonTypes.h"
 #include "Common/FileUtil.h"
 
+#ifdef __LIBRETRO__
+#include "DolphinLibretro/Common/VFile.h"
+#endif
+
 namespace File
 {
 IOFile::IOFile() : m_file(nullptr), m_good(true)
+#ifdef __LIBRETRO__
+, m_vfs_handle{nullptr}
+#endif
 {
 }
 
 IOFile::IOFile(std::FILE* file) : m_file(file), m_good(true)
 {
+#ifdef __LIBRETRO__
+  m_vfs_handle = nullptr;
+
+  if (Libretro::VFile::HasVFS())
+    ERROR_LOG_FMT(COMMON, "VFS: Attempt to use IOFile::IOFile with a std::FILE which should not happen");
+#endif
 }
 
 IOFile::IOFile(const std::string& filename, const char openmode[], SharedAccess sh)
     : m_file(nullptr), m_good(true)
+#ifdef __LIBRETRO__
+, m_vfs_handle{nullptr}
+#endif
 {
   Open(filename, openmode, sh);
 }
@@ -46,6 +62,9 @@ IOFile::~IOFile()
 }
 
 IOFile::IOFile(IOFile&& other) noexcept : m_file(nullptr), m_good(true)
+#ifdef __LIBRETRO__
+, m_vfs_handle{nullptr}
+#endif
 {
   Swap(other);
 }
@@ -58,6 +77,10 @@ IOFile& IOFile::operator=(IOFile&& other) noexcept
 
 void IOFile::Swap(IOFile& other) noexcept
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+    std::swap(m_vfs_handle, other.m_vfs_handle);
+#endif
   std::swap(m_file, other.m_file);
   std::swap(m_good, other.m_good);
 }
@@ -66,6 +89,15 @@ bool IOFile::Open(const std::string& filename, const char openmode[],
                   [[maybe_unused]] SharedAccess sh)
 {
   Close();
+
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    m_vfs_handle = Libretro::VFile::Open(filename, openmode);
+    m_good = m_vfs_handle != nullptr;
+    return m_good;
+  }
+#endif
 
 #ifdef _WIN32
   if (sh == SharedAccess::Default)
@@ -93,6 +125,17 @@ bool IOFile::Open(const std::string& filename, const char openmode[],
 
 bool IOFile::Close()
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    if (!IsOpen() || 0 != Libretro::VFile::Close(m_vfs_handle))
+      m_good = false;
+
+    m_vfs_handle = nullptr;
+    return m_good;
+  }
+#endif
+
   if (!IsOpen() || 0 != std::fclose(m_file))
     m_good = false;
 
@@ -109,6 +152,16 @@ void IOFile::SetHandle(std::FILE* file)
 
 u64 IOFile::GetSize() const
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    if (IsOpen())
+      return Libretro::VFile::GetSize(m_vfs_handle);
+    else
+      return 0;
+  }
+#endif
+
   if (IsOpen())
     return File::GetSize(m_file);
   else
@@ -133,6 +186,16 @@ bool IOFile::Seek(s64 offset, SeekOrigin origin)
     return false;
   }
 
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    if (!IsOpen() || 0 != Libretro::VFile::Seek(m_vfs_handle, offset, fseek_origin))
+      m_good = false;
+
+    return m_good;
+  }
+#endif
+
   if (!IsOpen() || 0 != fseeko(m_file, offset, fseek_origin))
     m_good = false;
 
@@ -141,6 +204,15 @@ bool IOFile::Seek(s64 offset, SeekOrigin origin)
 
 u64 IOFile::Tell() const
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    if (IsOpen())
+      return Libretro::VFile::Tell(m_vfs_handle);
+    else
+      return UINT64_MAX;
+  }
+#endif
   if (IsOpen())
     return ftello(m_file);
   else
@@ -149,6 +221,15 @@ u64 IOFile::Tell() const
 
 bool IOFile::Flush()
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    if (!IsOpen() || 0 != Libretro::VFile::Flush(m_vfs_handle))
+      m_good = false;
+
+    return m_good;
+  }
+#endif
   if (!IsOpen() || 0 != std::fflush(m_file))
     m_good = false;
 
@@ -157,6 +238,16 @@ bool IOFile::Flush()
 
 bool IOFile::Resize(u64 size)
 {
+#ifdef __LIBRETRO__
+  if (Libretro::VFile::HasVFS())
+  {
+    if (!IsOpen() || 0 != Libretro::VFile::Resize(m_vfs_handle, size))
+      m_good = false;
+
+    return m_good;
+  }
+#endif
+
 #ifdef _WIN32
   if (!IsOpen() || 0 != _chsize_s(_fileno(m_file), size))
 #else

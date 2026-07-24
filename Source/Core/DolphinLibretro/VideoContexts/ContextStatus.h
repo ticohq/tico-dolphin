@@ -14,6 +14,7 @@ struct ContextStatus
 
   void MarkReset() { state = ContextState::Reset; }
   void MarkDestroyed() { state = ContextState::Destroyed; }
+  void MarkUnknown() { state = ContextState::Unknown; }
 
   bool IsReady() const { return state == ContextState::Reset; }
   bool IsDestroyed() const { return state == ContextState::Destroyed; }

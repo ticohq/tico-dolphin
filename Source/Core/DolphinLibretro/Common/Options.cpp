@@ -7,7 +7,7 @@ namespace Libretro
 {
 namespace Options
 {
-static std::unordered_map<std::string, std::string> optionCache;
+static std::unordered_map<std::string, CachedOption> optionCache;
 static std::unordered_map<std::string, bool> optionDirty;
 
 // Category key constants
@@ -20,7 +20,9 @@ static constexpr const char* CATEGORY_GFX_HARDWARE = "graphics_hardware";
 static constexpr const char* CATEGORY_GFX_SETTINGS = "graphics_settings";
 static constexpr const char* CATEGORY_GFX_ENHANCEMENTS = "graphics_enhancements";
 static constexpr const char* CATEGORY_GFX_HACKS = "graphics_hacks";
+static constexpr const char* CATEGORY_GFX_GAMESPECIFIC = "graphics_gamespecific";
 static constexpr const char* CATEGORY_WIIMOTE = "wiimote";
+static constexpr const char* CATEGORY_RETROARCH_CORE = "retroarch_core";
 
 // V2 Categories
 static const struct retro_core_option_v2_category option_cats[] = {
@@ -70,9 +72,19 @@ static const struct retro_core_option_v2_category option_cats[] = {
     "Configure accuracy vs performance tradeoffs."
   },
   {
+    CATEGORY_GFX_GAMESPECIFIC,
+    "Graphics > Game Specific",
+    "Configure game specific settings."
+  },
+  {
     CATEGORY_WIIMOTE,
     "Wiimote IR / Gyro / Swing",
     "Configure Wiimote infrared pointer, gyro and swing settings."
+  },
+  {
+    CATEGORY_RETROARCH_CORE,
+    "RetroArch Core",
+    "Configure settings which are specific to the RetroArch core and do not exist in dolphin standlone."
   },
   { NULL, NULL, NULL }
 };
@@ -232,20 +244,6 @@ static struct retro_core_option_v2_definition option_defs[] = {
     "disabled"
   },
   {
-    Libretro::Options::core::CHEATS_IMPORT,
-    "Core > Automatically Import Cheats into RetroArch",
-    "Automatically Import Cheats into RetroArch",
-    "Import dolphin ini files into RetroArch. Restart core to take effect.",
-    nullptr,
-    CATEGORY_CORE,
-    {
-      { "disabled", nullptr },
-      { "enabled",  nullptr },
-      { nullptr, nullptr }
-    },
-    "enabled"
-  },
-  {
     Libretro::Options::core::SKIP_GC_BIOS,
     "Core > Skip GameCube BIOS",
     "Skip GameCube BIOS",
@@ -258,6 +256,21 @@ static struct retro_core_option_v2_definition option_defs[] = {
       { nullptr, nullptr }
     },
     "enabled"
+  },
+  {
+    Libretro::Options::core::DISC_BASED_GAMES_BOOT_TO_WII_MENU,
+    "Core > Disc Based Games Boot to Wii Menu",
+    "Disc Based Games Boot to Wii System Menu",
+    "When a Wii System Menu is installed in the save location and the game is a disc based game, it will start the Wii Menu with the disc inserted in the drive instead of directly booting the game. "
+    "Beware: The game region must match the Wii Menu region otherwise the game will not be recognized.",
+    nullptr,
+    CATEGORY_CORE,
+    {
+      {"disabled", nullptr},
+      {"enabled", nullptr},
+      {nullptr, nullptr}
+    },
+    "disabled"
   },
   {
     Libretro::Options::core::LANGUAGE,
@@ -371,6 +384,147 @@ static struct retro_core_option_v2_definition option_defs[] = {
       { nullptr,   nullptr }
     },
     "Info"
+  },
+  {
+    Libretro::Options::main_interface::LOG_BOOT,
+    "Interface > Logging > Boot",
+    "Boot Logging",
+    "Enable Boot log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "enabled"
+  },
+  {
+    Libretro::Options::main_interface::LOG_CORE,
+    "Interface > Logging > Core",
+    "Core Logging",
+    "Enable Core log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "enabled"
+  },
+  {
+    Libretro::Options::main_interface::LOG_VIDEO,
+    "Interface > Logging > Video",
+    "Video Logging",
+    "Enable Video log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "enabled"
+  },
+  {
+    Libretro::Options::main_interface::LOG_COMMON,
+    "Interface > Logging > Common",
+    "Common Logging",
+    "Enable Common log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "enabled"
+  },
+
+  {
+    Libretro::Options::main_interface::LOG_HOST_GPU,
+    "Interface > Logging > Host GPU",
+    "Host GPU Logging",
+    "Enable Host GPU log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::main_interface::LOG_MEMMAP,
+    "Interface > Logging > MemMap",
+    "MemMap Logging",
+    "Enable MemMap log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::main_interface::LOG_DSPINTERFACE,
+    "Interface > Logging > DSP Interface",
+    "DSP Interface Logging",
+    "Enable DSP Interface log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::main_interface::LOG_DSPHLE,
+    "Interface > Logging > DSP HLE",
+    "DSP HLE Logging",
+    "Enable DSP HLE log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::main_interface::LOG_DSPLLE,
+    "Interface > Logging > DSP LLE",
+    "DSP LLE Logging",
+    "Enable DSP LLE log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::main_interface::LOG_DSP_MAIL,
+    "Interface > Logging > DSP MAIL",
+    "DSP MAIL Logging",
+    "Enable DSP MAIL log messages.",
+    nullptr,
+    CATEGORY_INTERFACE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
   },
   {
     Libretro::Options::main_interface::ENABLE_DEBUGGING,
@@ -728,7 +882,7 @@ static struct retro_core_option_v2_definition option_defs[] = {
     Libretro::Options::gfx_settings::CROP_OVERSCAN,
     "Graphics > Settings > Crop Overscan",
     "Crop Overscan",
-    "Crop overscan to match standard NTSC output resolutions. Recommended for NTSC CRTs.",
+    "Report standard TV output resolution to the frontend (NTSC: 480, PAL: 576). Recommended for CRT displays with SwitchRes.",
     nullptr,
     CATEGORY_GFX_SETTINGS,
     {
@@ -1274,6 +1428,22 @@ static struct retro_core_option_v2_definition option_defs[] = {
   },
   #endif
 
+  // ========== Graphics.GameSpecific ==========
+  {
+    Libretro::Options::gfx_gamespecific::GFX_PERF_QUERIES_ENABLE,
+    "Graphics > Game Specific > Performance Queries",
+    "Performance Queries",
+    "Enable performance queiries.",
+    nullptr,
+    CATEGORY_GFX_GAMESPECIFIC,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr, nullptr }
+    },
+    "disabled"
+  },
+
   {
     Libretro::Options::wiimote::HOTKEY_SIDEWAYS_TOGGLE,
     "WiiMote Sideways > Toggle Button",
@@ -1515,19 +1685,98 @@ static struct retro_core_option_v2_definition option_defs[] = {
     },
     "90"
   },
+
+  // ========== RA only ==========
   {
-    Libretro::Options::wiimote::SAVE_LOAD_SETTINGS,
-    "Wiimote > Load & Prevent Save Settings",
+    Libretro::Options::retroarch_core::CHEATS_IMPORT,
+    "RetroArch Core > Automatically Import Cheats into RetroArch",
+    "Automatically Import Cheats into RetroArch",
+    "Import dolphin ini files into RetroArch. Restart core to take effect.",
+    nullptr,
+    CATEGORY_RETROARCH_CORE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr, nullptr }
+    },
+    "enabled"
+  },
+  {
+    Libretro::Options::retroarch_core::SAVE_LOAD_SETTINGS,
+    "RetroArch core > Load & Prevent Save Settings",
     "Load & Prevent Save Settings",
     "Choose whether to load core settings from GCPad.ini/WiimoteNew.ini and also prevent saving to them. Core options may no longer be reflected correctly in RetroArch interface. Editing ini files incorrectly will likely crash the emulator.",
     nullptr,
-    CATEGORY_WIIMOTE,
+    CATEGORY_RETROARCH_CORE,
     {
       { "disabled", nullptr },
       { "enabled",  nullptr },
       { nullptr, nullptr }
     },
     "disabled"
+  },
+
+#if defined(HAS_OPENGL) && defined(__WEBOS__)
+  {
+    Libretro::Options::retroarch_core::SUPPORTS_BINDING_LAYOUT,
+    "RetroArch core > Supports Binding Layout",
+    "GLES > Supports Binding Layout",
+    "Enable explicit shader binding layout support. Setting applies only for GLES 3.2 contexts.",
+    nullptr,
+    CATEGORY_RETROARCH_CORE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::retroarch_core::SUPPORTS_COPY_SUB_IMAGE,
+    "RetroArch core > Supports CopySubImage",
+    "GLES > Supports CopySubImage",
+    "Enable fast GPU sub-image copy operations. Setting applies only for GLES 3.2 contexts.",
+    nullptr,
+    CATEGORY_RETROARCH_CORE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::retroarch_core::SUPPORTS_GL_BASE_VERTEX,
+    "RetroArch core > Supports glDrawElementsBaseVertex",
+    "GLES > Supports glDrawElementsBaseVertex",
+    "Enable support for glDrawElementsBaseVertex. Setting applies only for GLES 3.2 contexts.",
+    nullptr,
+    CATEGORY_RETROARCH_CORE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr,    nullptr }
+    },
+    "disabled"
+  },
+#endif  // HAS_OPENGL/__WEBOS__
+  {
+    Libretro::Options::retroarch_core::ENABLE_LIBRETRO_VFS,
+    "RetroArch core > Enable Virtual File System (VFS)",
+    "Enable Virtual File System (VFS)",
+    "Enable VFS for SAF/SMB etc. Requires core RESTART. This feature is NEW and EXPERIMENTAL. Backup your saves regularly.",
+    nullptr,
+    CATEGORY_RETROARCH_CORE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr, nullptr }
+    },
+#if defined(ANDROID)
+    "enabled" // enable by default because of SAF
+#else
+    "disabled"
+#endif
   },
 
   { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{0}}, nullptr }
@@ -1721,35 +1970,82 @@ error:
 
 void RegisterCache()
 {
-  for (const retro_core_option_v2_definition* def = option_defs;
-       def && def->key;
-       ++def)
+  for (const retro_core_option_v2_definition* def = option_defs; def->key; ++def)
   {
-    std::string val = def->default_value ? def->default_value : "";
-    retro_variable var{ def->key, nullptr };
-    if (::Libretro::environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-      val = var.value;
-    optionCache[def->key] = val;
+    const char* value = def->default_value;
+
+    retro_variable var{def->key};
+
+    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+      value = var.value;
+
+    CachedOption entry;
+    entry.raw = value;
+
+    char* end = nullptr;
+
+    entry.int_value = strtol(value, &end, 10);
+    entry.has_int = (end && *end == '\0');
+
+    entry.double_value = strtod(value, &end);
+    entry.has_double = (end && *end == '\0');
+
+    if (!strcmp(value, "enabled"))
+    {
+      entry.bool_value = true;
+      entry.has_bool = true;
+    }
+    else if (!strcmp(value, "disabled"))
+    {
+      entry.bool_value = false;
+      entry.has_bool = true;
+    }
+
+    optionCache[def->key] = std::move(entry);
+    optionDirty[def->key] = false;
   }
 }
 
 void CheckForUpdatedVariables()
 {
   bool updated = false;
-  if (::Libretro::environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && !updated)
+
+  if (environ_cb)
+    environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated);
+
+  if (!updated)
     return;
 
-  for (auto& [key, oldVal] : optionCache)
+  for (auto& [key, dirty] : optionDirty)
   {
-    retro_variable var{ key.c_str(), nullptr };
-    if (::Libretro::environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+    retro_variable var{key.c_str()};
+
+    if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
     {
-      std::string newVal = var.value;
-      if (newVal != oldVal)
+      CachedOption entry;
+      entry.raw = var.value;
+
+      char* end = nullptr;
+
+      entry.int_value = strtol(var.value, &end, 10);
+      entry.has_int = (end && *end == '\0');
+
+      entry.double_value = strtod(var.value, &end);
+      entry.has_double = (end && *end == '\0');
+
+      if (!strcmp(var.value, "enabled"))
       {
-        oldVal = newVal;
-        optionDirty[key] = true;
+        entry.bool_value = true;
+        entry.has_bool = true;
       }
+      else if (!strcmp(var.value, "disabled"))
+      {
+        entry.bool_value = false;
+        entry.has_bool = true;
+      }
+
+      optionCache[key] = std::move(entry);
+      dirty = true;
     }
   }
 }
@@ -1770,12 +2066,10 @@ template <>
 bool GetCached<bool>(const char* key, const bool def)
 {
   auto it = optionCache.find(key);
-  if (it == optionCache.end())
+  if (it == optionCache.end() || !it->second.has_bool)
     return def;
-  const std::string& v = it->second;
-  if (v == "enabled" || v == "true" || v == "1") return true;
-  if (v == "disabled" || v == "false" || v == "0") return false;
-  return def;
+
+  return it->second.bool_value;
 }
 
 // int specialisation
@@ -1783,23 +2077,21 @@ template <>
 int GetCached<int>(const char* key, const int def)
 {
   auto it = optionCache.find(key);
-  if (it == optionCache.end())
+  if (it == optionCache.end() || !it->second.has_int)
     return def;
-  char* end = nullptr;
-  long parsed = strtol(it->second.c_str(), &end, 10);
-  return (end != it->second.c_str()) ? static_cast<int>(parsed) : def;
+
+  return static_cast<int>(it->second.int_value);
 }
 
 // double specialisation
 template <>
-double GetCached<double>(const char* key, double def)
+double GetCached<double>(const char* key, const double def)
 {
   auto it = optionCache.find(key);
-  if (it == optionCache.end())
+  if (it == optionCache.end() || !it->second.has_double)
     return def;
-  char* end = nullptr;
-  double parsed = strtod(it->second.c_str(), &end);
-  return (end != it->second.c_str()) ? parsed : def;
+
+  return it->second.double_value;
 }
 
 // std::string specialisation
@@ -1807,7 +2099,7 @@ template <>
 std::string GetCached<std::string>(const char* key, const std::string def)
 {
   auto it = optionCache.find(key);
-  return (it != optionCache.end()) ? it->second : def;
+  return (it != optionCache.end()) ? it->second.raw : def;
 }
 }  // namespace Options
 

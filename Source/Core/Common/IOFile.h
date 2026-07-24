@@ -11,6 +11,11 @@
 
 #include "Common/CommonTypes.h"
 
+#ifdef __LIBRETRO__
+#include "Common/Logging/Log.h"
+#include "DolphinLibretro/Common/VFile.h"
+#endif
+
 namespace File
 {
 enum class SeekOrigin
@@ -55,6 +60,30 @@ public:
   requires(std::is_trivially_copyable_v<T>)
   bool ReadArray(T* elements, size_t count, size_t* num_read = nullptr)
   {
+#ifdef __LIBRETRO__
+    if (Libretro::VFile::HasVFS())
+    {
+      if (!IsOpen())
+      {
+        m_good = false;
+        return m_good;
+      }
+
+      int64_t bytes_read = Libretro::VFile::ReadBytes(m_vfs_handle,
+                                                     elements,
+                                                     static_cast<uint64_t>(count * sizeof(T)));
+
+      size_t read_count = (bytes_read >= 0) ? static_cast<size_t>(bytes_read) / sizeof(T) : 0;
+
+      if (read_count != count)
+        m_good = false;
+
+      if (num_read)
+        *num_read = read_count;
+
+      return m_good;
+    }
+#endif
     size_t read_count = 0;
     if (!IsOpen() || count != (read_count = std::fread(elements, sizeof(T), count, m_file)))
       m_good = false;
@@ -69,6 +98,35 @@ public:
   requires(std::is_trivially_copyable_v<T>)
   bool WriteArray(const T* elements, size_t count)
   {
+  #ifdef __LIBRETRO__
+    if (Libretro::VFile::HasVFS())
+    {
+      if (!IsOpen())
+      {
+        m_good = false;
+        return m_good;
+      }
+
+      const uint64_t bytes_to_write = static_cast<uint64_t>(count * sizeof(T));
+      int64_t bytes_written = Libretro::VFile::WriteBytes(m_vfs_handle, elements, bytes_to_write);
+
+      if (bytes_written < 0)
+      {
+        m_good = false;
+        return m_good;
+      }
+
+      size_t write_count = static_cast<size_t>(bytes_written) / sizeof(T);
+      if (write_count != count)
+      {
+        m_good = false;
+        return m_good;
+      }
+
+      return m_good;
+    }
+  #endif
+
     if (!IsOpen() || count != std::fwrite(elements, sizeof(T), count, m_file))
       m_good = false;
 
@@ -96,11 +154,28 @@ public:
 
   bool WriteString(std::string_view str) { return WriteBytes(str.data(), str.size()); }
 
-  bool IsOpen() const { return nullptr != m_file; }
+  bool IsOpen() const
+  {
+#ifdef __LIBRETRO__
+    if (Libretro::VFile::HasVFS())
+      return nullptr != m_vfs_handle;
+#endif
+    return nullptr != m_file;
+  }
   // m_good is set to false when a read, write or other function fails
   bool IsGood() const { return m_good; }
   explicit operator bool() const { return IsGood() && IsOpen(); }
-  std::FILE* GetHandle() { return m_file; }
+  std::FILE* GetHandle()
+  {
+#ifdef __LIBRETRO__
+    if (Libretro::VFile::HasVFS())
+      ERROR_LOG_FMT(COMMON, "VFS: Attempt to use std::FILE which should not happen in VFS mode");
+#endif
+    return m_file; 
+  }
+#ifdef __LIBRETRO__
+  retro_vfs_file_handle* GetVFSHandle() { return m_vfs_handle; }
+#endif
   void SetHandle(std::FILE* file);
 
   bool Seek(s64 offset, SeekOrigin origin);
@@ -113,6 +188,10 @@ public:
   void ClearError()
   {
     m_good = true;
+#ifdef __LIBRETRO__
+    if (Libretro::VFile::HasVFS())
+      return;
+#endif
     if (IsOpen())
       std::clearerr(m_file);
   }
@@ -120,6 +199,10 @@ public:
 private:
   std::FILE* m_file;
   bool m_good;
+
+#ifdef __LIBRETRO__
+  retro_vfs_file_handle* m_vfs_handle = nullptr;
+#endif
 };
 
 }  // namespace File

@@ -423,7 +423,7 @@ static void CpuThread(Core::System& system, const std::optional<std::string> sav
 #endif
 
   // Clear performance data collected from previous threads.
-  g_perf_metrics.Reset();
+  system.GetPerfMetrics().Reset();
 
   // The JIT need to be able to intercept faults, both for fastmem and for the BLR optimization.
   const bool exception_handler = EMM::IsExceptionHandlerSupported();
@@ -1102,11 +1102,12 @@ void RunOnCPUThread(Core::System& system, Common::MoveOnlyFunction<void()> funct
 // Called from Renderer::Swap (GPU thread) when a frame is presented to the host screen.
 void Callback_FramePresented(const PresentInfo& present_info)
 {
-  g_perf_metrics.CountFrame();
+  auto& perf_metrics = Core::System::GetInstance().GetPerfMetrics();
+  perf_metrics.CountFrame();
 
   const auto presentation_offset =
       present_info.actual_present_time - present_info.intended_present_time;
-  g_perf_metrics.SetLatestFramePresentationOffset(presentation_offset);
+  perf_metrics.SetLatestFramePresentationOffset(presentation_offset);
 
   if (present_info.reason == PresentInfo::PresentReason::VideoInterfaceDuplicate)
     return;
@@ -1186,10 +1187,9 @@ Common::EventHook AddOnStateChangedCallback(StateChangedCallbackFunc callback)
   return s_state_changed_event.Register(std::move(callback));
 }
 
-void NotifyStateChanged(Core::State state)
+void NotifyStateChanged(const Core::State state)
 {
   s_state_changed_event.Trigger(state);
-  g_perf_metrics.OnEmulationStateChanged(state);
 }
 
 void UpdateWantDeterminism(Core::System& system, bool initial)
@@ -1306,5 +1306,25 @@ CPUThreadGuard::~CPUThreadGuard()
   if (!m_was_cpu_thread)
     RestoreStateAndUnlock(m_system, m_was_unpaused);
 }
+
+#ifdef __LIBRETRO__
+void SingleCorePostRunShutdown()
+{
+#ifdef USE_MEMORYWATCHER
+  s_memory_watcher.reset();
+#endif
+
+  if (EMM::IsExceptionHandlerSupported())
+    EMM::UninstallExceptionHandler();
+
+  if (GDBStub::IsActive())
+  {
+    INFO_LOG_FMT(CONSOLE, "{}", StopMessage(true, "Stopping GDB ..."));
+    GDBStub::Deinit();
+    INFO_LOG_FMT(CONSOLE, "{}", StopMessage(true, "GDB stopped."));
+    INFO_LOG_FMT(GDB_STUB, "Killed by CPU shutdown");
+  }
+}
+#endif
 
 }  // namespace Core
