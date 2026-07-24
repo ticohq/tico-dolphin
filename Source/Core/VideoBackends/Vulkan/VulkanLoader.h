@@ -18,7 +18,9 @@
 #endif
 
 #if defined(__SWITCH__)
+#ifndef VK_USE_PLATFORM_VI_NN
 #define VK_USE_PLATFORM_VI_NN
+#endif
 #endif
 
 #if defined(__APPLE__)

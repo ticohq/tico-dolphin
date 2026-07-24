@@ -1,5 +1,7 @@
 project(dolphin-nx)
 
+set(TICO_NRO_VERSION "0.0.0" CACHE STRING "tico Dolphin NRO package version")
+
 # Link directories MUST come before add_executable / target_link_libraries
 link_directories(
   ${DEVKITPRO}/devkitA64/lib/
@@ -27,6 +29,7 @@ target_compile_definitions(dolphin-nx PRIVATE
   AARCH64
   NX
   VK_USE_PLATFORM_VI_NN
+  TICO_NRO_VERSION="${TICO_NRO_VERSION}"
 )
 
 # Optimization flags for Tegra X1 (Cortex-A57)

@@ -188,9 +188,9 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
 
   AchievementManager::GetInstance().CloseGame();
 
-#ifdef __LIBRETRO__
-  // For Libretro we check for the IPL file here, the disc region is known by now
-  // so we can easily get the correct path to check.
+#if defined(__LIBRETRO__) || defined(__SWITCH__)
+  // For Libretro and Switch standalone we check for the IPL file here, where
+  // the disc region is known and the correct region-specific path can be checked.
   if (!system.IsWii() && !Config::Get(Config::MAIN_SKIP_IPL))
   {
     std::string ipl_path;
@@ -207,6 +207,7 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
         break;
       case DiscIO::Region::DEV:
         ipl_path = DEV_DIR DIR_SEP GC_IPL;
+        break;
       default:
         break;
     }
@@ -222,8 +223,8 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
 
     // If the file is missing or if the returned region is unknown we set Config::MAIN_SKIP_IPL
     // to true before the Core::Init() call below or it will just hang forever.
-    // It also allows the user to just leave the "Skip BIOS" core options disabled, no matter
-    // if they have the IPL for the current game region.
+    // It also allows the user to just leave the "Skip BIOS" core option disabled, no matter
+    // whether they have the IPL for the current game region.
     if (skip_ipl)
     {
       WARN_LOG_FMT(BOOT, "Skipping IPL: {}.", ipl_path.empty() ? "region unknown" : "file not found");

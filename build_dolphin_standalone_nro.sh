@@ -11,11 +11,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build_nx_standalone"
 ROMFS_DIR="${BUILD_DIR}/romfs"
 MESA_NVK_DIR="${MESA_NVK_DIR:-/nvk-build}"
+TICO_NRO_VERSION="${TICO_NRO_VERSION:-0.0.7}"
 
 echo "=== Dolphin NX Standalone Build (no libretro) ==="
 echo "Source: ${SCRIPT_DIR}"
 echo "Build:  ${BUILD_DIR}"
 echo "NVK:    ${MESA_NVK_DIR}"
+echo "Version: ${TICO_NRO_VERSION}"
 echo ""
 
 if [ ! -f "${DEVKITPRO}/portlibs/switch/lib/libSDL2.a" ]; then
@@ -49,6 +51,7 @@ cmake -B "${BUILD_DIR}" "${SCRIPT_DIR}" \
   -DUSE_MGBA=OFF \
   -DUSE_SFML=OFF \
   -DMESA_NVK_DIR="${MESA_NVK_DIR}" \
+  -DTICO_NRO_VERSION="${TICO_NRO_VERSION}" \
   -DCMAKE_BUILD_TYPE=Release
 
 cmake --build "${BUILD_DIR}" --target dolphin-nx -j"$(nproc)"
@@ -65,7 +68,7 @@ cp -R "${SCRIPT_DIR}/Data/Sys" "${ROMFS_DIR}/"
 nacptool --create \
   "tico Dolphin" \
   "ticoverse.com, dolphin-emu" \
-  "0.0.6" \
+  "${TICO_NRO_VERSION}" \
   "${BUILD_DIR}/dolphin.nacp"
 
 cp "${BUILD_DIR}/Binaries/dolphin-nx" "${BUILD_DIR}/Binaries/dolphin-nx.debug.elf"

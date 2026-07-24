@@ -899,9 +899,9 @@ private:
     Config::SetBase(Config::MAIN_ENABLE_CHEATS, false);
     Config::SetBase(Config::MAIN_ENABLE_SAVESTATES, false);
     Config::SetBase(Config::MAIN_OSD_MESSAGES, false);
-    Config::SetBase(Config::MAIN_ENABLE_DEBUGGING, false);
+    Config::SetBase(Config::MAIN_ENABLE_DEBUGGING, true);
     Config::SetBase(Config::MAIN_TIME_TRACKING, false);
-    Common::Log::LogManager::GetInstance()->SetConfigLogLevel(Common::Log::LogLevel::LNOTICE);
+    Common::Log::LogManager::GetInstance()->SetConfigLogLevel(Common::Log::LogLevel::LDEBUG);
     Config::SetBase(Config::MAIN_FAST_DISC_SPEED, false);
     Config::SetBase(Config::MAIN_OVERCLOCK, 1.0f);
     Config::SetBase(Config::MAIN_OVERCLOCK_ENABLE, false);
@@ -1083,8 +1083,9 @@ private:
         Config::GFX_CUSTOM_ASPECT_RATIO_HEIGHT,
         GetInt("dolphin_custom_aspect_ratio_height",
                Config::Get(Config::GFX_CUSTOM_ASPECT_RATIO_HEIGHT)));
-    Config::SetBase(Config::GFX_CROP,
-                    GetBool("dolphin_crop_overscan", Config::Get(Config::GFX_CROP)));
+    Config::SetBase(Config::GFX_CROP_TO_ASPECT_RATIO,
+                    GetBool("dolphin_crop_overscan",
+                            Config::Get(Config::GFX_CROP_TO_ASPECT_RATIO)));
     Config::SetBase(Config::GFX_SHOW_FPS,
                     GetBool("dolphin_show_fps", Config::Get(Config::GFX_SHOW_FPS)));
     Config::SetBase(Config::GFX_SHOW_FTIMES,
