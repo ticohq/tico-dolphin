@@ -443,21 +443,10 @@ static void ConfigureNextLoadForTico()
   if (!s_chainload_to_tico)
     return;
 
-  const char* primary_nro = "sdmc:/switch/tico.nro";
-  const char* fallback_nro = "sdmc:/switch/tico/tico.nro";
-  const char* target_nro = nullptr;
+  const char* target_nro = "sdmc:/switch/tico/tico.nro";
 
   struct stat st;
-  if (stat(primary_nro, &st) == 0)
-  {
-    target_nro = primary_nro;
-  }
-  else if (stat(fallback_nro, &st) == 0)
-  {
-    target_nro = fallback_nro;
-  }
-
-  if (target_nro)
+  if (stat(target_nro, &st) == 0)
   {
     char args[512];
     std::snprintf(args, sizeof(args), "%s --resume", target_nro);
@@ -466,7 +455,7 @@ static void ConfigureNextLoadForTico()
   }
   else
   {
-    LOG("Tico chainload target not found; exiting normally\n");
+    LOG("Tico chainload target not found: %s\n", target_nro);
   }
 
   if (std::remove("imgui.ini") == 0)
