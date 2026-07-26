@@ -43,6 +43,7 @@ Action Render(int display_w, int display_h);
 void SetGameTitle(std::string title);
 void SetNickname(std::string nickname);
 void SetAvatarTextureId(unsigned long long texture_id);
+void OpenControllerHelp(bool return_to_quick_menu);
 void ShowToast(std::string message, ToastCorner corner = ToastCorner::TopLeft);
 bool HasTransientContent();
 

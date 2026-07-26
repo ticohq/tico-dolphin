@@ -15,6 +15,20 @@
 namespace IOS::HLE::FS
 {
 // This isn't theadsafe, but it's only called from the CPU thread.
+std::shared_ptr<File::IOFile> HostFileSystem::GetOpenHostFile(const std::string& host_path)
+{
+  auto search = m_open_files.find(host_path);
+  if (search == m_open_files.end())
+    return nullptr;
+
+  if (std::shared_ptr<File::IOFile> file = search->second.lock())
+    return file;
+
+  m_open_files.erase(search);
+  return nullptr;
+}
+
+// This isn't theadsafe, but it's only called from the CPU thread.
 std::shared_ptr<File::IOFile> HostFileSystem::OpenHostFile(const std::string& host_path)
 {
   // On the wii, all file operations are strongly ordered.
@@ -33,13 +47,8 @@ std::shared_ptr<File::IOFile> HostFileSystem::OpenHostFile(const std::string& ho
   //    - Wii System Menu (Can't access the system settings, gets stuck on blank screen)
   //    - The Beatles: Rock Band (saving doesn't work)
 
-  // Check if the file has already been opened.
-  auto search = m_open_files.find(host_path);
-  if (search != m_open_files.end())
-  {
-    // Lock a shared pointer to use.
-    return search->second.lock();
-  }
+  if (std::shared_ptr<File::IOFile> file = GetOpenHostFile(host_path))
+    return file;
 
   // All files are opened read/write. Actual access rights will be controlled per handle by the
   // read/write functions below
@@ -82,19 +91,23 @@ Result<FileHandle> HostFileSystem::OpenFile(Uid, Gid, const std::string& path, M
     return std::unexpected{ResultCode::NoFreeHandle};
 
   const std::string host_path = BuildFilename(path).host_path;
-  if (File::IsDirectory(host_path))
+  handle->host_file = GetOpenHostFile(host_path);
+  if (!handle->host_file)
   {
-    *handle = Handle{};
-    return std::unexpected{ResultCode::Invalid};
-  }
+    if (File::IsDirectory(host_path))
+    {
+      *handle = Handle{};
+      return std::unexpected{ResultCode::Invalid};
+    }
 
-  if (!File::IsFile(host_path))
-  {
-    *handle = Handle{};
-    return std::unexpected{ResultCode::NotFound};
-  }
+    if (!File::IsFile(host_path))
+    {
+      *handle = Handle{};
+      return std::unexpected{ResultCode::NotFound};
+    }
 
-  handle->host_file = OpenHostFile(host_path);
+    handle->host_file = OpenHostFile(host_path);
+  }
   if (!handle->host_file)
   {
     *handle = Handle{};

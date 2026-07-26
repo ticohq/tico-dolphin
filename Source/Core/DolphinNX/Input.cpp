@@ -63,6 +63,18 @@ static PadState s_pads[MAX_SWITCH_PLAYERS] = {};
 static bool s_hid_initialized = false;
 static bool s_pad_initialized = false;
 
+static constexpr double kTouchscreenWidth = 1280.0;
+static constexpr double kTouchscreenHeight = 720.0;
+
+struct TouchscreenState
+{
+  bool pressed = false;
+  double x = 0.0;
+  double y = 0.0;
+};
+
+static TouchscreenState s_touchscreen_state;
+
 struct SixAxisPlayerState
 {
   bool started = false;
@@ -98,6 +110,10 @@ struct WiiControllerPlayerState
 
 static SixAxisPlayerState s_sixaxis[MAX_SWITCH_PLAYERS] = {};
 static WiiControllerPlayerState s_wii_controller_states[MAX_SWITCH_PLAYERS] = {};
+
+static constexpr u32 kNsoControllerStyles =
+    HidNpadStyleTag_NpadLagon | HidNpadStyleTag_NpadLucia | HidNpadStyleTag_NpadLager |
+    HidNpadStyleTag_NpadLark;
 
 // Tracks the controller style each player's auto profile was last resolved for, so
 // the profile can be re-applied when the physical controller changes mid-session
@@ -283,6 +299,32 @@ static void SetWiimoteOrientation(WiimoteEmu::Wiimote* wiimote, bool sideways, b
   SetBoolSetting(options, WiimoteEmu::Wiimote::UPRIGHT_OPTION, upright);
 }
 
+static void SetWiimoteTouchPointerOverride(WiimoteEmu::Wiimote* wiimote, bool enabled)
+{
+  if (!enabled)
+  {
+    wiimote->ClearInputOverrideFunction();
+    return;
+  }
+
+  wiimote->SetInputOverrideFunction(
+      [](std::string_view group_name, std::string_view control_name,
+         ControlState) -> std::optional<ControlState> {
+        if (ShouldBlockGameplayInput() || !s_touchscreen_state.pressed ||
+            group_name != WiimoteEmu::Wiimote::IR_GROUP)
+        {
+          return std::nullopt;
+        }
+
+        if (control_name == "X")
+          return s_touchscreen_state.x;
+        if (control_name == "Y")
+          return -s_touchscreen_state.y;
+
+        return std::nullopt;
+      });
+}
+
 static bool ControlExpressionEquals(const ControllerEmu::ControlGroup* group, size_t index,
                                     std::string_view expression);
 
@@ -380,6 +422,7 @@ static void SetWiimoteEnabled(unsigned player, bool enabled, WiimoteEmu::Extensi
 
   if (enabled)
     ApplyWiimoteProfile(player, wiimote, extension, sideways);
+  SetWiimoteTouchPointerOverride(wiimote, enabled);
 
   const WiimoteSource wiimote_source = enabled ? WiimoteSource::Emulated : WiimoteSource::None;
   Config::SetBaseOrCurrent(Config::GetInfoForWiimoteSource(player), wiimote_source);
@@ -469,6 +512,23 @@ static WiiControllerMode GetNextWiiControllerMode(WiiControllerMode mode)
   return WiiControllerMode::WiimoteNunchuk;
 }
 
+static bool IsWiiControllerModeToggleCombo(u64 held, u32 style_set)
+{
+  const bool minus = (held & HidNpadButton_Minus) != 0;
+  const bool plus = (held & HidNpadButton_Plus) != 0;
+  const bool l = (held & HidNpadButton_L) != 0;
+  const bool r = (held & HidNpadButton_R) != 0;
+  const bool zl = (held & HidNpadButton_ZL) != 0;
+  const bool zr = (held & HidNpadButton_ZR) != 0;
+  const bool rail = (held & HidNpadButton_AnySL) != 0 || (held & HidNpadButton_AnySR) != 0;
+  const bool nso = (style_set & kNsoControllerStyles) != 0;
+
+  // Full controllers keep the original ZL+Minus shortcut and gain a right-side
+  // mirror. Single Joy-Con layouts can pair +/- with SL/SR, while NSO-style pads
+  // without ZL/ZR can pair +/- with L/R.
+  return (minus && (zl || rail || (nso && l))) || (plus && (zr || rail || (nso && r)));
+}
+
 static void HandleWiiControllerModeToggle(unsigned player)
 {
   WiiControllerPlayerState& player_state = s_wii_controller_states[player];
@@ -504,8 +564,7 @@ static void HandleWiiControllerModeToggle(unsigned player)
   }
 
   const u64 held = padGetButtons(&s_pads[player]);
-  const bool toggle_combo =
-      (held & HidNpadButton_ZL) != 0 && (held & HidNpadButton_Minus) != 0;
+  const bool toggle_combo = IsWiiControllerModeToggleCombo(held, padGetStyleSet(&s_pads[player]));
 
   if (!toggle_combo)
   {
@@ -565,6 +624,79 @@ private:
     const int m_stick;
     const int m_axis;
     const s32 m_range;
+    const char* m_name;
+  };
+
+  class DirectionInput : public ciface::Core::Device::Input
+  {
+  public:
+    DirectionInput(unsigned port, u64 button_mask, int stick_index, int axis, s32 range,
+                   const char* name)
+        : m_port(port), m_button_mask(button_mask), m_stick(stick_index), m_axis(axis),
+          m_range(range), m_name(name)
+    {
+    }
+    std::string GetName() const override { return m_name; }
+    ControlState GetState() const override
+    {
+      if (ShouldBlockGameplayInput())
+        return 0.0;
+
+      const ControlState button_state =
+          (padGetButtons(&s_pads[m_port]) & m_button_mask) ? 1.0 : 0.0;
+      const HidAnalogStickState pos = padGetStickPos(&s_pads[m_port], m_stick);
+      const s32 val = (m_axis == 0) ? pos.x : pos.y;
+      const ControlState axis_state = std::max(0.0, static_cast<double>(val) / m_range);
+      return std::max(button_state, axis_state);
+    }
+
+  private:
+    const unsigned m_port;
+    const u64 m_button_mask;
+    const int m_stick;
+    const int m_axis;
+    const s32 m_range;
+    const char* m_name;
+  };
+
+  class TouchButton : public ciface::Core::Device::Input
+  {
+  public:
+    TouchButton(bool pressed, const char* name) : m_pressed(pressed), m_name(name) {}
+    std::string GetName() const override { return m_name; }
+    ControlState GetState() const override
+    {
+      if (ShouldBlockGameplayInput())
+        return m_pressed ? 0.0 : 1.0;
+
+      return s_touchscreen_state.pressed == m_pressed ? 1.0 : 0.0;
+    }
+
+  private:
+    const bool m_pressed;
+    const char* m_name;
+  };
+
+  class TouchAxis : public ciface::Core::Device::Input
+  {
+  public:
+    TouchAxis(bool vertical, bool positive, const char* name)
+        : m_vertical(vertical), m_positive(positive), m_name(name)
+    {
+    }
+    std::string GetName() const override { return m_name; }
+    ControlState GetState() const override
+    {
+      if (ShouldBlockGameplayInput() || !s_touchscreen_state.pressed)
+        return 0.0;
+
+      const double axis = m_vertical ? s_touchscreen_state.y : s_touchscreen_state.x;
+      return axis / (m_positive ? 1.0 : -1.0);
+    }
+
+  private:
+    const bool m_vertical;
+    const bool m_positive;
     const char* m_name;
   };
 
@@ -684,6 +816,21 @@ public:
     AddInput(new Axis(m_port, 1, 0, 32767, "X1+"));
     AddInput(new Axis(m_port, 1, 1, -32768, "Y1-"));
     AddInput(new Axis(m_port, 1, 1, 32767, "Y1+"));
+
+    AddInput(new DirectionInput(m_port, HidNpadButton_Up, 0, 1, 32767, "D-Pad/Left Stick Up"));
+    AddInput(
+        new DirectionInput(m_port, HidNpadButton_Down, 0, 1, -32768, "D-Pad/Left Stick Down"));
+    AddInput(
+        new DirectionInput(m_port, HidNpadButton_Left, 0, 0, -32768, "D-Pad/Left Stick Left"));
+    AddInput(
+        new DirectionInput(m_port, HidNpadButton_Right, 0, 0, 32767, "D-Pad/Left Stick Right"));
+
+    AddInput(new TouchButton(true, "Touch Pressed"));
+    AddInput(new TouchButton(false, "Touch Released"));
+    AddInput(new TouchAxis(false, false, "Touch X-"));
+    AddInput(new TouchAxis(false, true, "Touch X+"));
+    AddInput(new TouchAxis(true, false, "Touch Y-"));
+    AddInput(new TouchAxis(true, true, "Touch Y+"));
 
     // Motion source for Wiimote IMU defaults.
     AddInput(new MotionAxis(m_port, MotionAxis::Sensor::Accelerometer, MotionAxis::Axis::Z, -1.0,
@@ -929,14 +1076,16 @@ static bool HasLegacySwitchDefaults(WiimoteEmu::Wiimote* wiimote)
       ControlExpressionEquals(shake, 0, "`R3`") &&
       ControlExpressionEquals(shake, 1, "`R3`") &&
       ControlExpressionEquals(shake, 2, "`R3`") &&
-      ControlExpressionEquals(point, 0, "`Y1+`") &&
-      ControlExpressionEquals(point, 1, "`Y1-`") &&
-      ControlExpressionEquals(point, 2, "`X1-`") &&
-      ControlExpressionEquals(point, 3, "`X1+`") &&
       ControlExpressionEquals(dpad, 0, "`Up`") &&
       ControlExpressionEquals(dpad, 1, "`Down`") &&
       ControlExpressionEquals(dpad, 2, "`Left`") &&
       ControlExpressionEquals(dpad, 3, "`Right`");
+
+  const bool old_stick_pointer =
+      ControlExpressionEquals(point, 0, "`Y1+`") &&
+      ControlExpressionEquals(point, 1, "`Y1-`") &&
+      ControlExpressionEquals(point, 2, "`X1-`") &&
+      ControlExpressionEquals(point, 3, "`X1+`");
 
   const bool empty_motion =
       ControlExpressionEquals(imu_accel, 0, "") &&
@@ -956,7 +1105,7 @@ static bool HasLegacySwitchDefaults(WiimoteEmu::Wiimote* wiimote)
       DoubleSettingEquals(imu_point, "Total Yaw", 25.0) ||
       DoubleSettingEquals(imu_point, "Horizontal FOV", 42.0);
 
-  return switch_buttons && (empty_motion || old_sensor_box);
+  return switch_buttons && old_stick_pointer && (empty_motion || old_sensor_box);
 }
 
 static void ILOG(const char* fmt, ...)
@@ -1058,10 +1207,6 @@ static void EnsureDualJoyConAssignment()
   if (split_pair)
     hidMergeSingleJoyAsDualJoy(HidNpadIdType_No1, HidNpadIdType_No2);
 }
-
-static constexpr u32 kNsoControllerStyles =
-    HidNpadStyleTag_NpadLagon | HidNpadStyleTag_NpadLucia | HidNpadStyleTag_NpadLager |
-    HidNpadStyleTag_NpadLark;
 
 // libnx's padUpdate() only reads the SystemExt/FullKey/JoyDual/JoyLeft/JoyRight
 // lifos, so an NSO controller (N64/SNES/Genesis/NES) looks disconnected to it even
@@ -1252,7 +1397,7 @@ void Init(const WindowSystemInfo& wsi)
   s_split_joycon = false;
 
   // Sets each player's starting WiiControllerMode, so this must run before any
-  // controller is created. ZL+Minus still cycles from whatever is configured here.
+  // controller is created. The mode hotkey still cycles from whatever is configured here.
   ControllerProfiles::Reload();
   LoadControllerConfig();
 
@@ -1263,6 +1408,7 @@ void Init(const WindowSystemInfo& wsi)
   // Configure Switch input for standard controllers
   if (s_hid_initialized && hidGetSharedmemAddr())
   {
+    hidInitializeTouchScreen();
     ConfigurePad();
     s_pad_initialized = true;
     ILOG("pad init done\n");
@@ -1448,6 +1594,26 @@ static void UpdateAutoJoyConHoldType()
   hidSetNpadJoyHoldType(desired);
 }
 
+static void UpdateTouchscreenState()
+{
+  s_touchscreen_state = {};
+
+  HidTouchScreenState state = {};
+  if (hidGetTouchScreenStates(&state, 1) == 0 || state.count <= 0)
+    return;
+
+  const HidTouchState& touch = state.touches[0];
+  if ((touch.attributes & HidTouchAttribute_End) != 0)
+    return;
+
+  s_touchscreen_state.pressed = true;
+  s_touchscreen_state.x =
+      std::clamp(static_cast<double>(touch.x) / (kTouchscreenWidth - 1.0) * 2.0 - 1.0, -1.0, 1.0);
+  s_touchscreen_state.y =
+      std::clamp(static_cast<double>(touch.y) / (kTouchscreenHeight - 1.0) * 2.0 - 1.0, -1.0,
+                 1.0);
+}
+
 void Update()
 {
   if (!s_pad_initialized || !hidGetSharedmemAddr())
@@ -1468,6 +1634,8 @@ void Update()
     padUpdate(&s_pads[player]);
     MergeNsoPadState(player);
   }
+
+  UpdateTouchscreenState();
 
   for (unsigned player = 0; player < MAX_SWITCH_PLAYERS; ++player)
     HandleWiiControllerModeToggle(player);

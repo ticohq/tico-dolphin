@@ -11,13 +11,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build_nx_standalone"
 ROMFS_DIR="${BUILD_DIR}/romfs"
 MESA_NVK_DIR="${MESA_NVK_DIR:-/nvk-build}"
-TICO_NRO_VERSION="${TICO_NRO_VERSION:-0.0.7}"
+TICO_NRO_VERSION="${TICO_NRO_VERSION:-0.0.8}"
+TICO_NX_DIR="${TICO_NX_DIR:-${SCRIPT_DIR}/../../../tico-nx}"
 
 echo "=== Dolphin NX Standalone Build (no libretro) ==="
 echo "Source: ${SCRIPT_DIR}"
 echo "Build:  ${BUILD_DIR}"
 echo "NVK:    ${MESA_NVK_DIR}"
 echo "Version: ${TICO_NRO_VERSION}"
+echo "Tico NX assets: ${TICO_NX_DIR} (optional)"
 echo ""
 
 if [ ! -f "${DEVKITPRO}/portlibs/switch/lib/libSDL2.a" ]; then
@@ -59,12 +61,40 @@ cmake --build "${BUILD_DIR}" --target dolphin-nx -j"$(nproc)"
 echo ""
 echo "=== Packaging NRO ==="
 
-rm -rf "${ROMFS_DIR}/fonts" "${ROMFS_DIR}/lang" "${ROMFS_DIR}/Sys"
+rm -rf "${ROMFS_DIR}/fonts" "${ROMFS_DIR}/lang" "${ROMFS_DIR}/Sys" "${ROMFS_DIR}/config"
 mkdir -p "${ROMFS_DIR}"
 cp -R "${SCRIPT_DIR}/Source/Core/DolphinNX/Assets/fonts" "${ROMFS_DIR}/"
 cp -R "${SCRIPT_DIR}/Source/Core/DolphinNX/Assets/lang" "${ROMFS_DIR}/"
 # Dolphin's Sys tree, seeded to sdmc:/tico/system/gc/Sys on first run (see main.cpp).
 cp -R "${SCRIPT_DIR}/Data/Sys" "${ROMFS_DIR}/"
+
+# Profile hotfix payload for 0.0.8. Dolphin normally reads profiles from
+# sdmc:/tico/config/cores/profiles/dolphin; these two files are force-reseeded
+# once by Source/Core/DolphinNX/main.cpp so existing 0.0.7 installs receive the
+# horizontal Wii Remote Joy-Con mapping fix.
+BUNDLED_DOLPHIN_PROFILE_SRC="${SCRIPT_DIR}/Source/Core/DolphinNX/Assets/config/cores/profiles/dolphin"
+TICO_NX_DOLPHIN_PROFILE_SRC="${TICO_NX_DIR}/assets/config/cores/profiles/dolphin"
+DOLPHIN_PROFILE_SRC="${TICO_DOLPHIN_PROFILE_SRC:-}"
+if [ -z "${DOLPHIN_PROFILE_SRC}" ]; then
+  if [ -f "${TICO_NX_DOLPHIN_PROFILE_SRC}/handheld.json" ] && \
+     [ -f "${TICO_NX_DOLPHIN_PROFILE_SRC}/joycon_dual.json" ]; then
+    DOLPHIN_PROFILE_SRC="${TICO_NX_DOLPHIN_PROFILE_SRC}"
+  else
+    DOLPHIN_PROFILE_SRC="${BUNDLED_DOLPHIN_PROFILE_SRC}"
+  fi
+fi
+DOLPHIN_PROFILE_DST="${ROMFS_DIR}/config/cores/profiles/dolphin"
+if [ ! -f "${DOLPHIN_PROFILE_SRC}/handheld.json" ] || \
+   [ ! -f "${DOLPHIN_PROFILE_SRC}/joycon_dual.json" ]; then
+  echo "Missing Dolphin profile hotfix files in ${DOLPHIN_PROFILE_SRC}" >&2
+  echo "Set TICO_DOLPHIN_PROFILE_SRC to a directory containing handheld.json and joycon_dual.json." >&2
+  exit 1
+fi
+echo "Dolphin profile hotfix assets: ${DOLPHIN_PROFILE_SRC}"
+mkdir -p "${DOLPHIN_PROFILE_DST}"
+cp "${DOLPHIN_PROFILE_SRC}/handheld.json" "${DOLPHIN_PROFILE_DST}/"
+cp "${DOLPHIN_PROFILE_SRC}/joycon_dual.json" "${DOLPHIN_PROFILE_DST}/"
+
 nacptool --create \
   "tico Dolphin" \
   "ticoverse.com, dolphin-emu" \

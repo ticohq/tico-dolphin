@@ -19,7 +19,7 @@
 
 #include <fmt/format.h>
 
-#ifdef __LIBRETRO__
+#if defined(__LIBRETRO__) || defined(__SWITCH__)
 #include "Common/CommonPaths.h"
 #endif
 #include "Common/CommonTypes.h"

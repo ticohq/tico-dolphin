@@ -619,6 +619,18 @@ bool ShouldExit()
   return s_exit_requested.load();
 }
 
+void OpenControllerHelp(bool return_to_quick_menu)
+{
+  if (!s_initialized.load())
+    return;
+
+  s_visible.store(true);
+  s_pending_nav_mask.store(0);
+  if (!s_social_data_loaded)
+    LoadSocialAreaData();
+  OverlayUI::OpenControllerHelp(return_to_quick_menu);
+}
+
 int ConsumeAction()
 {
   return s_pending_action.exchange(0);

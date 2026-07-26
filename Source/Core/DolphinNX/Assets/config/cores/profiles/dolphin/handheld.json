@@ -1,0 +1,187 @@
+{
+  "id": "handheld",
+  "name": "Handheld",
+  "styles": [
+    "NpadHandheld"
+  ],
+  "targets": {
+    "gc": {
+      "Buttons": {
+        "A": "A",
+        "B": "B",
+        "X": "X",
+        "Y": "Y",
+        "Z": "R2",
+        "Start": "Start"
+      },
+      "D-Pad": {
+        "Up": "Up",
+        "Down": "Down",
+        "Left": "Left",
+        "Right": "Right"
+      },
+      "Main Stick": {
+        "Up": "Y0+",
+        "Down": "Y0-",
+        "Left": "X0-",
+        "Right": "X0+"
+      },
+      "C-Stick": {
+        "Up": "Y1+",
+        "Down": "Y1-",
+        "Left": "X1-",
+        "Right": "X1+"
+      },
+      "Triggers": {
+        "L": "L",
+        "R": "R",
+        "L-Analog": "L",
+        "R-Analog": "R"
+      }
+    },
+    "wiimote": {
+      "Buttons": {
+        "A": "A",
+        "B": "R2",
+        "1": "X",
+        "2": "B",
+        "-": "Select",
+        "+": "Start",
+        "Home": "L3"
+      },
+      "D-Pad": {
+        "Up": "Up",
+        "Down": "Down",
+        "Left": "Left",
+        "Right": "Right"
+      },
+      "Shake": {
+        "X": "R3",
+        "Y": "R3",
+        "Z": "R3"
+      },
+      "IR": {
+        "Up": "Y1+",
+        "Down": "Y1-",
+        "Left": "X1-",
+        "Right": "X1+"
+      },
+      "IMUAccelerometer": {
+        "Up": "Accel Up",
+        "Down": "Accel Down",
+        "Left": "Accel Left",
+        "Right": "Accel Right",
+        "Forward": "Accel Forward",
+        "Backward": "Accel Backward"
+      },
+      "IMUGyroscope": {
+        "Pitch Up": "Gyro Pitch Up",
+        "Pitch Down": "Gyro Pitch Down",
+        "Roll Left": "Gyro Roll Left",
+        "Roll Right": "Gyro Roll Right",
+        "Yaw Left": "Gyro Yaw Left",
+        "Yaw Right": "Gyro Yaw Right"
+      },
+      "IMUIR": {
+        "Recenter": "R3"
+      }
+    },
+    "wiimote_sideways": {
+      "Buttons": {
+        "A": "A",
+        "B": "R2",
+        "1": "X",
+        "2": "B",
+        "-": "Select",
+        "+": "Start",
+        "Home": "L3"
+      },
+      "D-Pad": {
+        "Up": "D-Pad/Left Stick Up",
+        "Down": "D-Pad/Left Stick Down",
+        "Left": "D-Pad/Left Stick Left",
+        "Right": "D-Pad/Left Stick Right"
+      },
+      "Shake": {
+        "X": "R3",
+        "Y": "R3",
+        "Z": "R3"
+      },
+      "IR": {
+        "Up": "Y1+",
+        "Down": "Y1-",
+        "Left": "X1-",
+        "Right": "X1+"
+      },
+      "IMUAccelerometer": {
+        "Up": "Accel Up",
+        "Down": "Accel Down",
+        "Left": "Accel Left",
+        "Right": "Accel Right",
+        "Forward": "Accel Forward",
+        "Backward": "Accel Backward"
+      },
+      "IMUGyroscope": {
+        "Pitch Up": "Gyro Pitch Up",
+        "Pitch Down": "Gyro Pitch Down",
+        "Roll Left": "Gyro Roll Left",
+        "Roll Right": "Gyro Roll Right",
+        "Yaw Left": "Gyro Yaw Left",
+        "Yaw Right": "Gyro Yaw Right"
+      },
+      "IMUIR": {
+        "Recenter": "R3"
+      }
+    },
+    "nunchuk": {
+      "Stick": {
+        "Up": "Y0+",
+        "Down": "Y0-",
+        "Left": "X0-",
+        "Right": "X0+"
+      },
+      "Buttons": {
+        "C": "L",
+        "Z": "Z"
+      }
+    },
+    "classic": {
+      "Buttons": {
+        "A": "A",
+        "B": "B",
+        "X": "X",
+        "Y": "Y",
+        "ZL": "Z",
+        "ZR": "R2",
+        "-": "Select",
+        "+": "Start",
+        "Home": "L3"
+      },
+      "Left Stick": {
+        "Up": "Y0+",
+        "Down": "Y0-",
+        "Left": "X0-",
+        "Right": "X0+"
+      },
+      "Right Stick": {
+        "Up": "Y1+",
+        "Down": "Y1-",
+        "Left": "X1-",
+        "Right": "X1+"
+      },
+      "Triggers": {
+        "L": "L",
+        "R": "R",
+        "L-Analog": "L",
+        "R-Analog": "R"
+      },
+      "D-Pad": {
+        "Up": "Up",
+        "Down": "Down",
+        "Left": "Left",
+        "Right": "Right"
+      }
+    }
+  },
+  "_comment": "Joy-Cons attached to the console. Same physical layout as a Pro Controller, so it starts as a copy of pro.json; it exists separately so handheld play can be remapped without disturbing a docked Pro Controller."
+}

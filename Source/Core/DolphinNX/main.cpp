@@ -392,7 +392,7 @@ static bool IsGameCubeDisc(const std::optional<BootGameMetadata>& metadata)
 static constexpr bool kNxLogEnabled = true;
 static constexpr const char kNxLogPath[] = "sdmc:/dolphin-nx.log";
 static std::mutex s_log_mutex;
-static bool s_log_ready = false;
+static bool s_log_ready = true;
 
 static void LOG(const char* fmt, ...)
 {
@@ -416,6 +416,66 @@ static bool SwitchMsgAlertHandler(const char* caption, const char* text, bool, C
 {
   LOG("Suppressed alert: %s - %s\n", caption ? caption : "(null)", text ? text : "(null)");
   return true;
+}
+
+static bool EnsureActiveWiiNandRoot()
+{
+  const std::string wii_root = File::GetUserPath(D_WIIROOT_IDX);
+  if (wii_root.empty())
+  {
+    LOG("Wii NAND root is empty\n");
+    return false;
+  }
+
+  bool ok = true;
+  constexpr const char* required_dirs[] = {
+      "",
+      "shared1",
+      "shared2",
+      "shared2/sys",
+      "shared2/wc24",
+      "ticket",
+      "title",
+      "tmp",
+  };
+
+  for (const char* dir : required_dirs)
+  {
+    const std::string path = wii_root + dir;
+    const bool created = File::CreateDirs(path);
+    LOG("Ensure Wii NAND dir: %s => %s\n", path.c_str(), created ? "ok" : "failed");
+    ok = ok && created;
+  }
+
+  return ok;
+}
+
+static void EnableDolphinWiiDiagnostics()
+{
+  auto* log_manager = Common::Log::LogManager::GetInstance();
+  if (!log_manager)
+    return;
+
+  log_manager->EnableListener(Common::Log::LogListener::FILE_LISTENER, true);
+  log_manager->SetConfigLogLevel(Common::Log::LogLevel::LINFO);
+
+  constexpr Common::Log::LogType log_types[] = {
+      Common::Log::LogType::BOOT,
+      Common::Log::LogType::CORE,
+      Common::Log::LogType::IOS,
+      Common::Log::LogType::IOS_ES,
+      Common::Log::LogType::IOS_FS,
+      Common::Log::LogType::IOS_NET,
+      Common::Log::LogType::IOS_WC24,
+      Common::Log::LogType::WII_IPC,
+      Common::Log::LogType::OSREPORT,
+      Common::Log::LogType::OSREPORT_HLE,
+  };
+
+  for (const Common::Log::LogType type : log_types)
+    log_manager->SetEnable(type, true);
+
+  LOG("Dolphin Wii diagnostics enabled at %s\n", File::GetUserPath(F_MAINLOG_IDX).c_str());
 }
 
 static void SetDefaultEnvIfUnset(const char* name, const char* value)
@@ -495,6 +555,17 @@ static constexpr const char* kGcSysMarker = "sdmc:/tico/system/gc/.sys_version";
 static constexpr const char* kGcSysVersion = TICO_NRO_VERSION;
 
 static constexpr const char* kGcSysSentinel = "sdmc:/tico/system/gc/Sys/ApprovedInis.json";
+static constexpr const char* kRootMesaDir = "sdmc:/.mesa";
+static constexpr const char* kRootMesaVersionMarker =
+    "sdmc:/tico/config/.migrations/root_mesa_core_version";
+static constexpr const char* kDolphinProfileUpdateMarker =
+    "sdmc:/tico/config/.migrations/dolphin_profiles_0.0.8";
+static constexpr const char* kDolphinProfileHotfixSource =
+    "romfs:/config/cores/profiles/dolphin";
+static constexpr const char* kDolphinProfileHotfixDest =
+    "sdmc:/tico/config/cores/profiles/dolphin";
+static constexpr const char* kControllerModesTipMarker =
+    "sdmc:/tico/config/.migrations/dolphin_controller_modes_tip_0.0.8";
 
 static bool PathIsDir(const char* p)
 {
@@ -756,6 +827,91 @@ static bool CopyTreeRecursive(const std::string& src, const std::string& dst,
   return ok;
 }
 
+static bool CopyProfileHotfixFile(const char* name)
+{
+  const std::string src = std::string(kDolphinProfileHotfixSource) + "/" + name;
+  const std::string dst = std::string(kDolphinProfileHotfixDest) + "/" + name;
+
+  struct stat st{};
+  if (stat(src.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
+  {
+    LOG("Profile hotfix source missing: %s\n", src.c_str());
+    return false;
+  }
+
+  if (!CopyOneFile(src, dst, st.st_size > 0 ? static_cast<size_t>(st.st_size) : 0, nullptr, false))
+  {
+    LOG("Profile hotfix copy failed: %s -> %s\n", src.c_str(), dst.c_str());
+    return false;
+  }
+
+  LOG("Profile hotfix copied: %s\n", dst.c_str());
+  return true;
+}
+
+static void EnsureDolphinProfilesUpdatedFor008()
+{
+  if (PathIsFile(kDolphinProfileUpdateMarker))
+  {
+    LOG("Dolphin profile hotfix already applied: %s\n", kDolphinProfileUpdateMarker);
+    return;
+  }
+
+  if (!PathIsDir(kDolphinProfileHotfixSource))
+  {
+    LOG("Dolphin profile hotfix skipped; RomFS payload missing: %s\n",
+        kDolphinProfileHotfixSource);
+    return;
+  }
+
+  EnsureDir("sdmc:/tico");
+  EnsureDir("sdmc:/tico/config");
+  EnsureDir("sdmc:/tico/config/.migrations");
+  EnsureDir("sdmc:/tico/config/cores");
+  EnsureDir("sdmc:/tico/config/cores/profiles");
+  EnsureDir(kDolphinProfileHotfixDest);
+
+  bool ok = true;
+  ok = CopyProfileHotfixFile("handheld.json") && ok;
+  ok = CopyProfileHotfixFile("joycon_dual.json") && ok;
+
+  if (!ok)
+  {
+    LOG("Dolphin profile hotfix incomplete; will retry next boot\n");
+    return;
+  }
+
+  if (FILE* f = fopen(kDolphinProfileUpdateMarker, "wb"))
+  {
+    fputs(kGcSysVersion, f);
+    fputc('\n', f);
+    fclose(f);
+  }
+  fsdevCommitDevice("sdmc");
+  LOG("Dolphin profile hotfix complete: %s\n", kDolphinProfileUpdateMarker);
+}
+
+static void MarkControllerModesTipShown()
+{
+  EnsureDir("sdmc:/tico");
+  EnsureDir("sdmc:/tico/config");
+  EnsureDir("sdmc:/tico/config/.migrations");
+
+  if (FILE* f = fopen(kControllerModesTipMarker, "wb"))
+  {
+    fputs(kGcSysVersion, f);
+    fputc('\n', f);
+    fclose(f);
+    fsdevCommitDevice("sdmc");
+    LOG("Controller modes tip marker written: %s\n", kControllerModesTipMarker);
+  }
+  else
+  {
+    LOG("WARNING: failed to write controller modes tip marker: %s\n",
+        kControllerModesTipMarker);
+  }
+}
+
 static bool GcSysMarkerMatches()
 {
   FILE* f = fopen(kGcSysMarker, "rb");
@@ -768,6 +924,66 @@ static bool GcSysMarkerMatches()
   while (!v.empty() && (v.back() == '\n' || v.back() == '\r' || v.back() == ' ' || v.back() == '\t'))
     v.pop_back();
   return v == kGcSysVersion;
+}
+
+static bool RootMesaVersionMarkerMatches()
+{
+  FILE* f = fopen(kRootMesaVersionMarker, "rb");
+  if (!f)
+    return false;
+
+  char buf[64] = {0};
+  const size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+  fclose(f);
+
+  std::string v(buf, n);
+  while (!v.empty() &&
+         (v.back() == '\n' || v.back() == '\r' || v.back() == ' ' || v.back() == '\t'))
+    v.pop_back();
+
+  return v == kGcSysVersion;
+}
+
+static void WriteRootMesaVersionMarker()
+{
+  EnsureDir("sdmc:/tico");
+  EnsureDir("sdmc:/tico/config");
+  EnsureDir("sdmc:/tico/config/.migrations");
+
+  if (FILE* f = fopen(kRootMesaVersionMarker, "wb"))
+  {
+    fputs(kGcSysVersion, f);
+    fputc('\n', f);
+    fclose(f);
+    fsdevCommitDevice("sdmc");
+    LOG("Root Mesa cache core-version marker written: %s\n", kRootMesaVersionMarker);
+  }
+  else
+  {
+    LOG("WARNING: failed to write Root Mesa cache core-version marker: %s\n",
+        kRootMesaVersionMarker);
+  }
+}
+
+static void EnsureRootMesaCacheMatchesCoreVersion()
+{
+  if (RootMesaVersionMarkerMatches())
+  {
+    LOG("Root Mesa cache matches core version: %s\n", kGcSysVersion);
+    return;
+  }
+
+  if (PathIsDir(kRootMesaDir))
+  {
+    LOG("Removing Root Mesa directory after core update: %s\n", kRootMesaDir);
+    if (!DeleteDirectoryRecursivelyIfExists(kRootMesaDir))
+    {
+      LOG("Failed to remove Root Mesa directory after core update: %s\n", kRootMesaDir);
+      return;
+    }
+  }
+
+  WriteRootMesaVersionMarker();
 }
 
 // Copies romfs:/Sys -> sdmc:/tico/system/gc/Sys after a version bump. Safe to
@@ -880,6 +1096,8 @@ int main(int argc, char* argv[])
   LOG("=== Dolphin NX Standalone Boot Log ===\n");
   LOG("argc=%d\n", argc);
 
+  EnsureRootMesaCacheMatchesCoreVersion();
+
   const int exit_code = [&]() {
     const auto launch_rom_path = GetLaunchRomPath(argc, argv);
     if (!launch_rom_path)
@@ -920,6 +1138,7 @@ int main(int argc, char* argv[])
     // Seed Dolphin's Sys tree onto the SD from RomFS before anything reads it.
     if (!EnsureGcSysInstalled())
       return 1;
+    EnsureDolphinProfilesUpdatedFor008();
 
     s_nwindow = nwindowGetDefault();
     LOG("NWindow: %p\n", (void*)s_nwindow);
@@ -958,6 +1177,10 @@ int main(int argc, char* argv[])
     LOG("TicoCore::ApplyConfig...\n");
     DolphinNX::TicoCore::ApplyConfig(IsGameCubeDisc(boot_game_metadata));
     LOG("Config applied\n");
+    if (!EnsureActiveWiiNandRoot())
+      LOG("WARNING: failed to prepare Wii NAND root before boot\n");
+    if (!IsGameCubeDisc(boot_game_metadata))
+      EnableDolphinWiiDiagnostics();
     LOG("Configured GFX backend=%s, CPUThread=%d, Fastmem=%d, FastmemArena=%d, "
         "LargeEntryMap=%d, AudioBuffer=%d, PrecisionTiming=%d, SyncOnSkipIdle=%d, VSync=%d, "
         "BackendMT=%d, ForceProgressive=%d, VISkip=%d, EarlyXFB=%d, ImmediateXFB=%d, "
@@ -1036,6 +1259,7 @@ int main(int argc, char* argv[])
     int frame = 0;
     bool overlay_paused_core = false;
     bool overlay_was_visible = false;
+    bool controller_modes_tip_pending = !PathIsFile(kControllerModesTipMarker);
     const auto startup_started_at = std::chrono::steady_clock::now();
     bool startup_watchdog_fired = false;
     bool startup_abort_due_no_present = false;
@@ -1061,6 +1285,13 @@ int main(int argc, char* argv[])
           {
             LOG("Overlay init succeeded during main loop after %llu presents\n",
                 static_cast<unsigned long long>(presented_frames));
+            if (controller_modes_tip_pending)
+            {
+              DolphinNX::VulkanOverlay::OpenControllerHelp(false);
+              MarkControllerModesTipShown();
+              controller_modes_tip_pending = false;
+              LOG("Overlay: controller modes first-boot help opened\n");
+            }
           }
         }
       }

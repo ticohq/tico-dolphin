@@ -91,6 +91,7 @@ private:
     bool is_redirect;
   };
   HostFilename BuildFilename(const std::string& wii_path) const;
+  std::shared_ptr<File::IOFile> GetOpenHostFile(const std::string& host_path);
   std::shared_ptr<File::IOFile> OpenHostFile(const std::string& host_path);
 
   ResultCode CreateFileOrDirectory(Uid uid, Gid gid, const std::string& path,

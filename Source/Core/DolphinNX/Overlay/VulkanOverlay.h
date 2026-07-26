@@ -15,6 +15,7 @@ void Update(PadState* pad);
 bool IsVisible();
 bool ShouldExit();
 
+void OpenControllerHelp(bool return_to_quick_menu);
 int ConsumeAction();
 
 void Shutdown();

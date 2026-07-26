@@ -30,10 +30,11 @@ struct QuickMenuItem
   const char* fallback;
 };
 
-constexpr std::array<QuickMenuItem, 4> kQuickMenuItems = {{
+constexpr std::array<QuickMenuItem, 5> kQuickMenuItems = {{
     {"emulator_save_state", "Save State"},
     {"emulator_load_state", "Load State"},
     {"emulator_settings", "Settings"},
+    {"emulator_help", "Help"},
     {"emulator_exit_game", "Exit Game"},
 }};
 constexpr int kOverlaySlotCount = 4;
@@ -50,6 +51,7 @@ enum class MenuScreen
   SaveStates,
   LoadStates,
   Settings,
+  Help,
 };
 
 enum class ViewportMode
@@ -87,6 +89,7 @@ unsigned long long s_avatar_texture_id = 0;
 ViewportMode s_viewport_mode = ViewportMode::Display;
 DisplaySize s_display_size = DisplaySize::FourThree;
 IntegerScale s_integer_scale = IntegerScale::Auto;
+bool s_help_return_to_quick_menu = true;
 std::mutex s_toast_mutex;
 std::array<std::string, kToastSlotCount> s_toast_messages{};
 std::array<float, kToastSlotCount> s_toast_timers{};
@@ -139,6 +142,9 @@ std::string BuildTitle()
     break;
   case MenuScreen::Settings:
     title = TrOr("emulator_settings", "Settings");
+    break;
+  case MenuScreen::Help:
+    title = TrOr("emulator_controller_help", "Controller Help");
     break;
   case MenuScreen::QuickMenu:
   default:
@@ -322,6 +328,79 @@ void RefreshSlotLabels()
   }
 }
 
+void ShowControllerHelp(bool return_to_quick_menu)
+{
+  s_menu = MenuScreen::Help;
+  s_help_return_to_quick_menu = return_to_quick_menu;
+}
+
+int GetActiveItemCount(bool showing_slots, bool showing_settings, bool showing_help)
+{
+  if (showing_slots)
+    return kOverlaySlotCount;
+  if (showing_settings)
+    return kSettingsItemCount;
+  if (showing_help)
+    return 1;
+  return static_cast<int>(kQuickMenuItems.size());
+}
+
+void RenderHelp(ImDrawList* dl, ImVec2 display_size, float ease)
+{
+  const float scale = ImGui::GetIO().FontGlobalScale;
+  const float panel_width = std::min(display_size.x - (80.0f * scale), 720.0f * scale);
+  const float panel_height = 360.0f * scale;
+  const ImVec2 panel_pos((display_size.x - panel_width) * 0.5f,
+                         (display_size.y - panel_height) * 0.5f);
+  const ImVec2 panel_end(panel_pos.x + panel_width, panel_pos.y + panel_height);
+  const float corner_radius = 16.0f * scale;
+  const float pad = 28.0f * scale;
+  ImFont* font = ImGui::GetFont();
+  const float title_size = ImGui::GetFontSize() * 1.0f;
+  const float body_size = ImGui::GetFontSize() * 0.78f;
+  const float line_gap = 31.0f * scale;
+
+  dl->AddRectFilled(panel_pos, panel_end, IM_COL32(45, 45, 45, static_cast<int>(255.0f * ease)),
+                    corner_radius);
+
+  const ImU32 title_color = IM_COL32(255, 255, 255, static_cast<int>(255.0f * ease));
+  const ImU32 text_color = IM_COL32(210, 210, 210, static_cast<int>(255.0f * ease));
+  float y = panel_pos.y + pad;
+  const float x = panel_pos.x + pad;
+
+  const std::string title = TrOr("emulator_controller_modes", "Switch Controller Modes");
+  dl->AddText(font, title_size, ImVec2(x, y), title_color, title.c_str());
+  y += 46.0f * scale;
+
+  struct HelpLine
+  {
+    const char* key;
+    const char* fallback;
+  };
+  constexpr std::array<HelpLine, 8> kHelpLines = {{
+      {"emulator_controller_help_line_1",
+       "In Wii games, the mode hotkey cycles GameCube, Wii Remote,"},
+      {"emulator_controller_help_line_2",
+       "Wii Remote Sideways, Nunchuk, and Classic Controller."},
+      {"", ""},
+      {"emulator_controller_help_line_full", "Full / handheld: ZL + Minus or ZR + Plus"},
+      {"emulator_controller_help_line_split", "Split Joy-Con: SL/SR + Minus or SL/SR + Plus"},
+      {"emulator_controller_help_line_nso", "NSO NES/SNES/N64/Genesis: L + Minus or R + Plus"},
+      {"emulator_controller_help_line_quick_1", "Open Quick Menu with Plus + Minus,"},
+      {"emulator_controller_help_line_quick_2", "then Help to see this again."},
+  }};
+
+  for (const HelpLine& line : kHelpLines)
+  {
+    if (line.key[0] != '\0')
+    {
+      const std::string text = TrOr(line.key, line.fallback);
+      dl->AddText(font, body_size, ImVec2(x, y), text_color, text.c_str());
+    }
+    y += line_gap;
+  }
+}
+
 void RenderOverlayBackground(ImDrawList* dl, ImVec2 display_size, float ease)
 {
   const int base_alpha = static_cast<int>(200.0f * ease);
@@ -364,6 +443,12 @@ void RenderTitleCard(ImDrawList* dl, ImVec2 display_size, float ease)
 
 void RenderMenu(ImDrawList* dl, ImVec2 display_size, float ease)
 {
+  if (s_menu == MenuScreen::Help)
+  {
+    RenderHelp(dl, display_size, ease);
+    return;
+  }
+
   if (s_menu == MenuScreen::Settings)
   {
     const float scale = ImGui::GetIO().FontGlobalScale;
@@ -529,7 +614,10 @@ void RenderHelpersBar(ImDrawList* dl, ImVec2 display_size, float ease)
     std::string_view description;
   };
 
-  const std::string back = TrOr("emulator_back", "Back");
+  std::string back = TrOr("emulator_back", "Back");
+  if (s_menu == MenuScreen::Help && !s_help_return_to_quick_menu)
+    back = TrOr("emulator_close", "Close");
+
   std::string accept = TrOr("emulator_select", "Select");
   if (s_menu == MenuScreen::SaveStates)
     accept = TrOr("emulator_save_state", "Save State");
@@ -537,10 +625,12 @@ void RenderHelpersBar(ImDrawList* dl, ImVec2 display_size, float ease)
     accept = TrOr("emulator_load_state", "Load State");
   else if (s_menu == MenuScreen::Settings)
     accept = TrOr("emulator_change", "Change");
+  else if (s_menu == MenuScreen::Help)
+    accept = TrOr("emulator_ok", "OK");
 
   const std::array<Helper, 2> helpers = {{
-      {"B", back},
-      {"A", accept},
+      {"B", std::string_view(back.data(), back.size())},
+      {"A", std::string_view(accept.data(), accept.size())},
   }};
 
   const float scale = ImGui::GetIO().FontGlobalScale;
@@ -789,6 +879,7 @@ void SetVisible(bool visible)
     s_slot_selected = 0;
     s_settings_selected = 0;
     s_menu = MenuScreen::QuickMenu;
+    s_help_return_to_quick_menu = true;
   }
   else if (!visible)
   {
@@ -796,6 +887,7 @@ void SetVisible(bool visible)
     s_slot_selected = 0;
     s_settings_selected = 0;
     s_menu = MenuScreen::QuickMenu;
+    s_help_return_to_quick_menu = true;
   }
 
   s_visible = visible;
@@ -814,6 +906,13 @@ void SetNickname(std::string nickname)
 void SetAvatarTextureId(unsigned long long texture_id)
 {
   s_avatar_texture_id = texture_id;
+}
+
+void OpenControllerHelp(bool return_to_quick_menu)
+{
+  SetVisible(true);
+  s_anim_timer = 0.0f;
+  ShowControllerHelp(return_to_quick_menu);
 }
 
 void ShowToast(std::string message, ToastCorner corner)
@@ -869,10 +968,8 @@ Action Render(int display_w, int display_h)
 
   const bool showing_slots = s_menu == MenuScreen::SaveStates || s_menu == MenuScreen::LoadStates;
   const bool showing_settings = s_menu == MenuScreen::Settings;
-  const int item_count =
-      showing_slots ? kOverlaySlotCount :
-                      (showing_settings ? kSettingsItemCount :
-                                          static_cast<int>(kQuickMenuItems.size()));
+  const bool showing_help = s_menu == MenuScreen::Help;
+  const int item_count = GetActiveItemCount(showing_slots, showing_settings, showing_help);
 
   if (nav.up)
   {
@@ -903,7 +1000,14 @@ Action Render(int display_w, int display_h)
   Action result = Action::None;
   if (nav.cancel)
   {
-    if (showing_slots || showing_settings)
+    if (showing_help)
+    {
+      if (s_help_return_to_quick_menu)
+        s_menu = MenuScreen::QuickMenu;
+      else
+        result = Action::Resume;
+    }
+    else if (showing_slots || showing_settings)
     {
       s_menu = MenuScreen::QuickMenu;
       s_slot_selected = 0;
@@ -924,7 +1028,14 @@ Action Render(int display_w, int display_h)
 
   if (nav.accept)
   {
-    if (showing_slots)
+    if (showing_help)
+    {
+      if (s_help_return_to_quick_menu)
+        s_menu = MenuScreen::QuickMenu;
+      else
+        result = Action::Resume;
+    }
+    else if (showing_slots)
     {
       result = s_menu == MenuScreen::SaveStates ? MakeSaveActionForSlot(s_slot_selected) :
                                                   MakeLoadActionForSlot(s_slot_selected);
@@ -954,6 +1065,9 @@ Action Render(int display_w, int display_h)
         s_settings_selected = 0;
         break;
       case 3:
+        ShowControllerHelp(true);
+        break;
+      case 4:
         result = Action::Exit;
         break;
       default:

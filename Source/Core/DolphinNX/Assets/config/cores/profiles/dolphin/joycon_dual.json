@@ -1,0 +1,196 @@
+{
+  "id": "joycon_dual",
+  "name": "Joy-Con (Dual)",
+  "styles": [
+    "NpadJoyDual"
+  ],
+  "targets": {
+    "gc": {
+      "Buttons": {
+        "A": "A",
+        "B": "B",
+        "X": "X",
+        "Y": "Y",
+        "Z": "R2",
+        "Start": "Start"
+      },
+      "D-Pad": {
+        "Up": "Up",
+        "Down": "Down",
+        "Left": "Left",
+        "Right": "Right"
+      },
+      "Main Stick": {
+        "Up": "Y0+",
+        "Down": "Y0-",
+        "Left": "X0-",
+        "Right": "X0+"
+      },
+      "C-Stick": {
+        "Up": "Y1+",
+        "Down": "Y1-",
+        "Left": "X1-",
+        "Right": "X1+"
+      },
+      "Triggers": {
+        "L": "L",
+        "R": "R",
+        "L-Analog": "L",
+        "R-Analog": "R"
+      }
+    },
+    "wiimote": {
+      "Buttons": {
+        "A": "A",
+        "B": "R2",
+        "1": "X",
+        "2": "B",
+        "-": "Select",
+        "+": "Start",
+        "Home": "L3"
+      },
+      "D-Pad": {
+        "Up": "Up",
+        "Down": "Down",
+        "Left": "Left",
+        "Right": "Right"
+      },
+      "Shake": {
+        "X": "R3",
+        "Y": "R3",
+        "Z": "R3"
+      },
+      "IR": {
+        "Up": "Y1+",
+        "Down": "Y1-",
+        "Left": "X1-",
+        "Right": "X1+"
+      },
+      "IMUAccelerometer": {
+        "Up": "Accel Up",
+        "Down": "Accel Down",
+        "Left": "Accel Left",
+        "Right": "Accel Right",
+        "Forward": "Accel Forward",
+        "Backward": "Accel Backward"
+      },
+      "IMUGyroscope": {
+        "Pitch Up": "Gyro Pitch Up",
+        "Pitch Down": "Gyro Pitch Down",
+        "Roll Left": "Gyro Roll Left",
+        "Roll Right": "Gyro Roll Right",
+        "Yaw Left": "Gyro Yaw Left",
+        "Yaw Right": "Gyro Yaw Right"
+      },
+      "IMUIR": {
+        "Recenter": "R3"
+      }
+    },
+    "wiimote_sideways": {
+      "Buttons": {
+        "A": "A",
+        "B": "R2",
+        "1": "X",
+        "2": "B",
+        "-": "Select",
+        "+": "Start",
+        "Home": "L3"
+      },
+      "D-Pad": {
+        "Up": "D-Pad/Left Stick Up",
+        "Down": "D-Pad/Left Stick Down",
+        "Left": "D-Pad/Left Stick Left",
+        "Right": "D-Pad/Left Stick Right"
+      },
+      "Shake": {
+        "X": "R3",
+        "Y": "R3",
+        "Z": "R3"
+      },
+      "IR": {
+        "Up": "Y1+",
+        "Down": "Y1-",
+        "Left": "X1-",
+        "Right": "X1+"
+      },
+      "IMUAccelerometer": {
+        "Up": "Accel Up",
+        "Down": "Accel Down",
+        "Left": "Accel Left",
+        "Right": "Accel Right",
+        "Forward": "Accel Forward",
+        "Backward": "Accel Backward"
+      },
+      "IMUGyroscope": {
+        "Pitch Up": "Gyro Pitch Up",
+        "Pitch Down": "Gyro Pitch Down",
+        "Roll Left": "Gyro Roll Left",
+        "Roll Right": "Gyro Roll Right",
+        "Yaw Left": "Gyro Yaw Left",
+        "Yaw Right": "Gyro Yaw Right"
+      },
+      "IMUIR": {
+        "Recenter": "R3"
+      }
+    },
+    "nunchuk": {
+      "Stick": {
+        "Up": "Y0+",
+        "Down": "Y0-",
+        "Left": "X0-",
+        "Right": "X0+"
+      },
+      "Buttons": {
+        "C": "L",
+        "Z": "Z"
+      },
+      "_note": "The dual pair is the only controller with a second IMU: the left Joy-Con's accelerometer drives the nunchuk, like a real nunchuk in the left hand (shake/tilt with the left half). 'L Accel *' reads zero on every other controller, so only this profile binds it.",
+      "IMUAccelerometer": {
+        "Up": "L Accel Up",
+        "Down": "L Accel Down",
+        "Left": "L Accel Left",
+        "Right": "L Accel Right",
+        "Forward": "L Accel Forward",
+        "Backward": "L Accel Backward"
+      }
+    },
+    "classic": {
+      "Buttons": {
+        "A": "A",
+        "B": "B",
+        "X": "X",
+        "Y": "Y",
+        "ZL": "Z",
+        "ZR": "R2",
+        "-": "Select",
+        "+": "Start",
+        "Home": "L3"
+      },
+      "Left Stick": {
+        "Up": "Y0+",
+        "Down": "Y0-",
+        "Left": "X0-",
+        "Right": "X0+"
+      },
+      "Right Stick": {
+        "Up": "Y1+",
+        "Down": "Y1-",
+        "Left": "X1-",
+        "Right": "X1+"
+      },
+      "Triggers": {
+        "L": "L",
+        "R": "R",
+        "L-Analog": "L",
+        "R-Analog": "R"
+      },
+      "D-Pad": {
+        "Up": "Up",
+        "Down": "Down",
+        "Left": "Left",
+        "Right": "Right"
+      }
+    }
+  },
+  "_comment": "A Joy-Con pair held as one controller, detached and not split. Same button set as a Pro Controller, so it starts as a copy of pro.json. Distinct from joycon_left/joycon_right, which are one half each held sideways."
+}
