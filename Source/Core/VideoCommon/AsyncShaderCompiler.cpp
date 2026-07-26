@@ -3,6 +3,7 @@
 
 #include "VideoCommon/AsyncShaderCompiler.h"
 
+#include <memory>
 #include <thread>
 
 #include "Common/Assert.h"
@@ -166,17 +167,44 @@ bool AsyncShaderCompiler::StartWorkerThreads(u32 num_worker_threads)
 
     m_worker_thread_start_result.store(false);
 
+#ifdef __SWITCH__
+    constexpr size_t SHADER_COMPILER_STACK_SIZE = 2 * 1024 * 1024;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, SHADER_COMPILER_STACK_SIZE);
+
+    pthread_t thread;
+    auto start = std::make_unique<WorkerThreadStart>(WorkerThreadStart{this, thread_param});
+    const int create_result =
+        pthread_create(&thread, &attr, &AsyncShaderCompiler::WorkerThreadTrampoline, start.get());
+    pthread_attr_destroy(&attr);
+    if (create_result != 0)
+    {
+      WARN_LOG_FMT(VIDEO, "Failed to create shader compiler worker thread: {}", create_result);
+      break;
+    }
+    start.release();
+#else
     std::thread thr(&AsyncShaderCompiler::WorkerThreadEntryPoint, this, thread_param);
+#endif
     m_init_event.Wait();
 
     if (!m_worker_thread_start_result.load())
     {
       WARN_LOG_FMT(VIDEO, "Failed to start shader compiler worker thread.");
+#ifdef __SWITCH__
+      pthread_join(thread, nullptr);
+#else
       thr.join();
+#endif
       break;
     }
 
+#ifdef __SWITCH__
+    m_worker_threads.push_back(thread);
+#else
     m_worker_threads.push_back(std::move(thr));
+#endif
   }
 
   return HasWorkerThreads();
@@ -209,8 +237,13 @@ void AsyncShaderCompiler::StopWorkerThreads()
   }
 
   // Wait for worker threads to exit.
+#ifdef __SWITCH__
+  for (pthread_t thread : m_worker_threads)
+    pthread_join(thread, nullptr);
+#else
   for (std::thread& thr : m_worker_threads)
     thr.join();
+#endif
   m_worker_threads.clear();
   m_exit_flag.Clear();
 }
@@ -228,6 +261,15 @@ bool AsyncShaderCompiler::WorkerThreadInitWorkerThread(void* param)
 void AsyncShaderCompiler::WorkerThreadExit(void* param)
 {
 }
+
+#ifdef __SWITCH__
+void* AsyncShaderCompiler::WorkerThreadTrampoline(void* start_ptr)
+{
+  const std::unique_ptr<WorkerThreadStart> start(static_cast<WorkerThreadStart*>(start_ptr));
+  start->compiler->WorkerThreadEntryPoint(start->param);
+  return nullptr;
+}
+#endif
 
 void AsyncShaderCompiler::WorkerThreadEntryPoint(void* param)
 {
