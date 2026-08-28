@@ -102,7 +102,11 @@ private:
   std::string GetFstFilePath() const;
   void ResetFst();
   void LoadFst();
+  // Requests that the FST be persisted. On Horizon this only marks the FST dirty and coalesces
+  // writes, otherwise it writes immediately.
   void SaveFst();
+  // Serializes the FST to disk unconditionally.
+  void FlushFst();
   /// Get the FST entry for a file (or directory).
   /// Automatically creates fallback entries for parents if they do not exist.
   /// Returns nullptr if the path is invalid or the file does not exist.
@@ -118,6 +122,10 @@ private:
   /// filesystem root manually.
   FstEntry m_root_entry{};
   std::string m_root_path;
+#ifdef __SWITCH__
+  bool m_fst_dirty = false;
+  u64 m_last_fst_write_ms = 0;
+#endif
   std::map<std::string, std::weak_ptr<File::IOFile>> m_open_files;
   std::array<Handle, 16> m_handles{};
 
