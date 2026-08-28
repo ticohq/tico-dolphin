@@ -21,6 +21,9 @@
 #include "Common/NandPaths.h"
 #include "Common/StringUtil.h"
 #include "Common/Swap.h"
+#ifdef __SWITCH__
+#include "Common/Timer.h"
+#endif
 #include "Core/IOS/ES/ES.h"
 #include "Core/IOS/IOS.h"
 #include "Core/Movie.h"
@@ -150,7 +153,13 @@ HostFileSystem::HostFileSystem(std::string root_path, std::vector<NandRedirect> 
   LoadFst();
 }
 
-HostFileSystem::~HostFileSystem() = default;
+HostFileSystem::~HostFileSystem()
+{
+#ifdef __SWITCH__
+  if (m_fst_dirty)
+    FlushFst();
+#endif
+}
 
 std::string HostFileSystem::GetFstFilePath() const
 {
@@ -205,6 +214,19 @@ void HostFileSystem::LoadFst()
 
 void HostFileSystem::SaveFst()
 {
+#ifdef __SWITCH__
+  // Coalesce a burst into a single write, bounded so long sessions still persist
+  // periodically.
+  constexpr u64 FST_WRITE_COALESCE_MS = 5000;
+  m_fst_dirty = true;
+  if (Common::Timer::NowMs() - m_last_fst_write_ms < FST_WRITE_COALESCE_MS)
+    return;
+#endif
+  FlushFst();
+}
+
+void HostFileSystem::FlushFst()
+{
   std::vector<SerializedFstEntry> to_write;
   auto collect_entries = [&to_write](const auto& collect, const FstEntry& entry) -> void {
     SerializedFstEntry& serialized = to_write.emplace_back();
@@ -229,6 +251,10 @@ void HostFileSystem::SaveFst()
   }
   if (!File::Rename(temp_path, dest_path))
     PanicAlertFmt("IOS_FS: Failed to rename temporary FST file");
+#ifdef __SWITCH__
+  m_fst_dirty = false;
+  m_last_fst_write_ms = Common::Timer::NowMs();
+#endif
 }
 
 HostFileSystem::FstEntry* HostFileSystem::GetFstEntryForPath(const std::string& path)
