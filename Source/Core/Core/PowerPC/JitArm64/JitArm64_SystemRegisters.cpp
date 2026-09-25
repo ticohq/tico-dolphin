@@ -563,6 +563,11 @@ void JitArm64::mtspr(UGeckoInstruction inst)
   // OK, this is easy.
   ARM64Reg RD = gpr.IsImm(inst.RD, 0) ? ARM64Reg::WZR : gpr.R(inst.RD);
   STR(IndexType::Unsigned, RD, PPC_REG, PPCSTATE_OFF_SPR(iIndex));
+
+  if (iIndex == SPR_LR)
+    m_lr_source_gpr = inst.RD;
+  else if (iIndex == SPR_CTR)
+    m_ctr_source_gpr = inst.RD;
 }
 
 void JitArm64::crXXX(UGeckoInstruction inst)

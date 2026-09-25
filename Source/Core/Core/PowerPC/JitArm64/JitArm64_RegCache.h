@@ -342,6 +342,8 @@ public:
 
   bool IsImm(size_t preg, u32 imm) const { return IsImm(preg) && GetImm(preg) == imm; }
 
+  bool IsInHostRegister(size_t preg) const { return GetGuestGPROpArg(preg).IsInHostRegister(); }
+
   // Binds a guest GPR to a host register, optionally loading its value.
   //
   // preg: The guest register index.
