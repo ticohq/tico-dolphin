@@ -106,6 +106,49 @@ void JitArm64::WriteBranchWatchDestInRegister(u32 origin, ARM64Reg destination,
   ABI_PopRegisters(gpr_caller_save);
 }
 
+void JitArm64::ClearSPRSources()
+{
+  m_lr_source_gpr = -1;
+  m_ctr_source_gpr = -1;
+}
+
+void JitArm64::InvalidateSPRSources(BitSet32 written_gprs)
+{
+  if (m_lr_source_gpr >= 0 && written_gprs[m_lr_source_gpr])
+    m_lr_source_gpr = -1;
+  if (m_ctr_source_gpr >= 0 && written_gprs[m_ctr_source_gpr])
+    m_ctr_source_gpr = -1;
+}
+
+BitSet32 JitArm64::GetSPRSourceGPRs() const
+{
+  BitSet32 sources{};
+  if (m_lr_source_gpr >= 0)
+    sources[m_lr_source_gpr] = true;
+  if (m_ctr_source_gpr >= 0)
+    sources[m_ctr_source_gpr] = true;
+  return sources;
+}
+
+void JitArm64::LoadBranchTargetFromSPR(ARM64Reg dest, u32 spr)
+{
+  const int source = spr == SPR_LR ? m_lr_source_gpr : m_ctr_source_gpr;
+  if (source >= 0 && gpr.IsImm(source))
+  {
+    MOVI2R(dest, gpr.GetImm(source) & ~0x3);
+    return;
+  }
+
+  if (source >= 0 && gpr.IsInHostRegister(source))
+  {
+    AND(dest, gpr.R(source), LogicalImm(~0x3, GPRSize::B32));
+    return;
+  }
+
+  LDR(IndexType::Unsigned, dest, PPC_REG, PPCSTATE_OFF_SPR(spr));
+  AND(dest, dest, LogicalImm(~0x3, GPRSize::B32));
+}
+
 void JitArm64::bx(UGeckoInstruction inst)
 {
   INSTRUCTION_START
@@ -114,6 +157,7 @@ void JitArm64::bx(UGeckoInstruction inst)
   Arm64GPRCache::ScopedARM64Reg WA = ARM64Reg::INVALID_REG;
   if (inst.LK)
   {
+    m_lr_source_gpr = -1;
     WA = gpr.GetScopedReg();
     MOVI2R(WA, js.compilerPC + 4);
     STR(IndexType::Unsigned, WA, PPC_REG, PPCSTATE_OFF_SPR(SPR_LR));
@@ -177,6 +221,11 @@ void JitArm64::bcx(UGeckoInstruction inst)
 {
   INSTRUCTION_START
   JITDISABLE(bJITBranchOff);
+
+  if (inst.LK)
+    m_lr_source_gpr = -1;
+  if ((inst.BO & BO_DONT_DECREMENT_FLAG) == 0)
+    m_ctr_source_gpr = -1;
 
   auto WA = gpr.GetScopedReg();
   // If WA isn't needed for WriteExit, it can be safely clobbered.
@@ -275,21 +324,20 @@ void JitArm64::bcctrx(UGeckoInstruction inst)
   // BO_2 == 1z1zz -> b always
 
   // NPC = CTR & 0xfffffffc;
+  auto WA = gpr.GetScopedReg();
+  LoadBranchTargetFromSPR(WA, SPR_CTR);
+
   gpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG);
   fpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG);
 
   Arm64GPRCache::ScopedARM64Reg WB = ARM64Reg::INVALID_REG;
   if (inst.LK_3)
   {
+    m_lr_source_gpr = -1;
     WB = gpr.GetScopedReg();
     MOVI2R(WB, js.compilerPC + 4);
     STR(IndexType::Unsigned, WB, PPC_REG, PPCSTATE_OFF_SPR(SPR_LR));
   }
-
-  auto WA = gpr.GetScopedReg();
-
-  LDR(IndexType::Unsigned, WA, PPC_REG, PPCSTATE_OFF_SPR(SPR_CTR));
-  AND(WA, WA, LogicalImm(~0x3, GPRSize::B32));
 
   if (IsBranchWatchEnabled())
   {
@@ -309,6 +357,9 @@ void JitArm64::bclrx(UGeckoInstruction inst)
 
   bool conditional =
       (inst.BO & BO_DONT_DECREMENT_FLAG) == 0 || (inst.BO & BO_DONT_CHECK_CONDITION) == 0;
+
+  if ((inst.BO & BO_DONT_DECREMENT_FLAG) == 0)
+    m_ctr_source_gpr = -1;
 
   auto WA = gpr.GetScopedReg();
   Arm64GPRCache::ScopedARM64Reg WB;
@@ -336,11 +387,11 @@ void JitArm64::bclrx(UGeckoInstruction inst)
           JumpIfCRFieldBit(inst.BI >> 2, 3 - (inst.BI & 3), !(inst.BO_2 & BO_BRANCH_IF_TRUE));
     }
 
-    LDR(IndexType::Unsigned, WA, PPC_REG, PPCSTATE_OFF_SPR(SPR_LR));
-    AND(WA, WA, LogicalImm(~0x3, GPRSize::B32));
+    LoadBranchTargetFromSPR(WA, SPR_LR);
 
     if (inst.LK)
     {
+      m_lr_source_gpr = -1;
       MOVI2R(WB, js.compilerPC + 4);
       STR(IndexType::Unsigned, WB, PPC_REG, PPCSTATE_OFF_SPR(SPR_LR));
     }

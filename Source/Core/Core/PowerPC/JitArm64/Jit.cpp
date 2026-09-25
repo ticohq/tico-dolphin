@@ -280,6 +280,8 @@ void JitArm64::FallBackToInterpreter(UGeckoInstruction inst)
   Interpreter::Instruction instr = Interpreter::GetInterpreterOp(inst);
   ABI_CallFunction(instr, &m_system.GetInterpreter(), inst.hex);
 
+  ClearSPRSources();
+
   // If the instruction wrote to any registers which were marked as discarded,
   // we must mark them as no longer discarded
   gpr.ResetRegisters(js.op->regsOut);
@@ -333,6 +335,7 @@ void JitArm64::HLEFunction(u32 hook_index)
   fpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG);
 
   ABI_CallFunction(&HLE::ExecuteFromJIT, js.compilerPC, hook_index, &m_system);
+  ClearSPRSources();
 }
 
 void JitArm64::DoNothing(UGeckoInstruction inst)
@@ -1234,6 +1237,7 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
   fpr.Start(js.fpa);
 
   m_constant_propagation.Clear();
+  ClearSPRSources();
 
   if (!js.noSpeculativeConstantsAddresses.contains(js.blockStart))
   {
@@ -1252,6 +1256,8 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
     const GekkoOPInfo* opinfo = op.opinfo;
     js.downcountAmount += opinfo->num_cycles;
     js.isLastInstruction = i == (code_block.m_num_instructions - 1);
+
+    InvalidateSPRSources(op.regsOut);
 
     // Skip calling UpdateLastUsed for lmw/stmw - it usually hurts more than it helps
     if (op.inst.OPCD != 46 && op.inst.OPCD != 47)
@@ -1449,7 +1455,8 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
         fpr.DiscardRegisters(op.fprDiscardable);
         gpr.DiscardCRRegisters(op.crDiscardable);
       }
-      gpr.FlushRegisters(~(op.gprWillBeRead | op.gprWillBeWritten) & (op.regsIn | op.regsOut),
+      gpr.FlushRegisters(~(op.gprWillBeRead | op.gprWillBeWritten | GetSPRSourceGPRs()) &
+                             (op.regsIn | op.regsOut),
                          FlushMode::Full);
       fpr.FlushRegisters(~(op.fprWillBeRead | op.fprWillBeWritten) &
                              (op.fregsIn | op.GetFregsOut()),
@@ -1467,6 +1474,8 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
         ++js.numFloatingPointInst;
     }
 
+    for (int j = 1; j <= js.skipInstructions; ++j)
+      InvalidateSPRSources(m_code_buffer[i + j].regsOut);
     i += js.skipInstructions;
     js.skipInstructions = 0;
   }

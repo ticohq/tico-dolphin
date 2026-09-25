@@ -723,6 +723,7 @@ void JitArm64::dcbx(UGeckoInstruction inst)
 
   if (make_loop)
   {
+    m_ctr_source_gpr = -1;
     gpr.Lock(loop_counter);
     gpr.BindToRegister(b, true);
 
