@@ -27,6 +27,17 @@ static bool IsOnThread(const Core::System& system)
   return system.IsDualCoreMode();
 }
 
+static void UpdateWatermarkFlags(SCPFifoStruct& fifo)
+{
+  const u32 distance = fifo.CPReadWriteDistance.load(std::memory_order_relaxed);
+  const u32 hi = distance > fifo.CPHiWatermark;
+  const u32 lo = distance < fifo.CPLoWatermark;
+  if (fifo.bFF_HiWatermark.load(std::memory_order_relaxed) != hi)
+    fifo.bFF_HiWatermark.store(hi, std::memory_order_relaxed);
+  if (fifo.bFF_LoWatermark.load(std::memory_order_relaxed) != lo)
+    fifo.bFF_LoWatermark.store(lo, std::memory_order_relaxed);
+}
+
 static void UpdateInterrupts_Wrapper(Core::System& system, u64 userdata, s64 cyclesLate)
 {
   system.GetCommandProcessor().UpdateInterrupts(userdata);
@@ -475,13 +486,7 @@ void CommandProcessorManager::SetCPStatusFromGPU()
     }
   }
 
-  // overflow & underflow check
-  m_fifo.bFF_HiWatermark.store(
-      (m_fifo.CPReadWriteDistance.load(std::memory_order_relaxed) > m_fifo.CPHiWatermark),
-      std::memory_order_relaxed);
-  m_fifo.bFF_LoWatermark.store(
-      (m_fifo.CPReadWriteDistance.load(std::memory_order_relaxed) < m_fifo.CPLoWatermark),
-      std::memory_order_relaxed);
+  UpdateWatermarkFlags(m_fifo);
 
   bool bpInt = m_fifo.bFF_Breakpoint.load(std::memory_order_relaxed) &&
                m_fifo.bFF_BPInt.load(std::memory_order_relaxed);
@@ -513,13 +518,7 @@ void CommandProcessorManager::SetCPStatusFromGPU()
 
 void CommandProcessorManager::SetCPStatusFromCPU()
 {
-  // overflow & underflow check
-  m_fifo.bFF_HiWatermark.store(
-      (m_fifo.CPReadWriteDistance.load(std::memory_order_relaxed) > m_fifo.CPHiWatermark),
-      std::memory_order_relaxed);
-  m_fifo.bFF_LoWatermark.store(
-      (m_fifo.CPReadWriteDistance.load(std::memory_order_relaxed) < m_fifo.CPLoWatermark),
-      std::memory_order_relaxed);
+  UpdateWatermarkFlags(m_fifo);
 
   bool bpInt = m_fifo.bFF_Breakpoint.load(std::memory_order_relaxed) &&
                m_fifo.bFF_BPInt.load(std::memory_order_relaxed);

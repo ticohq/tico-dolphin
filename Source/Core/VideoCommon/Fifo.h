@@ -19,6 +19,10 @@ namespace Core
 {
 class System;
 }
+namespace CommandProcessor
+{
+struct SCPFifoStruct;
+}
 namespace CoreTiming
 {
 struct EventType;
@@ -81,13 +85,16 @@ public:
 
 private:
   void RefreshConfig();
-  void ReadDataFromFifo(u32 read_ptr);
+  void ReadDataFromFifo(u32 read_ptr, u32 len);
   void ReadDataFromFifoOnCPU(u32 read_ptr);
   int RunGpuOnCpu(int ticks);
   int WaitForGpuThread(int ticks);
   static void SyncGPUCallback(Core::System& system, u64 ticks, s64 cyclesLate);
 
+  u32 GetBatchLength(const CommandProcessor::SCPFifoStruct& fifo, u32 read_ptr) const;
+
   static constexpr u32 FIFO_SIZE = 2 * 1024 * 1024;
+  static constexpr u32 MAX_BATCH_LENGTH = 64 * 1024;
 
   Common::BlockingLoop m_gpu_mainloop;
 
