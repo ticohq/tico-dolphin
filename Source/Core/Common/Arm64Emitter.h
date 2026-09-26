@@ -1328,6 +1328,7 @@ public:
   void FRSQRTE(u8 size, ARM64Reg Rd, ARM64Reg Rn);
   void FSUB(u8 size, ARM64Reg Rd, ARM64Reg Rn, ARM64Reg Rm);
   void NOT(ARM64Reg Rd, ARM64Reg Rn);
+  void CLZ(u8 size, ARM64Reg Rd, ARM64Reg Rn);
   void ORR(ARM64Reg Rd, ARM64Reg Rn, ARM64Reg Rm);
   void ORN(ARM64Reg Rd, ARM64Reg Rn, ARM64Reg Rm);
   void MOV(ARM64Reg Rd, ARM64Reg Rn) { ORR(Rd, Rn, Rn); }
