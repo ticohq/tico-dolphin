@@ -3294,6 +3294,11 @@ void ARM64FloatEmitter::NOT(ARM64Reg Rd, ARM64Reg Rn)
 {
   Emit2RegMisc(IsQuad(Rd), 1, 0, 5, Rd, Rn);
 }
+void ARM64FloatEmitter::CLZ(u8 size, ARM64Reg Rd, ARM64Reg Rn)
+{
+  ASSERT_MSG(DYNA_REC, size != 64, "CLZ has no 64-bit element form!");
+  Emit2RegMisc(IsQuad(Rd), 1, MathUtil::IntLog2(size) - 3, 4, Rd, Rn);
+}
 void ARM64FloatEmitter::ORR(ARM64Reg Rd, ARM64Reg Rn, ARM64Reg Rm)
 {
   EmitThreeSame(0, 2, 3, Rd, Rn, Rm);

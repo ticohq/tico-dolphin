@@ -788,11 +788,16 @@ void JitArm64::ConvertSingleToDoubleLower(size_t guest_reg, ARM64Reg dest_reg, A
   // (This check unfortunately also catches zeroes)
 
   FixupBranch fast;
+  FixupBranch fast_zero;
   if (scratch_reg != ARM64Reg::INVALID_REG)
   {
     m_float_emit.FABS(EncodeRegToSingle(scratch_reg), EncodeRegToSingle(src_reg));
     m_float_emit.FCMP(EncodeRegToSingle(scratch_reg));
     fast = B(CCFlags::CC_GT);
+
+    m_float_emit.CMEQ(32, EncodeRegToDouble(scratch_reg), EncodeRegToDouble(scratch_reg));
+    m_float_emit.FCMP(EncodeRegToSingle(scratch_reg));
+    fast_zero = B(CCFlags::CC_VS);
 
     if (switch_to_farcode)
     {
@@ -824,6 +829,7 @@ void JitArm64::ConvertSingleToDoubleLower(size_t guest_reg, ARM64Reg dest_reg, A
       SwitchToNearCode();
 
     SetJumpTarget(fast);
+    SetJumpTarget(fast_zero);
 
     m_float_emit.FCVT(64, 32, EncodeRegToDouble(dest_reg), EncodeRegToDouble(src_reg));
 
@@ -850,6 +856,7 @@ void JitArm64::ConvertSingleToDoublePair(size_t guest_reg, ARM64Reg dest_reg, AR
   // (This check unfortunately also catches zeroes)
 
   FixupBranch fast;
+  FixupBranch fast_zero;
   if (scratch_reg != ARM64Reg::INVALID_REG)
   {
     // Set each 32-bit element of scratch_reg to 0x0000'0000 or 0xFFFF'FFFF depending on whether
@@ -867,6 +874,22 @@ void JitArm64::ConvertSingleToDoublePair(size_t guest_reg, ARM64Reg dest_reg, AR
     // Is scratch_reg a NaN (0xFFFF'FFFF'FFFF'FFFF)?
     m_float_emit.FCMP(EncodeRegToDouble(scratch_reg));
     fast = B(CCFlags::CC_VS);
+
+    m_float_emit.SHL(32, EncodeRegToDouble(scratch_reg), EncodeRegToDouble(src_reg), 1);
+    m_float_emit.CLZ(32, EncodeRegToDouble(scratch_reg), EncodeRegToDouble(scratch_reg));
+    m_float_emit.BIC(32, EncodeRegToDouble(scratch_reg), 0xE7);
+    m_float_emit.CMEQ(32, EncodeRegToDouble(scratch_reg), EncodeRegToDouble(scratch_reg));
+    m_float_emit.INS(8, EncodeRegToDouble(scratch_reg), 7, EncodeRegToDouble(scratch_reg), 0);
+    m_float_emit.FCMP(EncodeRegToDouble(scratch_reg));
+    FixupBranch has_denormal = B(CCFlags::CC_VC);
+
+    m_float_emit.FCMEQ(32, EncodeRegToDouble(scratch_reg), EncodeRegToDouble(src_reg),
+                       EncodeRegToDouble(src_reg));
+    m_float_emit.INS(8, EncodeRegToDouble(scratch_reg), 7, EncodeRegToDouble(scratch_reg), 0);
+    m_float_emit.FCMP(EncodeRegToDouble(scratch_reg));
+    fast_zero = B(CCFlags::CC_VS);
+
+    SetJumpTarget(has_denormal);
 
     if (switch_to_farcode)
     {
@@ -901,6 +924,7 @@ void JitArm64::ConvertSingleToDoublePair(size_t guest_reg, ARM64Reg dest_reg, AR
       SwitchToNearCode();
 
     SetJumpTarget(fast);
+    SetJumpTarget(fast_zero);
     m_float_emit.FCVTL(64, EncodeRegToDouble(dest_reg), EncodeRegToDouble(src_reg));
 
     SetJumpTarget(continue1);
