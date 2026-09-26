@@ -523,6 +523,11 @@ void JitArm64::FloatCompare(UGeckoInstruction inst, bool upper)
     AND(fpscr_reg, fpscr_reg, LogicalImm(~FPCC_MASK, GPRSize::B32));
   }
 
+  const Arm64GPRCache::ScopedARM64Reg temp_reg = gpr.GetScopedReg();
+  Arm64GPRCache::ScopedARM64Reg fpcc_reg = ARM64Reg::INVALID_REG;
+  if (fprf)
+    fpcc_reg = gpr.GetScopedReg();
+
   {
     Arm64FPRCache::ScopedARM64Reg V0Q;
     Arm64FPRCache::ScopedARM64Reg V1Q;
@@ -549,51 +554,35 @@ void JitArm64::FloatCompare(UGeckoInstruction inst, bool upper)
     m_float_emit.FCMP(VA, VB);
   }
 
-  FixupBranch pNaN, pLesser, pGreater;
-  FixupBranch continue1, continue2, continue3;
-
+  const ARM64Reg XT = EncodeRegTo64(temp_reg);
   if (a != b)
   {
-    // if B > A goto Greater's jump target
-    pGreater = B(CC_GT);
-    // if B < A, goto Lesser's jump target
-    pLesser = B(CC_MI);
+    CSET(XA, CC_GT);
+    MOVI2R(XT, ~(1ULL << PowerPC::CR_EMU_SO_BIT));
+    CSEL(XA, XT, XA, CC_MI);
+    MOVI2R(XT, ~(1ULL << PowerPC::CR_EMU_LT_BIT));
+    CSEL(XA, XT, XA, CC_VS);
   }
-
-  pNaN = B(CC_VS);
-
-  // A == B
-  MOVI2R(XA, 0);
-  if (fprf)
-    ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_EQ << FPRF_SHIFT, GPRSize::B32));
-
-  continue1 = B();
-
-  SetJumpTarget(pNaN);
-  MOVI2R(XA, ~(1ULL << PowerPC::CR_EMU_LT_BIT));
-  if (fprf)
-    ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_SO << FPRF_SHIFT, GPRSize::B32));
-
-  if (a != b)
+  else
   {
-    continue2 = B();
-
-    SetJumpTarget(pGreater);
-    MOVI2R(XA, 1);
-    if (fprf)
-      ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_GT << FPRF_SHIFT, GPRSize::B32));
-
-    continue3 = B();
-
-    SetJumpTarget(pLesser);
-    MOVI2R(XA, ~(1ULL << PowerPC::CR_EMU_SO_BIT));
-    if (fprf)
-      ORR(fpscr_reg, fpscr_reg, LogicalImm(PowerPC::CR_LT << FPRF_SHIFT, GPRSize::B32));
-
-    SetJumpTarget(continue2);
-    SetJumpTarget(continue3);
+    MOVI2R(XT, ~(1ULL << PowerPC::CR_EMU_LT_BIT));
+    CSEL(XA, XT, ARM64Reg::ZR, CC_VS);
   }
-  SetJumpTarget(continue1);
+
+  if (fprf)
+  {
+    MOVI2R(fpcc_reg, PowerPC::CR_EQ << FPRF_SHIFT);
+    if (a != b)
+    {
+      MOVI2R(temp_reg, PowerPC::CR_GT << FPRF_SHIFT);
+      CSEL(fpcc_reg, temp_reg, fpcc_reg, CC_GT);
+      MOVI2R(temp_reg, PowerPC::CR_LT << FPRF_SHIFT);
+      CSEL(fpcc_reg, temp_reg, fpcc_reg, CC_MI);
+    }
+    MOVI2R(temp_reg, PowerPC::CR_SO << FPRF_SHIFT);
+    CSEL(fpcc_reg, temp_reg, fpcc_reg, CC_VS);
+    ORR(fpscr_reg, fpscr_reg, fpcc_reg);
+  }
 
   ASSERT_MSG(DYNA_REC, singles == (fpr.IsSingle(a, true) && fpr.IsSingle(b, true)),
              "Register allocation turned singles into doubles in the middle of fcmpX");
