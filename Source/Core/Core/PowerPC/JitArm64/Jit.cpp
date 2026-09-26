@@ -1291,7 +1291,7 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
       bool gatherPipeIntCheck = js.fifoWriteAddresses.contains(prev_address);
 
       if (jo.optimizeGatherPipe &&
-          (js.fifoBytesSinceCheck >= GPFifo::GATHER_PIPE_SIZE || js.mustCheckFifo))
+          (js.fifoBytesSinceCheck >= GPFifo::GATHER_PIPE_JIT_FLUSH_SIZE || js.mustCheckFifo))
       {
         js.fifoBytesSinceCheck = 0;
         js.mustCheckFifo = false;

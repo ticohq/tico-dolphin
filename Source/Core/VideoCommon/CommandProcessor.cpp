@@ -347,7 +347,7 @@ void CommandProcessorManager::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
   mmio->Register(base | FIFO_READ_POINTER_HI, fifo_read_hi_r, fifo_read_hi_w);
 }
 
-void CommandProcessorManager::GatherPipeBursted()
+void CommandProcessorManager::GatherPipeBursted(u32 bursts)
 {
   SetCPStatusFromCPU();
 
@@ -372,15 +372,12 @@ void CommandProcessorManager::GatherPipeBursted()
   }
 
   // update the fifo pointer
-  if (m_fifo.CPWritePointer.load(std::memory_order_relaxed) ==
-      m_fifo.CPEnd.load(std::memory_order_relaxed))
-  {
-    m_fifo.CPWritePointer.store(m_fifo.CPBase, std::memory_order_relaxed);
-  }
-  else
-  {
-    m_fifo.CPWritePointer.fetch_add(GPFifo::GATHER_PIPE_SIZE, std::memory_order_relaxed);
-  }
+  const u32 base = m_fifo.CPBase.load(std::memory_order_relaxed);
+  const u32 end = m_fifo.CPEnd.load(std::memory_order_relaxed);
+  u32 write_pointer = m_fifo.CPWritePointer.load(std::memory_order_relaxed);
+  for (u32 i = 0; i < bursts; ++i)
+    write_pointer = write_pointer == end ? base : write_pointer + GPFifo::GATHER_PIPE_SIZE;
+  m_fifo.CPWritePointer.store(write_pointer, std::memory_order_relaxed);
 
   if (m_cp_ctrl_reg.GPReadEnable && m_cp_ctrl_reg.GPLinkEnable)
   {
@@ -394,7 +391,8 @@ void CommandProcessorManager::GatherPipeBursted()
   if (m_fifo.bFF_HiWatermark.load(std::memory_order_relaxed) != 0)
     m_system.GetCoreTiming().ForceExceptionCheck(0);
 
-  m_fifo.CPReadWriteDistance.fetch_add(GPFifo::GATHER_PIPE_SIZE, std::memory_order_seq_cst);
+  m_fifo.CPReadWriteDistance.fetch_add(bursts * GPFifo::GATHER_PIPE_SIZE,
+                                       std::memory_order_seq_cst);
 
   m_system.GetFifo().RunGpu();
 
