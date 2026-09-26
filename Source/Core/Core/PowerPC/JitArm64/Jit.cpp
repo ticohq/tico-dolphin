@@ -63,7 +63,11 @@ static bool IsGatherPipeStoreCandidate(UGeckoInstruction inst)
   case 53:  // stfsu
   case 54:  // stfd
   case 55:  // stfdu
+  case 60:  // psq_st
+  case 61:  // psq_stu
     return true;
+  case 4:
+    return inst.SUBOP6 == 7 || inst.SUBOP6 == 39;  // psq_stx, psq_stux
   case 31:
     switch (inst.SUBOP10)
     {

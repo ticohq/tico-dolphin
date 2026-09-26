@@ -3,6 +3,8 @@
 
 #include "Core/PowerPC/JitArm64/Jit.h"
 
+#include <optional>
+
 #include "Common/Arm64Emitter.h"
 #include "Common/BitSet.h"
 #include "Common/CommonTypes.h"
@@ -12,6 +14,8 @@
 #include "Core/CoreTiming.h"
 #include "Core/PowerPC/Gekko.h"
 #include "Core/PowerPC/JitArm64/JitArm64_RegCache.h"
+#include "Core/PowerPC/JitArm64/Jit_Util.h"
+#include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PPCTables.h"
 #include "Core/PowerPC/PowerPC.h"
 
@@ -214,29 +218,70 @@ void JitArm64::psq_stXX(UGeckoInstruction inst)
   constexpr ARM64Reg scale_reg = ARM64Reg::W1;
   constexpr ARM64Reg addr_reg = ARM64Reg::W2;
 
-  if (inst.RA || update)  // Always uses the register on update
+  const bool early_update = !jo.memcheck;
+
+  std::optional<u32> imm_addr;
+  if (!inst.RA && !update)
   {
-    if (indexed)
-      ADD(addr_reg, gpr.R(inst.RA), gpr.R(inst.RB));
-    else
-      ADDI2R(addr_reg, gpr.R(inst.RA), offset, addr_reg);
+    if (!indexed)
+      imm_addr = static_cast<u32>(offset);
+    else if (gpr.IsImm(inst.RB))
+      imm_addr = gpr.GetImm(inst.RB);
   }
-  else
+  else if (gpr.IsImm(inst.RA))
   {
-    if (indexed)
-      MOV(addr_reg, gpr.R(inst.RB));
-    else
-      MOVI2R(addr_reg, (u32)offset);
+    if (!indexed)
+      imm_addr = gpr.GetImm(inst.RA) + offset;
+    else if (gpr.IsImm(inst.RB))
+      imm_addr = gpr.GetImm(inst.RA) + gpr.GetImm(inst.RB);
   }
 
-  const bool early_update = !jo.memcheck;
+  const bool gather_pipe_write = jo.optimizeGatherPipe && imm_addr &&
+                                 m_mmu.IsOptimizableGatherPipeWrite(*imm_addr) &&
+                                 (!update || early_update);
+  const bool cache_gather_pipe_ptr = gather_pipe_write && js.assumeNoPairedQuantize;
+  if (!cache_gather_pipe_ptr)
+    FlushGatherPipePtr();
+
+  const u32 float_flags = BackPatchInfo::FLAG_STORE | BackPatchInfo::FLAG_FLOAT |
+                          BackPatchInfo::FLAG_SIZE_32 | (w ? 0 : BackPatchInfo::FLAG_PAIR);
+  const u32 float_size = BackPatchInfo::GetFlagSize(float_flags);
+
+  if (!cache_gather_pipe_ptr || update)
+  {
+    if (inst.RA || update)
+    {
+      if (indexed)
+        ADD(addr_reg, gpr.R(inst.RA), gpr.R(inst.RB));
+      else
+        ADDI2R(addr_reg, gpr.R(inst.RA), offset, addr_reg);
+    }
+    else
+    {
+      if (indexed)
+        MOV(addr_reg, gpr.R(inst.RB));
+      else
+        MOVI2R(addr_reg, (u32)offset);
+    }
+  }
+
   if (update && early_update)
   {
     gpr.BindToRegister(inst.RA, false);
     MOV(gpr.R(inst.RA), addr_reg);
   }
 
-  if (js.assumeNoPairedQuantize)
+  if (cache_gather_pipe_ptr)
+  {
+    const ARM64Reg ptr = BeginGatherPipeWrite();
+    const ARM64Reg value = ByteswapBeforeStore(this, &m_float_emit, ARM64Reg::D0,
+                                               EncodeRegToDouble(VS), float_flags, true);
+    m_float_emit.STR(float_size, IndexType::Post, value, ptr, float_size >> 3);
+    EndGatherPipeWrite(ptr);
+
+    js.fifoBytesSinceCheck += float_size >> 3;
+  }
+  else if (js.assumeNoPairedQuantize)
   {
     BitSet32 gprs_in_use = gpr.GetCallerSavedUsed();
     BitSet32 fprs_in_use = fpr.GetCallerSavedUsed();
@@ -248,16 +293,29 @@ void JitArm64::psq_stXX(UGeckoInstruction inst)
     if (!jo.fastmem)
       gprs_in_use[DecodeReg(ARM64Reg::W0)] = false;
 
-    u32 flags = BackPatchInfo::FLAG_STORE | BackPatchInfo::FLAG_FLOAT | BackPatchInfo::FLAG_SIZE_32;
-    if (!w)
-      flags |= BackPatchInfo::FLAG_PAIR;
-
-    EmitBackpatchRoutine(flags, MemAccessMode::Auto, VS, EncodeRegTo64(addr_reg), gprs_in_use,
+    EmitBackpatchRoutine(float_flags, MemAccessMode::Auto, VS, EncodeRegTo64(addr_reg), gprs_in_use,
                          fprs_in_use);
   }
   else
   {
     LDR(IndexType::Unsigned, scale_reg, PPC_REG, PPCSTATE_OFF_SPR(SPR_GQR0 + i));
+
+    FixupBranch gather_pipe_done;
+    if (gather_pipe_write)
+    {
+      TST(scale_reg, LogicalImm(7, GPRSize::B32));  // Type
+      FixupBranch quantized = B(CC_NEQ);
+
+      LDR(IndexType::Unsigned, ARM64Reg::X0, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+      m_float_emit.REV32(8, ARM64Reg::D0, ARM64Reg::D0);
+      m_float_emit.STR(float_size, IndexType::Post, ARM64Reg::D0, ARM64Reg::X0, float_size >> 3);
+      STR(IndexType::Unsigned, ARM64Reg::X0, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+      gather_pipe_done = B();
+
+      SetJumpTarget(quantized);
+
+      js.fifoBytesSinceCheck += float_size >> 3;
+    }
 
     FlushPPCStateBeforeSlowAccess(ARM64Reg::W30, ARM64Reg::Q1);
 
@@ -270,6 +328,9 @@ void JitArm64::psq_stXX(UGeckoInstruction inst)
 
     if (jo.memcheck)
       WriteConditionalExceptionExit(EXCEPTION_DSI, ARM64Reg::W30, ARM64Reg::Q1);
+
+    if (gather_pipe_write)
+      SetJumpTarget(gather_pipe_done);
   }
 
   if (update && !early_update)
