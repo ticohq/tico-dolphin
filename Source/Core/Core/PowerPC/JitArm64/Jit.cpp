@@ -49,6 +49,46 @@ constexpr size_t NEAR_CODE_SIZE = 1024 * 1024 * 64;
 constexpr size_t FAR_CODE_SIZE = 1024 * 1024 * 64;
 constexpr size_t TOTAL_CODE_SIZE = NEAR_CODE_SIZE * 2 + FAR_CODE_SIZE * 2;
 
+static bool IsGatherPipeStoreCandidate(UGeckoInstruction inst)
+{
+  switch (inst.OPCD)
+  {
+  case 36:  // stw
+  case 37:  // stwu
+  case 38:  // stb
+  case 39:  // stbu
+  case 44:  // sth
+  case 45:  // sthu
+  case 52:  // stfs
+  case 53:  // stfsu
+  case 54:  // stfd
+  case 55:  // stfdu
+    return true;
+  case 31:
+    switch (inst.SUBOP10)
+    {
+    case 151:  // stwx
+    case 183:  // stwux
+    case 215:  // stbx
+    case 247:  // stbux
+    case 407:  // sthx
+    case 439:  // sthux
+    case 662:  // stwbrx
+    case 918:  // sthbrx
+    case 663:  // stfsx
+    case 695:  // stfsux
+    case 727:  // stfdx
+    case 759:  // stfdux
+    case 983:  // stfiwx
+      return true;
+    default:
+      return false;
+    }
+  default:
+    return false;
+  }
+}
+
 JitArm64::JitArm64(Core::System& system)
     : JitBase(system), m_float_emit(this),
       m_disassembler(HostDisassembler::Factory(HostDisassembler::Platform::aarch64))
@@ -263,6 +303,7 @@ void JitArm64::Shutdown()
 
 void JitArm64::FallBackToInterpreter(UGeckoInstruction inst)
 {
+  FlushGatherPipePtr();
   FlushCarry();
   gpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG, IgnoreDiscardedRegisters::Yes);
   fpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG, IgnoreDiscardedRegisters::Yes);
@@ -351,6 +392,10 @@ void JitArm64::Break(UGeckoInstruction inst)
 
 void JitArm64::Cleanup()
 {
+  ASSERT_MSG(DYNA_REC, m_gather_pipe_ptr_reg == ARM64Reg::INVALID_REG,
+             "Block exit at {:08x} with the gather pipe pointer still in a register",
+             js.compilerPC);
+
   if (jo.optimizeGatherPipe && js.fifoBytesSinceCheck > 0)
   {
     static_assert(PPCSTATE_OFF(gather_pipe_ptr) <= 504);
@@ -414,6 +459,40 @@ void JitArm64::EmitBLRStackLimitCheck(ARM64Reg reg)
   SetJumpTarget(within_limit);
 }
 #endif
+
+ARM64Reg JitArm64::BeginGatherPipeWrite()
+{
+  if (m_gather_pipe_ptr_reg != ARM64Reg::INVALID_REG)
+    return m_gather_pipe_ptr_reg;
+
+  const ARM64Reg reg = gpr.GetReg();
+  if (ARM64XEmitter::CALLER_SAVED_GPRS[DecodeReg(reg)])
+  {
+    gpr.Unlock(reg);
+    LDR(IndexType::Unsigned, ARM64Reg::X2, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+    return ARM64Reg::X2;
+  }
+
+  m_gather_pipe_ptr_reg = EncodeRegTo64(reg);
+  LDR(IndexType::Unsigned, m_gather_pipe_ptr_reg, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+  return m_gather_pipe_ptr_reg;
+}
+
+void JitArm64::EndGatherPipeWrite(ARM64Reg ptr)
+{
+  if (ptr != m_gather_pipe_ptr_reg)
+    STR(IndexType::Unsigned, ptr, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+}
+
+void JitArm64::FlushGatherPipePtr()
+{
+  if (m_gather_pipe_ptr_reg == ARM64Reg::INVALID_REG)
+    return;
+
+  STR(IndexType::Unsigned, m_gather_pipe_ptr_reg, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+  gpr.Unlock(EncodeRegTo32(m_gather_pipe_ptr_reg));
+  m_gather_pipe_ptr_reg = ARM64Reg::INVALID_REG;
+}
 
 void JitArm64::IntializeSpeculativeConstants()
 {
@@ -956,6 +1035,7 @@ bool JitArm64::HandleFunctionHooking(u32 address)
   if (!result)
     return false;
 
+  FlushGatherPipePtr();
   HLEFunction(result.hook_index);
 
   if (result.type != HLE::HookType::Replace)
@@ -1215,6 +1295,7 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
   js.blockStart = em_address;
   js.fifoBytesSinceCheck = 0;
   js.mustCheckFifo = false;
+  m_gather_pipe_ptr_reg = ARM64Reg::INVALID_REG;
   js.downcountAmount = 0;
   js.skipInstructions = 0;
   js.curBlock = b;
@@ -1275,6 +1356,9 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
 
     InvalidateSPRSources(op.regsOut);
 
+    if (!IsGatherPipeStoreCandidate(op.inst))
+      FlushGatherPipePtr();
+
     // Skip calling UpdateLastUsed for lmw/stmw - it usually hurts more than it helps
     if (op.inst.OPCD != 46 && op.inst.OPCD != 47)
       gpr.UpdateLastUsed(op.regsIn | op.regsOut);
@@ -1296,6 +1380,7 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
         js.fifoBytesSinceCheck = 0;
         js.mustCheckFifo = false;
 
+        FlushGatherPipePtr();
         gpr.Lock(ARM64Reg::W30);
         BitSet32 regs_in_use = gpr.GetCallerSavedUsed();
         BitSet32 fprs_in_use = fpr.GetCallerSavedUsed();
@@ -1315,6 +1400,7 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
       // asynchronous.
       if (jo.optimizeGatherPipe && gatherPipeIntCheck)
       {
+        FlushGatherPipePtr();
         auto WA = gpr.GetScopedReg();
         ARM64Reg XA = EncodeRegTo64(WA);
 
@@ -1363,6 +1449,7 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
       if (IsDebuggingEnabled() && !cpu.IsStepping() &&
           m_system.GetPowerPC().GetBreakPoints().IsAddressBreakPoint(op.address))
       {
+        FlushGatherPipePtr();
         FlushCarry();
         gpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG);
         fpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG);
@@ -1393,6 +1480,7 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
 
       if ((opinfo->flags & FL_USE_FPU) && !js.firstFPInstructionFound)
       {
+        FlushGatherPipePtr();
         FixupBranch b1;
         // This instruction uses FPU - needs to add FP exception bailout
         {
@@ -1498,6 +1586,7 @@ bool JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
 
   if (code_block.m_broken)
   {
+    FlushGatherPipePtr();
     gpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG);
     fpr.Flush(FlushMode::Full, ARM64Reg::INVALID_REG);
     WriteExit(nextPC);

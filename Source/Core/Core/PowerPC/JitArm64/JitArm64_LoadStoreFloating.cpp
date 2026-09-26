@@ -376,9 +376,14 @@ void JitArm64::stfXX(UGeckoInstruction inst)
     regs_in_use[DecodeReg(ARM64Reg::W0)] = false;
   fprs_in_use[DecodeReg(ARM64Reg::Q0)] = false;
 
+  const bool gather_pipe_write =
+      is_immediate && jo.optimizeGatherPipe && m_mmu.IsOptimizableGatherPipeWrite(imm_addr);
+  if (!gather_pipe_write)
+    FlushGatherPipePtr();
+
   if (is_immediate)
   {
-    if (jo.optimizeGatherPipe && m_mmu.IsOptimizableGatherPipeWrite(imm_addr))
+    if (gather_pipe_write)
     {
       int accessSize;
       if (flags & BackPatchInfo::FLAG_SIZE_64)
@@ -386,7 +391,7 @@ void JitArm64::stfXX(UGeckoInstruction inst)
       else
         accessSize = 32;
 
-      LDR(IndexType::Unsigned, ARM64Reg::X2, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+      const ARM64Reg ptr = BeginGatherPipeWrite();
 
       if (flags & BackPatchInfo::FLAG_SIZE_64)
         m_float_emit.REV64(8, ARM64Reg::Q0, V0);
@@ -394,9 +399,9 @@ void JitArm64::stfXX(UGeckoInstruction inst)
         m_float_emit.REV32(8, ARM64Reg::D0, V0);
 
       m_float_emit.STR(accessSize, IndexType::Post, accessSize == 64 ? ARM64Reg::Q0 : ARM64Reg::D0,
-                       ARM64Reg::X2, accessSize >> 3);
+                       ptr, accessSize >> 3);
 
-      STR(IndexType::Unsigned, ARM64Reg::X2, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+      EndGatherPipeWrite(ptr);
       js.fifoBytesSinceCheck += accessSize >> 3;
     }
     else if (m_mmu.IsOptimizableRAMAddress(imm_addr, BackPatchInfo::GetFlagSize(flags)))
