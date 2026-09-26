@@ -428,6 +428,10 @@ void JitArm64::bclrx(UGeckoInstruction inst)
 
       WriteExceptionExit(js.op->branchTo);
     }
+    else if (inst.LK)
+    {
+      WriteExit(WA, true, js.compilerPC + 4);
+    }
     else
     {
       WriteBLRExit(WA);
