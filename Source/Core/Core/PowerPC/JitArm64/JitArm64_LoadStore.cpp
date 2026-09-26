@@ -284,7 +284,12 @@ void JitArm64::SafeStoreFromReg(s32 dest, u32 value, s32 regOffset, u32 flags, s
   if (is_immediate)
     mmio_address = m_mmu.IsOptimizableMMIOAccess(imm_addr, access_size);
 
-  if (is_immediate && jo.optimizeGatherPipe && m_mmu.IsOptimizableGatherPipeWrite(imm_addr))
+  const bool gather_pipe_write =
+      is_immediate && jo.optimizeGatherPipe && m_mmu.IsOptimizableGatherPipeWrite(imm_addr);
+  if (!gather_pipe_write)
+    FlushGatherPipePtr();
+
+  if (gather_pipe_write)
   {
     int accessSize;
     if (flags & BackPatchInfo::FLAG_SIZE_32)
@@ -294,19 +299,19 @@ void JitArm64::SafeStoreFromReg(s32 dest, u32 value, s32 regOffset, u32 flags, s
     else
       accessSize = 8;
 
-    LDR(IndexType::Unsigned, ARM64Reg::X2, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+    const ARM64Reg ptr = BeginGatherPipeWrite();
 
     ARM64Reg temp = ARM64Reg::W1;
     temp = ByteswapBeforeStore(this, &m_float_emit, temp, RS, flags, true);
 
     if (accessSize == 32)
-      STR(IndexType::Post, temp, ARM64Reg::X2, 4);
+      STR(IndexType::Post, temp, ptr, 4);
     else if (accessSize == 16)
-      STRH(IndexType::Post, temp, ARM64Reg::X2, 2);
+      STRH(IndexType::Post, temp, ptr, 2);
     else
-      STRB(IndexType::Post, temp, ARM64Reg::X2, 1);
+      STRB(IndexType::Post, temp, ptr, 1);
 
-    STR(IndexType::Unsigned, ARM64Reg::X2, PPC_REG, PPCSTATE_OFF(gather_pipe_ptr));
+    EndGatherPipeWrite(ptr);
 
     js.fifoBytesSinceCheck += accessSize >> 3;
   }

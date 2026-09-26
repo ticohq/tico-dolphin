@@ -351,6 +351,10 @@ protected:
   BitSet32 GetSPRSourceGPRs() const;
   void LoadBranchTargetFromSPR(Arm64Gen::ARM64Reg dest, u32 spr);
 
+  Arm64Gen::ARM64Reg BeginGatherPipeWrite();
+  void EndGatherPipeWrite(Arm64Gen::ARM64Reg ptr);
+  void FlushGatherPipePtr();
+
   // Exits
   void
   WriteExit(u32 destination, bool LK = false, u32 exit_address_after_return = 0,
@@ -411,6 +415,8 @@ protected:
 
   int m_lr_source_gpr = -1;
   int m_ctr_source_gpr = -1;
+
+  Arm64Gen::ARM64Reg m_gather_pipe_ptr_reg = Arm64Gen::ARM64Reg::INVALID_REG;
 
   JitArm64BlockCache blocks{*this};
 
