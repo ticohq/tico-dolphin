@@ -679,6 +679,11 @@ private:
 protected:
   void Write32(u32 value);
 
+#ifdef __SWITCH__
+  virtual void EmitBeforeHostCall() {}
+  virtual void EmitAfterHostCall() {}
+#endif
+
 public:
   ARM64XEmitter() = default;
   ARM64XEmitter(u8* code, u8* code_end)

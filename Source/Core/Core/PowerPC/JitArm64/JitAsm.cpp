@@ -47,6 +47,9 @@ void JitArm64::GenerateAsm()
   m_float_emit.ABI_PushRegisters(regs_to_save_fpr, ARM64Reg::X8);
 
   MOVP2R(PPC_REG, &m_ppc_state);
+#ifdef __SWITCH__
+  EmitAfterHostCall();
+#endif
 
   EmitUpdateMembase();
 
@@ -236,6 +239,10 @@ void JitArm64::GenerateAsm()
 
   dispatcher_exit = GetCodePtr();
   SetJumpTarget(exit);
+
+#ifdef __SWITCH__
+  EmitBeforeHostCall();
+#endif
 
   // Reset the stack pointer, since the BLR optimization may have pushed things onto the stack
   // without popping them.

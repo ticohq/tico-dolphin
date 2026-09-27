@@ -905,6 +905,10 @@ void ARM64XEmitter::BL(const void* ptr)
 
 void ARM64XEmitter::QuickCallFunction(ARM64Reg scratchreg, const void* func)
 {
+#ifdef __SWITCH__
+  EmitBeforeHostCall();
+#endif
+
   s64 distance = (s64)func - (s64)m_code;
   distance >>= 2;  // Can only branch to opcode-aligned (4) addresses
   if (!IsInRangeImm26(distance))
@@ -916,6 +920,10 @@ void ARM64XEmitter::QuickCallFunction(ARM64Reg scratchreg, const void* func)
   {
     BL(func);
   }
+
+#ifdef __SWITCH__
+  EmitAfterHostCall();
+#endif
 }
 
 // Unconditional Branch (register)
