@@ -451,7 +451,9 @@ void Arm64GPRCache::GetAllocationOrder()
       ARM64Reg::W22,
       ARM64Reg::W21,
       ARM64Reg::W20,
+#ifndef __SWITCH__
       ARM64Reg::W19,
+#endif
 
       // Caller saved
       ARM64Reg::W17,

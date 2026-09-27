@@ -308,6 +308,11 @@ protected:
   void EmitBLRStackLimitCheck(Arm64Gen::ARM64Reg reg);
 #endif
 
+#ifdef __SWITCH__
+  void EmitBeforeHostCall() override;
+  void EmitAfterHostCall() override;
+#endif
+
   void FreeRanges();
   void GenerateAsmAndResetFreeMemoryRanges();
   void ResetFreeMemoryRanges(size_t routines_near_size, size_t routines_far_size);

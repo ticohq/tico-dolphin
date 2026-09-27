@@ -407,8 +407,12 @@ void JitArm64::mfspr(UGeckoInstruction inst)
     auto& core_timing_globals = m_system.GetCoreTiming().GetGlobals();
     MOVP2R(Xg, &core_timing_globals);
 
+#ifdef __SWITCH__
+    m_float_emit.SCVTF(SC, DOWNCOUNT_REG);
+#else
     LDR(IndexType::Unsigned, WA, PPC_REG, PPCSTATE_OFF(downcount));
     m_float_emit.SCVTF(SC, WA);
+#endif
     m_float_emit.LDR(32, IndexType::Unsigned, SD, Xg,
                      offsetof(CoreTiming::Globals, last_OC_factor_inverted));
     m_float_emit.FMUL(SC, SC, SD);

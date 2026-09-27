@@ -372,10 +372,26 @@ void JitArm64::Cleanup()
 
 void JitArm64::DoDownCount()
 {
+#ifdef __SWITCH__
+  SUBSI2R(DOWNCOUNT_REG, DOWNCOUNT_REG, js.downcountAmount, ARM64Reg::W1);
+#else
   LDR(IndexType::Unsigned, ARM64Reg::W0, PPC_REG, PPCSTATE_OFF(downcount));
   SUBSI2R(ARM64Reg::W0, ARM64Reg::W0, js.downcountAmount, ARM64Reg::W1);
   STR(IndexType::Unsigned, ARM64Reg::W0, PPC_REG, PPCSTATE_OFF(downcount));
+#endif
 }
+
+#ifdef __SWITCH__
+void JitArm64::EmitBeforeHostCall()
+{
+  STR(IndexType::Unsigned, DOWNCOUNT_REG, PPC_REG, PPCSTATE_OFF(downcount));
+}
+
+void JitArm64::EmitAfterHostCall()
+{
+  LDR(IndexType::Unsigned, DOWNCOUNT_REG, PPC_REG, PPCSTATE_OFF(downcount));
+}
+#endif
 
 void JitArm64::ResetStack()
 {

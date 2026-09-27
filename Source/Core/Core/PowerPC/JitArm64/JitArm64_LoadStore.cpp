@@ -741,7 +741,11 @@ void JitArm64::dcbx(UGeckoInstruction inst)
     const u8 cycle_count_per_loop =
         js.op[0].opinfo->num_cycles + js.op[1].opinfo->num_cycles + js.op[2].opinfo->num_cycles;
 
+#ifdef __SWITCH__
+    MOV(reg_downcount, DOWNCOUNT_REG);
+#else
     LDR(IndexType::Unsigned, reg_downcount, PPC_REG, PPCSTATE_OFF(downcount));
+#endif
     MOVI2R(WA, 0);
     CMP(reg_downcount, 0);                                          // if (downcount <= 0)
     FixupBranch downcount_is_zero_or_negative = B(CCFlags::CC_LE);  // only do 1 invalidation; else:
@@ -764,7 +768,11 @@ void JitArm64::dcbx(UGeckoInstruction inst)
     // downcount -= (WA * reg_cycle_count)
     MSUB(reg_downcount, WA, reg_cycle_count, reg_downcount);
     // ^ Note that this cannot overflow because it's limited by (downcount/cycle_count).
+#ifdef __SWITCH__
+    MOV(DOWNCOUNT_REG, reg_downcount);
+#else
     STR(IndexType::Unsigned, reg_downcount, PPC_REG, PPCSTATE_OFF(downcount));
+#endif
 
     SetJumpTarget(downcount_is_zero_or_negative);
 

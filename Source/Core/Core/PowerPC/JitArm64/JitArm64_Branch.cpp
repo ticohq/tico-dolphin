@@ -194,14 +194,8 @@ void JitArm64::bx(UGeckoInstruction inst)
       WriteBranchWatch<true>(js.compilerPC, js.op->branchTo, inst, {}, {});
     }
 
-    if (WA == ARM64Reg::INVALID_REG)
-      WA = gpr.GetScopedReg();
-
     // make idle loops go faster
-    ARM64Reg XA = EncodeRegTo64(WA);
-
-    MOVP2R(XA, &CoreTiming::GlobalIdle);
-    BLR(XA);
+    ABI_CallFunction(&CoreTiming::GlobalIdle);
     WA.Unlock();
 
     WriteExceptionExit(js.op->branchTo);
@@ -272,10 +266,7 @@ void JitArm64::bcx(UGeckoInstruction inst)
     if (js.op->branchIsIdleLoop)
     {
       // make idle loops go faster
-      ARM64Reg XA = EncodeRegTo64(WA);
-
-      MOVP2R(XA, &CoreTiming::GlobalIdle);
-      BLR(XA);
+      ABI_CallFunction(&CoreTiming::GlobalIdle);
 
       WriteExceptionExit(js.op->branchTo);
     }
@@ -421,10 +412,7 @@ void JitArm64::bclrx(UGeckoInstruction inst)
     if (js.op->branchIsIdleLoop)
     {
       // make idle loops go faster
-      ARM64Reg XA = EncodeRegTo64(WA);
-
-      MOVP2R(XA, &CoreTiming::GlobalIdle);
-      BLR(XA);
+      ABI_CallFunction(&CoreTiming::GlobalIdle);
 
       WriteExceptionExit(js.op->branchTo);
     }
