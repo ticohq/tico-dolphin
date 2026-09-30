@@ -156,6 +156,8 @@ HostFileSystem::HostFileSystem(std::string root_path, std::vector<NandRedirect> 
 HostFileSystem::~HostFileSystem()
 {
 #ifdef __SWITCH__
+  for (auto& [file, cache] : m_host_file_caches)
+    FlushHostFile(*file, cache);
   if (m_fst_dirty)
     FlushFst();
 #endif
@@ -393,6 +395,13 @@ ResultCode HostFileSystem::Format(Uid uid)
     return ResultCode::UnknownError;
   ResetFst();
   SaveFst();
+#ifdef __SWITCH__
+  for (auto& [file, cache] : m_host_file_caches)
+  {
+    cache.pending.clear();
+    cache.pending_bytes = 0;
+  }
+#endif
   // Reset and close all handles.
   m_handles = {};
   return ResultCode::Success;
@@ -675,7 +684,7 @@ Result<Metadata> HostFileSystem::GetMetadata(Uid uid, Gid gid, const std::string
     return std::unexpected{ResultCode::NotFound};
 
   Metadata metadata = entry->data;
-  metadata.size = File::GetSize(BuildFilename(path).host_path);
+  metadata.size = GetHostFileSize(BuildFilename(path).host_path);
   return metadata;
 }
 
@@ -694,7 +703,7 @@ ResultCode HostFileSystem::SetMetadata(Uid caller_uid, const std::string& path, 
   if (caller_uid != 0 && uid != entry->data.uid)
     return ResultCode::AccessDenied;
 
-  const bool is_empty = File::GetSize(BuildFilename(path).host_path) == 0;
+  const bool is_empty = GetHostFileSize(BuildFilename(path).host_path) == 0;
   if (entry->data.uid != uid && entry->data.is_file && !is_empty)
     return ResultCode::FileNotEmpty;
 
@@ -726,22 +735,15 @@ static u64 ComputeUsedClusters(const File::FSTEntry& parent_entry)
 
 #ifdef __SWITCH__
 // Horizon reports the size a file had when it was opened; IOS FS needs what
-// the game has written to it since.
-static void FillOpenFileSizes(
-    File::FSTEntry* dir, const std::map<std::string, std::weak_ptr<File::IOFile>>& open_files)
+// the game has written to it since, buffered writes included.
+void HostFileSystem::FillOpenFileSizes(File::FSTEntry* dir) const
 {
   for (File::FSTEntry& entry : dir->children)
   {
     if (entry.isDirectory)
-    {
-      FillOpenFileSizes(&entry, open_files);
-      continue;
-    }
-    const auto it = open_files.find(entry.physicalName);
-    if (it == open_files.end())
-      continue;
-    if (const std::shared_ptr<File::IOFile> file = it->second.lock())
-      entry.size = file->GetSize();
+      FillOpenFileSizes(&entry);
+    else if (m_open_files.contains(entry.physicalName))
+      entry.size = GetHostFileSize(entry.physicalName);
   }
 }
 #endif
@@ -793,7 +795,7 @@ HostFileSystem::GetExtendedDirectoryStats(const std::string& wii_path)
   {
     File::FSTEntry parent_dir = File::ScanDirectoryTree(path, true);
 #ifdef __SWITCH__
-    FillOpenFileSizes(&parent_dir, m_open_files);
+    FillOpenFileSizes(&parent_dir);
 #endif
     FixupDirectoryEntries(&parent_dir, wii_path == "/");
 

@@ -6,10 +6,14 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "Common/CommonTypes.h"
+#ifdef __SWITCH__
+#include "Common/FileUtil.h"
+#endif
 #include "Common/IOFile.h"
 #include "Core/IOS/FS/FileSystem.h"
 
@@ -59,6 +63,10 @@ public:
 
   void SetNandRedirects(std::vector<NandRedirect> nand_redirects) override;
 
+#ifdef __SWITCH__
+  void FlushStaleWrites() override;
+#endif
+
 private:
   struct FstEntry
   {
@@ -93,6 +101,10 @@ private:
   HostFilename BuildFilename(const std::string& wii_path) const;
   std::shared_ptr<File::IOFile> GetOpenHostFile(const std::string& host_path);
   std::shared_ptr<File::IOFile> OpenHostFile(const std::string& host_path);
+  u64 GetHostFileSize(const Handle& handle) const;
+  u64 GetHostFileSize(const std::string& host_path) const;
+  std::optional<u32> ReadHostFile(const Handle& handle, u8* ptr, u32 count);
+  bool WriteHostFile(const Handle& handle, const u8* ptr, u32 count);
 
   ResultCode CreateFileOrDirectory(Uid uid, Gid gid, const std::string& path,
                                    FileAttribute attribute, Modes modes, bool is_file);
@@ -125,6 +137,28 @@ private:
 #ifdef __SWITCH__
   bool m_fst_dirty = false;
   u64 m_last_fst_write_ms = 0;
+
+  // Whomever at Nintendo had the bright idea to write KiBs at a time to make the 20MB message
+  // board file, this code is because of you.
+  struct HostFileCache
+  {
+    // Size as seen by the guest, including pending writes.
+    u64 size = 0;
+    u64 host_size = 0;
+    u64 position = 0;
+    bool position_valid = false;
+    std::map<u64, std::vector<u8>> pending;
+    u64 pending_bytes = 0;
+    u64 dirty_since_ms = 0;
+    bool flush_failed = false;
+  };
+  HostFileCache* FindHostFileCache(const Handle& handle);
+  void BufferHostWrite(File::IOFile& file, HostFileCache& cache, u64 offset, const u8* ptr,
+                       u32 count);
+  void FlushHostFile(File::IOFile& file, HostFileCache& cache);
+  void FillOpenFileSizes(File::FSTEntry* dir) const;
+
+  std::map<File::IOFile*, HostFileCache> m_host_file_caches;
 #endif
   std::map<std::string, std::weak_ptr<File::IOFile>> m_open_files;
   std::array<Handle, 16> m_handles{};
