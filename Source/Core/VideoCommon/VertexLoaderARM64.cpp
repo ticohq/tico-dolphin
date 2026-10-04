@@ -3,8 +3,10 @@
 
 #include "VideoCommon/VertexLoaderARM64.h"
 
+#include <algorithm>
 #include <array>
 #include <mutex>
+#include <vector>
 
 #include "Common/CommonTypes.h"
 #include "Common/MemoryUtil.h"
@@ -91,6 +93,12 @@ constexpr ARM64Reg stride_reg = ARM64Reg::X11;
 constexpr ARM64Reg arraybase_reg = ARM64Reg::X10;
 constexpr ARM64Reg scale_reg = ARM64Reg::X9;
 
+#ifdef __SWITCH__
+constexpr bool HOIST_ARRAY_REGS = true;
+#else
+constexpr bool HOIST_ARRAY_REGS = false;
+#endif
+
 static constexpr int GetLoadSize(int load_bytes)
 {
   if (load_bytes == 1)
@@ -174,11 +182,18 @@ std::pair<Arm64Gen::ARM64Reg, u32> VertexLoaderARM64::GetVertexAddr(CPArray arra
       m_skip_vertex = CBZ(scratch2_reg);
     }
 
-    LDR(IndexType::Unsigned, scratch2_reg, stride_reg, static_cast<u8>(array) * 4);
+    const u8 index = static_cast<u8>(array);
+    if (m_stride_regs[index] != ARM64Reg::INVALID_REG)
+    {
+      UMADDL(EncodeRegTo64(scratch1_reg), scratch1_reg, m_stride_regs[index],
+             m_arraybase_regs[index]);
+      return {EncodeRegTo64(scratch1_reg), 0};
+    }
+
+    LDR(IndexType::Unsigned, scratch2_reg, stride_reg, index * 4);
     MUL(scratch1_reg, scratch1_reg, scratch2_reg);
 
-    LDR(IndexType::Unsigned, EncodeRegTo64(scratch2_reg), arraybase_reg,
-        static_cast<u8>(array) * 8);
+    LDR(IndexType::Unsigned, EncodeRegTo64(scratch2_reg), arraybase_reg, index * 8);
     ADD(EncodeRegTo64(scratch1_reg), EncodeRegTo64(scratch1_reg), EncodeRegTo64(scratch2_reg));
     return {EncodeRegTo64(scratch1_reg), 0};
   }
@@ -439,8 +454,60 @@ void VertexLoaderARM64::GenerateVertexLoader()
     MOV(skipped_reg, ARM64Reg::WZR);
   ADD(saved_count, remaining_reg, 1);
 
-  MOVP2R(stride_reg, g_main_cp_state.array_strides.data());
-  MOVP2R(arraybase_reg, VertexLoaderManager::cached_arraybases.data());
+  m_stride_regs.fill(ARM64Reg::INVALID_REG);
+  m_arraybase_regs.fill(ARM64Reg::INVALID_REG);
+
+  std::vector<u8> indexed_arrays;
+  if (IsIndexed(m_VtxDesc.low.Position))
+    indexed_arrays.push_back(static_cast<u8>(CPArray::Position));
+  if (IsIndexed(m_VtxDesc.low.Normal))
+    indexed_arrays.push_back(static_cast<u8>(CPArray::Normal));
+  for (u8 i = 0; i < m_VtxDesc.low.Color.Size(); i++)
+  {
+    if (IsIndexed(m_VtxDesc.low.Color[i]))
+      indexed_arrays.push_back(static_cast<u8>(CPArray::Color0 + i));
+  }
+  for (u8 i = 0; i < m_VtxDesc.high.TexCoord.Size(); i++)
+  {
+    if (IsIndexed(m_VtxDesc.high.TexCoord[i]))
+      indexed_arrays.push_back(static_cast<u8>(CPArray::TexCoord0 + i));
+  }
+
+  std::vector<ARM64Reg> free_regs = {ARM64Reg::X3, ARM64Reg::X4, ARM64Reg::X5,
+                                     ARM64Reg::X6, ARM64Reg::X7, ARM64Reg::X8};
+  if (indexed_arrays.size() * 2 <= free_regs.size() + 2)
+  {
+    free_regs.push_back(arraybase_reg);
+    free_regs.push_back(stride_reg);
+  }
+  const size_t hoisted =
+      HOIST_ARRAY_REGS ? std::min(indexed_arrays.size(), free_regs.size() / 2) : 0;
+  for (size_t i = 0; i < hoisted; i++)
+  {
+    m_stride_regs[indexed_arrays[i]] = EncodeRegTo32(free_regs[i * 2]);
+    m_arraybase_regs[indexed_arrays[i]] = free_regs[i * 2 + 1];
+  }
+
+  if (hoisted != 0)
+  {
+    MOVP2R(EncodeRegTo64(scratch1_reg), g_main_cp_state.array_strides.data());
+    for (size_t i = 0; i < hoisted; i++)
+    {
+      LDR(IndexType::Unsigned, m_stride_regs[indexed_arrays[i]], EncodeRegTo64(scratch1_reg),
+          indexed_arrays[i] * 4);
+    }
+    MOVP2R(EncodeRegTo64(scratch1_reg), VertexLoaderManager::cached_arraybases.data());
+    for (size_t i = 0; i < hoisted; i++)
+    {
+      LDR(IndexType::Unsigned, m_arraybase_regs[indexed_arrays[i]], EncodeRegTo64(scratch1_reg),
+          indexed_arrays[i] * 8);
+    }
+  }
+  if (hoisted < indexed_arrays.size() || !HOIST_ARRAY_REGS)
+  {
+    MOVP2R(stride_reg, g_main_cp_state.array_strides.data());
+    MOVP2R(arraybase_reg, VertexLoaderManager::cached_arraybases.data());
+  }
 
   if (need_scale)
     MOVP2R(scale_reg, scale_factors);
