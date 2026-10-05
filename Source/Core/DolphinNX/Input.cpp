@@ -361,6 +361,14 @@ static bool EnsureClassicControllerDefaults(WiimoteEmu::Wiimote* wiimote)
   return true;
 }
 
+// Whether Recenter also measures the angle the controller sits at in a holder such as a gun
+// shell. Off by default so Recenter keeps its plain behaviour unless asked for.
+static void ApplyCalibrateMountOnRecenter(WiimoteEmu::Wiimote* wiimote)
+{
+  wiimote->SetCalibrateMountOnRecenter(
+      TicoCore::GetConfigValue("dolphin_calibrate_on_recenter", "disabled") == "enabled");
+}
+
 // Applies the port's profile to the Wii Remote and, when one is attached, to the
 // selected extension. The remote's own groups come from the "wiimote" table, or
 // "wiimote_sideways" when held horizontally -- turning the remote puts different
@@ -387,6 +395,8 @@ static void ApplyWiimoteProfile(unsigned player, WiimoteEmu::Wiimote* wiimote,
       imu_ir->SetTotalYawDegrees(yaw);
     }
   }
+
+  ApplyCalibrateMountOnRecenter(wiimote);
 
   const char* extension_target = nullptr;
   if (extension == WiimoteEmu::ExtensionNumber::NUNCHUK)
@@ -430,7 +440,11 @@ static void SetWiimoteEnabled(unsigned player, bool enabled, WiimoteEmu::Extensi
   // Attachments::UpdateReferences() cascades into every attachment's groups, so this
   // covers the extension mapping applied above as well.
   wiimote->UpdateReferences(g_controller_interface);
-  if (repaired_classic_defaults)
+
+  // Starting a Wii title reloads the Wii Remote mapping from WiimoteNew.ini
+  // (SConfig::OnESTitleChanged), which would replace the profile just applied with whatever was
+  // saved last time. Keep the ini in step with the profile so the reload is a no-op.
+  if (enabled || repaired_classic_defaults)
     Wiimote::GetConfig()->SaveConfig();
 }
 
@@ -1677,13 +1691,49 @@ void Update()
   }
 }
 
+void RefreshCalibrateMountOnRecenter()
+{
+  // Wii Remotes not created yet pick the setting up when their profile is applied.
+  if (Wiimote::GetConfig()->ControllersNeedToBeCreated())
+    return;
+
+  for (int i = WIIMOTE_CHAN_0; i < MAX_WIIMOTES; ++i)
+  {
+    if (auto* wiimote = static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(i)))
+    {
+      ApplyCalibrateMountOnRecenter(wiimote);
+    }
+  }
+}
+
 PadState* GetPad()
 {
   return s_pad_initialized ? &s_pads[0] : nullptr;
 }
 
+// Mount calibrations are not written during play to avoid hitches. Leaving the game and closing
+// the application (HOME, then close) both end up here, so persist them now.
+static void SaveUnsavedMountCalibrations()
+{
+  if (Wiimote::GetConfig()->ControllersNeedToBeCreated())
+    return;
+
+  bool unsaved = false;
+  for (int i = WIIMOTE_CHAN_0; i < MAX_WIIMOTES; ++i)
+  {
+    if (auto* wiimote = static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(i)))
+    {
+      unsaved = wiimote->ConsumeUnsavedMountCalibration() || unsaved;
+    }
+  }
+
+  if (unsaved)
+    Wiimote::GetConfig()->SaveConfig();
+}
+
 void Shutdown()
 {
+  SaveUnsavedMountCalibrations();
   Wiimote::ResetAllWiimotes();
   Wiimote::Shutdown();
   Pad::Shutdown();

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "DolphinNX/Overlay/Overlay.h"
+#include "DolphinNX/Input.h"
 #include "DolphinNX/Overlay/TranslationManager.h"
 #include "DolphinNX/TicoCore.h"
 
@@ -38,7 +39,7 @@ constexpr std::array<QuickMenuItem, 5> kQuickMenuItems = {{
     {"emulator_exit_game", "Exit Game"},
 }};
 constexpr int kOverlaySlotCount = 4;
-constexpr int kSettingsItemCount = 2;
+constexpr int kSettingsItemCount = 3;
 constexpr int kToastSlotCount = 4;
 
 constexpr float kAnimDuration = 0.4f;
@@ -87,6 +88,7 @@ MenuScreen s_menu = MenuScreen::QuickMenu;
 std::array<std::string, kOverlaySlotCount> s_slot_labels{};
 unsigned long long s_avatar_texture_id = 0;
 ViewportMode s_viewport_mode = ViewportMode::Display;
+bool s_calibrate_on_recenter = false;
 DisplaySize s_display_size = DisplaySize::FourThree;
 IntegerScale s_integer_scale = IntegerScale::Auto;
 bool s_help_return_to_quick_menu = true;
@@ -236,6 +238,8 @@ void LoadViewportSettings()
       ParseDisplaySize(TicoCore::GetConfigValue("display_size", ToConfigValue(DisplaySize::FourThree)));
   s_integer_scale = ParseIntegerScale(
       TicoCore::GetConfigValue("integer_scale", ToConfigValue(IntegerScale::Auto)));
+  s_calibrate_on_recenter =
+      TicoCore::GetConfigValue("dolphin_calibrate_on_recenter", "disabled") == "enabled";
 }
 
 void SaveViewportSettings()
@@ -280,6 +284,16 @@ void AdvanceSettingsValue(int direction)
 {
   if (direction == 0)
     return;
+
+  if (s_settings_selected == 2)
+  {
+    s_calibrate_on_recenter = !s_calibrate_on_recenter;
+    TicoCore::SetConfigValue("dolphin_calibrate_on_recenter",
+                             s_calibrate_on_recenter ? "enabled" : "disabled");
+    TicoCore::SaveConfig();
+    Input::RefreshCalibrateMountOnRecenter();
+    return;
+  }
 
   if (s_settings_selected == 0)
   {
@@ -497,12 +511,24 @@ void RenderMenu(ImDrawList* dl, ImVec2 display_size, float ease)
                           corners);
       }
 
-      const std::string label =
-          i == 0 ? TrOr("emulator_display_mode", "Display Mode") : TrOr("emulator_size", "Size");
-      const std::string value =
-          i == 0 ? (s_viewport_mode == ViewportMode::Integer ? TrOr("emulator_integer", "Integer") :
-                                                            TrOr("emulator_display", "Display")) :
-                   GetViewportValueLabel();
+      std::string label;
+      std::string value;
+      if (i == 0)
+      {
+        label = TrOr("emulator_display_mode", "Display Mode");
+        value = s_viewport_mode == ViewportMode::Integer ? TrOr("emulator_integer", "Integer") :
+                                                           TrOr("emulator_display", "Display");
+      }
+      else if (i == 1)
+      {
+        label = TrOr("emulator_size", "Size");
+        value = GetViewportValueLabel();
+      }
+      else
+      {
+        label = TrOr("emulator_calibrate_on_recenter", "Calibrate on Recenter");
+        value = s_calibrate_on_recenter ? TrOr("emulator_on", "On") : TrOr("emulator_off", "Off");
+      }
       const ImU32 text_color =
           selected ? IM_COL32(255, 255, 255, static_cast<int>(255.0f * ease)) :
                      IM_COL32(200, 200, 200, static_cast<int>(255.0f * ease));

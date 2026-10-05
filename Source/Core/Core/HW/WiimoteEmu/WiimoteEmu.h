@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <numeric>
 #include <optional>
 #include <string>
@@ -175,6 +176,12 @@ public:
   ExtensionNumber GetActiveExtensionNumber() const;
   ControllerEmu::SubscribableSettingValue<bool>& GetMotionPlusSetting();
 
+  // When enabled, "Recenter" also measures the angle the device is mounted at (see IMUCursor).
+  void SetCalibrateMountOnRecenter(bool enabled);
+  // Whether a calibration changed the mount angles since the last call. The frontend is expected
+  // to save the input config when this returns true.
+  bool ConsumeUnsavedMountCalibration();
+
   static Common::Vec3
   OverrideVec3(const ControllerEmu::ControlGroup* control_group, Common::Vec3 vec,
                const ControllerEmu::InputOverrideFunction& input_override_function);
@@ -190,6 +197,7 @@ private:
   void RefreshConfig();
 
   void StepDynamics();
+  void UpdateIMUMountCalibration();
   void UpdateButtonsStatus(const DesiredWiimoteState& target_state);
   void BuildDesiredWiimoteState(DesiredWiimoteState* target_state, SensorBarState sensor_bar_state);
 
@@ -348,6 +356,11 @@ private:
   PositionalState m_shake_state;
 
   IMUCursorState m_imu_cursor_state;
+
+  // Edge detection for the "Recenter" button, which can also calibrate the mount.
+  bool m_imu_recenter_pressed = false;
+  std::atomic<bool> m_calibrate_mount_on_recenter = false;
+  std::atomic<bool> m_mount_calibration_unsaved = false;
 
   Config::ConfigChangedCallbackID m_config_changed_callback_id;
 };
