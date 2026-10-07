@@ -24,8 +24,7 @@
         ".rvz",
         ".wbfs",
         ".wia",
-        ".m3u",
-        ".wad"
+        ".m3u"
       ],
       "disc_based": true,
       "naming": "redump",
