@@ -134,6 +134,8 @@ std::vector<CheatMenuEntry> s_cheat_entries;
 std::vector<DiscMenuEntry> s_disc_entries;
 std::array<bool, kOverlaySlotCount> s_slot_occupied{};
 std::array<SlotPreview, kOverlaySlotCount> s_slot_preview{};
+UndoStateFn s_undo_state_cb;
+UndoStateInfo s_undo_state{};
 std::vector<int> s_rewind_points;
 ShaderCallbacks s_shader_cb;
 LibraryCallbacks s_library_cb;
@@ -856,6 +858,7 @@ void RefreshSlots() {
         s_slot_preview[i] = s_slot_preview_cb ? s_slot_preview_cb(i + 1) : SlotPreview{};
         s_slot_occupied[i] = s_slot_occupied_cb ? s_slot_occupied_cb(i + 1) : false;
     }
+    s_undo_state = s_undo_state_cb ? s_undo_state_cb() : UndoStateInfo{};
 }
 
 void RefreshRewindPoints() {
@@ -927,7 +930,11 @@ int SlotForRow(int row) {
         return kAutoSlotIndex; // its picture and time, whichever row
     }
     if (s_menu == MenuScreen::LoadStates) {
-        return row == 0 ? kAutoSlotIndex : row - 1;
+        if (row == 0) {
+            return kAutoSlotIndex;
+        }
+        // the undo rows after the slots stand for no slot
+        return row <= kUserSlotCount ? row - 1 : -1;
     }
     return row;
 }
@@ -959,6 +966,21 @@ std::vector<MenuRow> BuildRows() {
             MenuRow row{label};
             row.dimmed = s_menu == MenuScreen::LoadStates && !s_slot_occupied[i];
             rows.push_back(row);
+        }
+        if (s_menu == MenuScreen::LoadStates && s_undo_state_cb) {
+            MenuRow undo_load{TrOr("emulator_undo_load", "Undo Last Load")};
+            undo_load.dimmed = !s_undo_state.can_undo_load;
+            rows.push_back(undo_load);
+
+            const bool overwritten = !s_undo_state.overwritten_saved_at.empty();
+            char label[160];
+            std::snprintf(label, sizeof(label), "%s (%s)",
+                          TrOr("emulator_undo_save", "Load Overwritten State").c_str(),
+                          overwritten ? s_undo_state.overwritten_saved_at.c_str()
+                                      : TrOr("emulator_none", "None").c_str());
+            MenuRow undo_save{label};
+            undo_save.dimmed = !overwritten;
+            rows.push_back(undo_save);
         }
         break;
     }
@@ -1548,8 +1570,12 @@ void RenderStates(ImDrawList* dl, ImVec2 display_size, float ease, const std::ve
     const float caption_h = 48.0f * scale;
     const float pane_top = panel_min.y + (2.0f * pad);
     const float pane_bottom = panel_max.y - (2.0f * pad) - caption_h;
+    static const SlotPreview kNoPreview{};
+    const int preview_slot = SlotForRow(s_selected);
     const SlotPreview& preview =
-        s_slot_preview[static_cast<std::size_t>(std::clamp(SlotForRow(s_selected), 0, kOverlaySlotCount - 1))];
+        preview_slot < 0
+            ? kNoPreview
+            : s_slot_preview[static_cast<std::size_t>(std::min(preview_slot, kOverlaySlotCount - 1))];
     const float aspect = preview.aspect > 0.1f ? preview.aspect : (4.0f / 3.0f);
     float pic_w = pane_right - pane_left;
     float pic_h = pic_w / aspect;
@@ -2130,6 +2156,13 @@ Action AcceptSelection(const std::vector<MenuRow>& rows) {
     case MenuScreen::SaveStates:
         return MakeSaveActionForSlot(SlotForRow(s_selected));
     case MenuScreen::LoadStates:
+        if (SlotForRow(s_selected) < 0) {
+            // the undo rows
+            if (s_selected == kUserSlotCount + 1) {
+                return s_undo_state.can_undo_load ? Action::UndoLoadState : Action::None;
+            }
+            return s_undo_state.overwritten_saved_at.empty() ? Action::None : Action::UndoSaveState;
+        }
         if (!s_slot_occupied[static_cast<std::size_t>(SlotForRow(s_selected))]) {
             return Action::None;
         }
@@ -2705,6 +2738,11 @@ void SetBorderTextureId(unsigned long long texture_id) {
 
 void SetSlotOccupiedCallback(SlotOccupiedFn callback) {
     s_slot_occupied_cb = std::move(callback);
+}
+
+void SetUndoStateCallback(UndoStateFn callback) {
+    s_undo_state_cb = std::move(callback);
+    s_undo_state = {};
 }
 
 void SetSlotPreviewCallback(SlotPreviewFn callback) {

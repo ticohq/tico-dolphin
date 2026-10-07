@@ -1315,6 +1315,19 @@ int main(int argc, char* argv[])
       return preview;
     });
 
+    SwitchFrontend::OverlayUI::SetUndoStateCallback([] {
+      SwitchFrontend::OverlayUI::UndoStateInfo info;
+      info.can_undo_load = State::CanUndoLoadState();
+      if (const u64 ms = State::GetUnixTimeOfUndoSaveState())
+      {
+        const time_t seconds = static_cast<time_t>(ms / 1000);
+        char when[32];
+        if (std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M", std::localtime(&seconds)))
+          info.overwritten_saved_at = when;
+      }
+      return info;
+    });
+
     bool overlay_ok = false;
     LOG("Overlay init deferred until the first present to avoid early Vulkan races\n");
 
@@ -1428,26 +1441,47 @@ int main(int argc, char* argv[])
           DolphinNX::VulkanOverlay::SetVisible(false);
           LOG("Overlay: SaveState slot %d\n", slot);
         }
-        else if (OverlayUI::IsLoadStateAction(overlay_action))
+        else if (OverlayUI::IsLoadStateAction(overlay_action) ||
+                 overlay_action == Action::UndoLoadState ||
+                 overlay_action == Action::UndoSaveState)
         {
-          const int slot = OverlayUI::GetStateSlotForAction(overlay_action);
+          // slot 0: one of the undo rows
+          const int slot = OverlayUI::IsLoadStateAction(overlay_action) ?
+                               OverlayUI::GetStateSlotForAction(overlay_action) :
+                               0;
           if (!s_state_load_in_progress.exchange(true, std::memory_order_acq_rel))
           {
             if (s_state_load_thread.joinable())
               s_state_load_thread.join();
             AudioCommon::SetSoundStreamRunning(system, false);
 
-            s_state_load_thread = std::thread([&system, slot]() {
+            s_state_load_thread = std::thread([&system, slot, overlay_action]() {
               Common::SetCurrentThreadName("StateLoad - switchnx");
               Common::SetCurrentThreadAffinity(2);
-              State::Load(system, slot);
+              if (overlay_action == Action::UndoLoadState)
+                State::UndoLoadState(system);
+              else if (overlay_action == Action::UndoSaveState)
+                State::UndoSaveState(system);
+              else
+                State::Load(system, slot);
               AudioCommon::SetSoundStreamRunning(system, true);
               s_state_load_in_progress.store(false, std::memory_order_release);
             });
-            OverlayUI::ShowToast(slot == OverlayUI::kAutoStateSlot ?
-                                     SwitchFrontend::OverlayTranslation::tr("emulator_auto_loaded") :
-                                     TrFormat("emulator_state_loaded", slot));
-            LOG("Overlay: LoadState slot %d (worker spawned)\n", slot);
+            if (slot == 0)
+            {
+              OverlayUI::ShowToast(SwitchFrontend::OverlayTranslation::tr(
+                  overlay_action == Action::UndoLoadState ? "emulator_undo_load_done" :
+                                                            "emulator_undo_save_done"));
+              LOG("Overlay: undo %s\n",
+                  overlay_action == Action::UndoLoadState ? "load" : "save");
+            }
+            else
+            {
+              OverlayUI::ShowToast(slot == OverlayUI::kAutoStateSlot ?
+                                       SwitchFrontend::OverlayTranslation::tr("emulator_auto_loaded") :
+                                       TrFormat("emulator_state_loaded", slot));
+              LOG("Overlay: LoadState slot %d (worker spawned)\n", slot);
+            }
           }
           else
           {
