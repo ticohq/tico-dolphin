@@ -597,22 +597,53 @@ static void RestoreSwitchPerformance()
   ShutdownSwitchClockService();
 }
 
-// Without a clock manager the clocks are set here, and Horizon puts the stock
-// ones back when the console is docked or undocked: set them again (issue #2).
+// Horizon puts its stock CPU and GPU clocks back when the console is docked or
+// undocked and when it wakes from sleep (issue #2). Without a clock manager both
+// are checked once a second and set again. A clock manager is asked again
+// instead (both overrides cleared and set, which it treats as a change):
+// sys-clk and sys-clk-OC only apply clocks when something changes, waking up
+// changes nothing they watch, and hoc-clk only compares the GPU clock. We never
+// set clocks behind a manager's back.
 static void KeepSwitchClocks()
 {
-  if (s_clock_manager_open || !s_switch_clock_service_initialized)
+  const u64 now = armGetSystemTick();
+  const u64 one_second = armNsToTicks(1000000000ull);
+
+  // the loop runs every frame: a long gap means the console slept or the game
+  // was suspended
+  static u64 s_last_pass = 0;
+  const bool resumed = s_last_pass != 0 && now - s_last_pass > one_second;
+  s_last_pass = now;
+  static u8 s_clock_mode = 0xFF;
+  const u8 mode = appletGetOperationMode();
+  const bool mode_changed = s_clock_mode != 0xFF && mode != s_clock_mode;
+  s_clock_mode = mode;
+
+  if (s_clock_manager_open)
+  {
+    if (resumed || mode_changed)
+    {
+      LOG("Clocks: %s, asking the clock manager again\n", resumed ? "resumed" : "mode changed");
+      SetClockManagerOverride(0, 0);
+      SetClockManagerOverride(1, 0);
+      SetClockManagerOverride(0, kSwitchCpuClockHz);
+      SetClockManagerOverride(1, kSwitchGpuClockHz);
+    }
+    return;
+  }
+
+  if (!s_switch_clock_service_initialized)
     return;
   static u64 s_last_check = 0;
-  const u64 now = armGetSystemTick();
-  if (now - s_last_check < armNsToTicks(1000000000ull))
+  if (!resumed && !mode_changed && now - s_last_check < one_second)
     return;
   s_last_check = now;
 
   u32 cpu_hz = 0;
   u32 gpu_hz = 0;
-  if ((GetSwitchClockRate(true, &cpu_hz) && cpu_hz != kSwitchCpuClockHz) ||
-      (GetSwitchClockRate(false, &gpu_hz) && gpu_hz != kSwitchGpuClockHz))
+  const bool cpu_reset = GetSwitchClockRate(true, &cpu_hz) && cpu_hz != kSwitchCpuClockHz;
+  const bool gpu_reset = GetSwitchClockRate(false, &gpu_hz) && gpu_hz != kSwitchGpuClockHz;
+  if (cpu_reset || gpu_reset)
   {
     LOG("Clocks were reset (cpu=%u gpu=%u): setting them again\n", cpu_hz, gpu_hz);
     SetSwitchClockRate(true, kSwitchCpuClockHz);
