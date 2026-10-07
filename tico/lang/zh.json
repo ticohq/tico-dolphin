@@ -230,5 +230,7 @@
   "settings_dolphin_fast_texture_sampling": "快速纹理采样",
   "settings_dolphin_performance_queries": "性能查询",
   "settings_dolphin_pointer_yaw": "指针范围（度）",
-  "settings_dolphin_calibrate_on_recenter": "重新居中时校准安装角度"
+  "settings_dolphin_calibrate_on_recenter": "重新居中时校准安装角度",
+  "settings_dolphin_gc_bba": "宽带适配器（在线游戏）",
+  "settings_dolphin_wiilink": "通过 WiiLink 使用 WiiConnect24"
 }

@@ -47,8 +47,15 @@ CEXIETHERNET::CEXIETHERNET(Core::System& system, BBADeviceType type) : IEXIDevic
   switch (type)
   {
   case BBADeviceType::TAP:
+#ifdef __SWITCH__
+    // Horizon has no TAP device: the socket-based adapter stands in.
+    m_network_interface = std::make_unique<BuiltInBBAInterface>(
+        this, Config::Get(Config::MAIN_BBA_BUILTIN_DNS), Config::Get(Config::MAIN_BBA_BUILTIN_IP));
+    INFO_LOG_FMT(SP1, "Created built-in network interface in place of TAP.");
+#else
     m_network_interface = std::make_unique<TAPNetworkInterface>(this);
     INFO_LOG_FMT(SP1, "Created TAP physical network interface.");
+#endif
     break;
   case BBADeviceType::TAPSERVER:
     m_network_interface = std::make_unique<TAPServerNetworkInterface>(

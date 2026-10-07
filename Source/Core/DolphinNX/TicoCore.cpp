@@ -86,7 +86,7 @@ constexpr std::array<std::string_view, 29> kFixedBaseOptions = {{
     "dolphin_mods_enable",
 }};
 
-constexpr std::array<std::pair<std::string_view, std::string_view>, 74> kDefaultOptions = {{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 76> kDefaultOptions = {{
     {"display_mode", "Display"},
     {"display_size", "4:3"},
     {"integer_scale", "Auto"},
@@ -103,6 +103,8 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 74> kDefault
     {"dolphin_early_presentation", "disabled"},
     {"dolphin_call_back_audio_method", "0"},
     {"dolphin_enable_gamecube_mic", "disabled"},
+    {"dolphin_gc_bba", "disabled"},
+    {"dolphin_wiilink", "disabled"},
     {"dolphin_hotkey_activate_microphone", "Disabled"},
     {"dolphin_widescreen", "enabled"},
     {"dolphin_progressive_scan", "enabled"},
@@ -163,7 +165,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 74> kDefault
     {"dolphin_save_load_settings", "disabled"},
 }};
 
-static_assert(kDefaultOptions.size() == 74);
+static_assert(kDefaultOptions.size() == 76);
 
 std::string StripJsonComments(std::string_view input)
 {
@@ -1088,6 +1090,11 @@ private:
                                    Config::Get(Config::MAIN_SERIAL_PORT_1)));
     if (GetBool("dolphin_enable_gamecube_mic", false))
       Config::SetBase(Config::MAIN_SERIAL_PORT_1, ExpansionInterface::EXIDeviceType::Microphone);
+    // GameCube online play: Dolphin's built-in, socket-based Broadband Adapter
+    if (GetBool("dolphin_gc_bba", false))
+      Config::SetBase(Config::MAIN_SERIAL_PORT_1,
+                      ExpansionInterface::EXIDeviceType::EthernetBuiltIn);
+    Config::SetBase(Config::MAIN_WII_WIILINK_ENABLE, GetBool("dolphin_wiilink", false));
     Config::SetBase(Config::SYSCONF_WIDESCREEN,
                     GetBool("dolphin_widescreen", Config::Get(Config::SYSCONF_WIDESCREEN)));
     Config::SetBase(Config::SYSCONF_PROGRESSIVE_SCAN,

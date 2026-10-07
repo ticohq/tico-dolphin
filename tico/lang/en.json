@@ -242,5 +242,7 @@
   "emulator_cheats_downloading": "Downloading Gecko codes...",
   "emulator_cheats_download_failed": "Could not download Gecko codes",
   "emulator_cheats_download_none": "The code server has no Gecko codes for this game",
-  "emulator_cheats_downloaded": "Added %d new Gecko codes"
+  "emulator_cheats_downloaded": "Added %d new Gecko codes",
+  "settings_dolphin_gc_bba": "Broadband Adapter (online play)",
+  "settings_dolphin_wiilink": "WiiConnect24 via WiiLink"
 }
