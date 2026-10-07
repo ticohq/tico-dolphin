@@ -136,8 +136,15 @@ void JitArm64::GenerateAsm()
 
       // iCache[(address >> 2) & iCache_Mask];
       MOVP2R(cache_base, GetBlockCache()->GetFastBlockMapFallback());
-      UBFX(pc_masked, DISPATCHER_PC, 2,
-           MathUtil::IntLog2(JitBaseBlockCache::FAST_BLOCK_MAP_FALLBACK_ELEMENTS) - 2);
+#ifdef __SWITCH__
+      // Same index as JitBaseBlockCache::FastLookupIndexForAddress.
+      EOR(pc_masked, DISPATCHER_PC, DISPATCHER_PC,
+          ArithOption(DISPATCHER_PC, ShiftType::LSR,
+                      JitBaseBlockCache::FAST_BLOCK_MAP_FALLBACK_BITS));
+      UBFX(pc_masked, pc_masked, 2, JitBaseBlockCache::FAST_BLOCK_MAP_FALLBACK_BITS);
+#else
+      UBFX(pc_masked, DISPATCHER_PC, 2, JitBaseBlockCache::FAST_BLOCK_MAP_FALLBACK_BITS);
+#endif
       LDR(block, cache_base, ArithOption(EncodeRegTo64(pc_masked), true));
       FixupBranch not_found = CBZ(block);
 

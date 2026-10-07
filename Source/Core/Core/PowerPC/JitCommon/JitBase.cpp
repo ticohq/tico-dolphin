@@ -32,6 +32,12 @@
 #include <unistd.h>
 #endif
 
+#ifdef __SWITCH__
+#include <algorithm>
+
+#include "Common/HorizonFastmem.h"
+#endif
+
 // The BLR optimization is nice, but it means that JITted code can overflow the
 // native stack by repeatedly running BL.  (The chance of this happening in any
 // retail game is close to 0, but correctness is correctness...) Also, the
@@ -157,23 +163,28 @@ void JitBase::RefreshConfig()
 
 bool JitBase::WantsPageTableMappings() const
 {
-  return jo.fastmem && m_page_table_fastmem_enabled;
+  bool supported = true;
+#ifdef __SWITCH__
+  supported = Common::HorizonFastmem::AreReadOnlyMappingsSupported();
+#endif
+  return jo.fastmem && m_page_table_fastmem_enabled && supported;
 }
 
 void JitBase::InitFastmemArena()
 {
   auto& memory = m_system.GetMemory();
-  jo.fastmem_arena = Config::Get(Config::MAIN_FASTMEM_ARENA) && memory.InitFastmemArena();
+  bool supported = true;
+#ifdef __SWITCH__
+  supported = Common::HorizonFastmem::IsArenaSupported();
+#endif
+  jo.fastmem_arena =
+      Config::Get(Config::MAIN_FASTMEM_ARENA) && supported && memory.InitFastmemArena();
 }
 
 void JitBase::InitBLROptimization()
 {
-#ifdef __SWITCH__
-  m_enable_blr_optimization = true;
-#else
   m_enable_blr_optimization =
       jo.enableBlocklink && !IsDebuggingEnabled() && EMM::IsExceptionHandlerSupported();
-#endif
   m_cleanup_after_stackfault = false;
 }
 
@@ -226,7 +237,11 @@ void JitBase::ProtectStack()
   }
 
 #ifdef __SWITCH__
-  m_stack_guard = nullptr;
+  // Horizon cannot reprotect thread stacks, so BL pushes check a limit instead.
+  const uintptr_t lowest_limit = stack_base_addr + SAFE_STACK_SIZE;
+  const uintptr_t budget_limit =
+      stack_middle_addr > BLR_STACK_BUDGET ? stack_middle_addr - BLR_STACK_BUDGET : 0;
+  m_ppc_state.blr_stack_limit = reinterpret_cast<u8*>(std::max(lowest_limit, budget_limit));
 #else
   m_stack_guard = reinterpret_cast<u8*>(stack_guard_addr);
   if (!Common::ReadProtectMemory(m_stack_guard, GUARD_SIZE))

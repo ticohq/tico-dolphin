@@ -118,6 +118,7 @@ target_sources(common PRIVATE
   MathUtil.h
   Matrix.cpp
   Matrix.h
+  HorizonFastmem.h
   MemArena.h
   MemoryUtil.cpp
   MemoryUtil.h

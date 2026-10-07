@@ -25,6 +25,10 @@ int CurrentThreadId();
 
 void SetThreadAffinity(std::thread::native_handle_type thread, u32 mask);
 void SetCurrentThreadAffinity(u32 mask);
+#ifdef __SWITCH__
+// Moves the current thread's priority by offset (higher runs later on Horizon).
+bool AdjustCurrentThreadPriority(int offset);
+#endif
 
 void SleepCurrentThread(int ms);
 void SwitchCurrentThread();  // On Linux, this is equal to sleep 1ms

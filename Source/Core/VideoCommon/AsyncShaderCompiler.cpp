@@ -234,6 +234,8 @@ void AsyncShaderCompiler::WorkerThreadEntryPoint(void* param)
   Common::SetCurrentThreadName("AsyncShaderCompiler Worker");
 #ifdef __SWITCH__
   Common::SetCurrentThreadAffinity(2);
+  // Keep shader compilation below the audio callback priority.
+  Common::AdjustCurrentThreadPriority(2);
 #endif
 
   // Initialize worker thread with backend-specific method.

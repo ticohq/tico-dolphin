@@ -666,7 +666,10 @@ bool VulkanContext::SelectDeviceExtensions(bool enable_surface)
 #endif
 
   AddExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, false);
+#ifndef __SWITCH__
+  // NVK cannot currently service VK_EXT_memory_budget queries.
   AddExtension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME, false);
+#endif
   AddExtension("VK_KHR_portability_subset", false);
 
   if (!DriverDetails::HasBug(DriverDetails::BUG_BROKEN_DEPTH_CLAMP_CONTROL))

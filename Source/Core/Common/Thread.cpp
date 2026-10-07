@@ -176,6 +176,21 @@ void SetCurrentThreadAffinity(u32 mask)
 #endif
 }
 
+#ifdef __SWITCH__
+bool AdjustCurrentThreadPriority(int offset)
+{
+  s32 current_priority = 0;
+  if (R_FAILED(svcGetThreadPriority(&current_priority, CUR_THREAD_HANDLE)))
+    return false;
+
+  // Horizon uses 6-bit priorities.
+  const s64 adjusted = static_cast<s64>(current_priority) + offset;
+  const u32 priority = static_cast<u32>(adjusted < 0 ? 0 : adjusted > 0x3f ? 0x3f : adjusted);
+  return priority == static_cast<u32>(current_priority) ||
+         R_SUCCEEDED(svcSetThreadPriority(CUR_THREAD_HANDLE, priority));
+}
+#endif
+
 void SleepCurrentThread(int ms)
 {
   usleep(1000 * ms);
