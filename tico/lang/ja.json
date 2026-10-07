@@ -238,5 +238,6 @@
   "emulator_mods": "Mod",
   "emulator_mods_disabled": "無効",
   "emulator_mods_none": "このゲームのRiivolution Modはありません",
-  "emulator_mods_where": "sdmc:/tico/mods/wii にコピーしてください"
+  "emulator_mods_where": "sdmc:/tico/mods/wii にコピーしてください",
+  "settings_dolphin_override_region_settings": "リージョン不一致の設定を許可"
 }

@@ -238,5 +238,6 @@
   "emulator_mods": "Mods",
   "emulator_mods_disabled": "Désactivé",
   "emulator_mods_none": "Aucun mod Riivolution pour ce jeu",
-  "emulator_mods_where": "Copiez-les dans sdmc:/tico/mods/wii"
+  "emulator_mods_where": "Copiez-les dans sdmc:/tico/mods/wii",
+  "settings_dolphin_override_region_settings": "Autoriser des paramètres de région différents"
 }

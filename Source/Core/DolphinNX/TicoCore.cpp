@@ -90,7 +90,7 @@ constexpr std::array<std::string_view, 29> kFixedBaseOptions = {{
     "dolphin_mods_enable",
 }};
 
-constexpr std::array<std::pair<std::string_view, std::string_view>, 78> kDefaultOptions = {{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 79> kDefaultOptions = {{
     {"display_mode", "Display"},
     {"display_size", "4:3"},
     {"integer_scale", "Auto"},
@@ -101,6 +101,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 78> kDefault
     {"dolphin_cheats_import", "enabled"},
     {"dolphin_skip_gc_bios", "disabled"},
     {"dolphin_language", "auto"},
+    {"dolphin_override_region_settings", "disabled"},
     {"dolphin_fast_disc_speed", "disabled"},
     {"dolphin_main_mmu", "disabled"},
     {"dolphin_rush_presentation", "disabled"},
@@ -171,7 +172,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 78> kDefault
     {"dolphin_save_load_settings", "disabled"},
 }};
 
-static_assert(kDefaultOptions.size() == 78);
+static_assert(kDefaultOptions.size() == 79);
 
 // The console's primary DNS server, from its network settings.
 std::optional<std::string> ConsoleDnsServer()
@@ -1075,6 +1076,11 @@ private:
                               static_cast<int>(Config::Get(Config::SYSCONF_LANGUAGE))),
                        0, 9);
     Config::SetBase(Config::SYSCONF_LANGUAGE, static_cast<u32>(language));
+    // the language (and Wii settings) chosen even when the disc is from another
+    // region, as PC Dolphin's Allow Mismatched Region Settings: for translated games
+    Config::SetBase(Config::MAIN_OVERRIDE_REGION_SETTINGS,
+                    GetBool("dolphin_override_region_settings",
+                            Config::Get(Config::MAIN_OVERRIDE_REGION_SETTINGS)));
     Config::SetBase(Config::MAIN_GC_LANGUAGE,
                     DiscIO::ToGameCubeLanguage(static_cast<DiscIO::Language>(language)));
 
