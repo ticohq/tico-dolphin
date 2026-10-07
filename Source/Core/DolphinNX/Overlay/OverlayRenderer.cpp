@@ -2,19 +2,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // The renderer tico's overlay draws with: SDL's while the game list runs before a
-// game (LibraryScreen), Dolphin's Vulkan presentation during a game (VulkanOverlay).
+// game (LibraryScreen), Dolphin's presentation during a game (GameOverlay).
 
 #include "overlay/overlay_renderer.h"
 
 #include "DolphinNX/LibraryScreen.h"
-#include "DolphinNX/Overlay/VulkanOverlay.h"
+#include "DolphinNX/Overlay/GameOverlay.h"
 
 namespace SwitchFrontend::OverlayRenderer
 {
 bool Init()
 {
   return DolphinNX::LibraryScreen::IsActive() ? DolphinNX::LibraryScreen::RendererInit() :
-                                                DolphinNX::VulkanOverlay::RendererInit();
+                                                DolphinNX::GameOverlay::RendererInit();
 }
 
 void Shutdown()
@@ -22,7 +22,7 @@ void Shutdown()
   if (DolphinNX::LibraryScreen::IsActive())
     DolphinNX::LibraryScreen::RendererShutdown();
   else
-    DolphinNX::VulkanOverlay::RendererShutdown();
+    DolphinNX::GameOverlay::RendererShutdown();
 }
 
 void BeginFrame()
@@ -30,6 +30,6 @@ void BeginFrame()
   if (DolphinNX::LibraryScreen::IsActive())
     DolphinNX::LibraryScreen::RendererBeginFrame();
   else
-    DolphinNX::VulkanOverlay::RendererBeginFrame();
+    DolphinNX::GameOverlay::RendererBeginFrame();
 }
 }  // namespace SwitchFrontend::OverlayRenderer

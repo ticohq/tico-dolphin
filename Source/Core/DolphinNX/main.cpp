@@ -70,7 +70,7 @@
 #include "DolphinNX/Saves.h"
 #include "DolphinNX/Input.h"
 #include "DolphinNX/TicoCore.h"
-#include "DolphinNX/Overlay/VulkanOverlay.h"
+#include "DolphinNX/Overlay/GameOverlay.h"
 #include "UsbStorage.h"
 #include "overlay/overlay_ui.h"
 #include "overlay/tico_config.h"
@@ -263,7 +263,7 @@ static void StartStateLoad(Core::System& system, int slot,
 static void ShowControllerModesTip()
 {
   using SwitchFrontend::OverlayTranslation::tr;
-  DolphinNX::VulkanOverlay::ShowNotice(
+  DolphinNX::GameOverlay::ShowNotice(
       tr("emulator_controller_modes") + ": " + tr("emulator_controller_help_line_1") + " " +
           tr("emulator_controller_help_line_2"),
       {tr("emulator_controller_help_line_full"), tr("emulator_controller_help_line_split"),
@@ -1718,7 +1718,7 @@ int main(int argc, char* argv[])
       if (slot < 1 || slot >= static_cast<int>(pictures.size()))
         return preview;
       // the slot may have been saved again since
-      DolphinNX::VulkanOverlay::FreePicture(pictures[slot]);
+      DolphinNX::GameOverlay::FreePicture(pictures[slot]);
       pictures[slot] = 0;
 
       struct stat st;
@@ -1727,7 +1727,7 @@ int main(int argc, char* argv[])
       char when[32];
       if (std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M", std::localtime(&st.st_mtime)))
         preview.saved_at = when;
-      pictures[slot] = DolphinNX::VulkanOverlay::LoadPicture(StatePicturePath(slot), &preview.aspect);
+      pictures[slot] = DolphinNX::GameOverlay::LoadPicture(StatePicturePath(slot), &preview.aspect);
       preview.texture = pictures[slot];
       return preview;
     });
@@ -1814,7 +1814,7 @@ int main(int argc, char* argv[])
         const u64 presented_frames = s_presented_frames.load(std::memory_order_relaxed);
         if (presented_frames > 0)
         {
-          overlay_ok = DolphinNX::VulkanOverlay::Init();
+          overlay_ok = DolphinNX::GameOverlay::Init();
           if (overlay_ok)
           {
             LOG("Overlay init succeeded during main loop after %llu presents\n",
@@ -1838,7 +1838,7 @@ int main(int argc, char* argv[])
               }
               else if (mode != "never")
               {
-                DolphinNX::VulkanOverlay::ShowResumePrompt();
+                DolphinNX::GameOverlay::ShowResumePrompt();
                 resume_prompt = true;
                 LOG("Overlay: resume prompt opened\n");
               }
@@ -1869,8 +1869,8 @@ int main(int argc, char* argv[])
 
       if (overlay_ok)
       {
-        DolphinNX::VulkanOverlay::Update(DolphinNX::Input::GetPad());
-        const bool overlay_visible = DolphinNX::VulkanOverlay::IsVisible();
+        DolphinNX::GameOverlay::Update(DolphinNX::Input::GetPad());
+        const bool overlay_visible = DolphinNX::GameOverlay::IsVisible();
         const bool overlay_just_opened = overlay_visible && !overlay_was_visible;
         const bool overlay_just_closed = !overlay_visible && overlay_was_visible;
         bool just_paused_for_overlay = false;
@@ -1919,7 +1919,7 @@ int main(int argc, char* argv[])
         DolphinNX::Cheats::ApplyIfChanged();
         DolphinNX::Achievements::Update();
 
-        const Action overlay_action = DolphinNX::VulkanOverlay::ConsumeAction();
+        const Action overlay_action = DolphinNX::GameOverlay::ConsumeAction();
         if (OverlayUI::IsSaveStateAction(overlay_action))
         {
           const int slot = OverlayUI::GetStateSlotForAction(overlay_action);
@@ -1927,7 +1927,7 @@ int main(int argc, char* argv[])
           KeepPausePictureFor(slot);
           RecordStateDisc(system, slot);
           OverlayUI::ShowToast(TrFormat("emulator_state_saved", slot));
-          DolphinNX::VulkanOverlay::SetVisible(false);
+          DolphinNX::GameOverlay::SetVisible(false);
           LOG("Overlay: SaveState slot %d\n", slot);
         }
         else if (OverlayUI::IsLoadStateAction(overlay_action) ||
@@ -1957,7 +1957,7 @@ int main(int argc, char* argv[])
               LOG("Overlay: LoadState slot %d (worker spawned)\n", slot);
             }
           }
-          DolphinNX::VulkanOverlay::SetVisible(false);
+          DolphinNX::GameOverlay::SetVisible(false);
         }
         else
         {
@@ -1966,7 +1966,7 @@ int main(int argc, char* argv[])
           case Action::Exit:
             LOG("Overlay: Exit requested\n");
             WriteAutoSave(system);
-            DolphinNX::VulkanOverlay::SetVisible(false);
+            DolphinNX::GameOverlay::SetVisible(false);
             RequestChainloadBackToTico();
             break;
           case Action::Restart:
@@ -1976,14 +1976,14 @@ int main(int argc, char* argv[])
             // the relaunched game starts over instead of offering the auto save
             if (std::FILE* marker = std::fopen(RestartMarkerPath().c_str(), "wb"))
               std::fclose(marker);
-            DolphinNX::VulkanOverlay::SetVisible(false);
+            DolphinNX::GameOverlay::SetVisible(false);
             s_relaunch = true;
             s_running = false;
             break;
           case Action::Reset:
             LOG("Overlay: Reset requested\n");
             system.GetProcessorInterface().ResetButton_Tap();
-            DolphinNX::VulkanOverlay::SetVisible(false);
+            DolphinNX::GameOverlay::SetVisible(false);
             break;
           case Action::SwapDisc:
           {
@@ -1997,7 +1997,7 @@ int main(int argc, char* argv[])
               OverlayUI::ShowToast(disc.displayName);
               LOG("Overlay: changing disc to %s\n", disc.romPath.c_str());
             }
-            DolphinNX::VulkanOverlay::SetVisible(false);
+            DolphinNX::GameOverlay::SetVisible(false);
             break;
           }
           case Action::EditText:
@@ -2046,7 +2046,7 @@ int main(int argc, char* argv[])
               s_cheat_download_thread = std::thread([] {
                 const std::string message = DolphinNX::Cheats::DownloadGeckoCodes();
                 SwitchFrontend::OverlayUI::ShowToast(message);
-                DolphinNX::VulkanOverlay::RequestCheatRefresh();
+                DolphinNX::GameOverlay::RequestCheatRefresh();
                 s_cheat_download_in_progress.store(false);
               });
             }
@@ -2054,7 +2054,7 @@ int main(int argc, char* argv[])
           case Action::NoticeChoice:
             // the controller modes tip: any choice closes it
             OverlayUI::ConsumeNoticeChoice();
-            DolphinNX::VulkanOverlay::SetVisible(false);
+            DolphinNX::GameOverlay::SetVisible(false);
             break;
           default:
             break;
@@ -2124,8 +2124,8 @@ int main(int argc, char* argv[])
 
     if (s_cheat_download_thread.joinable())
       s_cheat_download_thread.join();
-    LOG("VulkanOverlay::Shutdown...\n");
-    DolphinNX::VulkanOverlay::Shutdown();
+    LOG("GameOverlay::Shutdown...\n");
+    DolphinNX::GameOverlay::Shutdown();
 
     LOG("Core::Stop...\n");
     Core::Stop(system);

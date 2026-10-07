@@ -11,7 +11,7 @@
 
 #include "Common/Logging/Log.h"
 #include "Core/Host.h"
-#include "DolphinNX/Overlay/VulkanOverlay.h"
+#include "DolphinNX/Overlay/GameOverlay.h"
 
 // External running flag from main.cpp
 extern bool s_running;
@@ -89,5 +89,5 @@ void Host_TitleChanged() {}
 
 bool Host_UIBlocksControllerState()
 {
-  return DolphinNX::VulkanOverlay::IsVisible();
+  return DolphinNX::GameOverlay::IsVisible();
 }
