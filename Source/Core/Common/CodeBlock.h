@@ -34,6 +34,8 @@ protected:
   size_t region_size = 0;
   // Original size of the region we allocated.
   size_t total_region_size = 0;
+  // Offset from executable region to writable region (0 when not dual-mapped).
+  ptrdiff_t writable_region_diff = 0;
 
   bool m_is_child = false;
   std::vector<CodeBlock*> m_children;
@@ -72,6 +74,13 @@ public:
                                                 0);
     }
     T::SetCodePtr(region, region + size);
+
+#ifdef IPHONEOS
+    if constexpr (executable)
+      writable_region_diff = Common::AllocateWritableRegionAndGetDiff(region, size);
+#endif
+
+    T::SetWritableRegionDiff(writable_region_diff);
   }
 
   // Always clear code space with breakpoints, so that if someone accidentally executes
@@ -86,6 +95,10 @@ public:
   void FreeCodeSpace()
   {
     ASSERT(!m_is_child);
+#ifdef IPHONEOS
+    if constexpr (executable)
+      Common::FreeWritableRegion(region, total_region_size, writable_region_diff);
+#endif
     if constexpr (executable)
       Common::FreeExecutableMemory(region, total_region_size);
     else
@@ -97,6 +110,7 @@ public:
     total_region_size = 0;
     if constexpr (requires(T& emitter, intptr_t offset) { emitter.SetExecutableCodeOffset(offset); })
       this->SetExecutableCodeOffset(0);
+    writable_region_diff = 0;
     for (CodeBlock* child : m_children)
     {
       child->region = nullptr;
@@ -105,6 +119,7 @@ public:
       child->total_region_size = 0;
       if constexpr (requires(T& emitter, intptr_t offset) { emitter.SetExecutableCodeOffset(offset); })
         child->SetExecutableCodeOffset(0);
+      child->writable_region_diff = 0;
     }
   }
 
@@ -151,6 +166,7 @@ public:
     return region + (rx_ptr - rx_region);
   }
 
+  ptrdiff_t GetWritableRegionDiff() const { return writable_region_diff; }
   void WriteProtect(bool allow_execute)
   {
     Common::WriteProtectMemory(region, region_size, allow_execute);
@@ -222,6 +238,7 @@ public:
                                              reinterpret_cast<intptr_t>(child->region) :
                                          0);
     }
+    child->writable_region_diff = writable_region_diff;
     child->ResetCodePtr();
     m_children.emplace_back(child);
   }

@@ -22,6 +22,8 @@ using namespace std::chrono_literals;
 // connection is disconnected
 constexpr std::chrono::milliseconds PEER_TIMEOUT = 30s;
 
+std::string GetExternalIPAddress();
+
 #if !defined(LIBRETRO)
 bool CompressFileIntoPacket(const std::string& file_path, sf::Packet& packet);
 bool CompressFolderIntoPacket(const std::string& folder_path, sf::Packet& packet);

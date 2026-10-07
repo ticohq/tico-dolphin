@@ -143,7 +143,7 @@ void ARM64XEmitter::Write32(u32 value)
     return;
   }
 
-  std::memcpy(m_code, &value, sizeof(u32));
+  std::memcpy(m_code + m_writable_region_diff, &value, sizeof(u32));
   m_code += sizeof(u32);
 }
 
@@ -792,7 +792,7 @@ void ARM64XEmitter::SetJumpTarget(FixupBranch const& branch)
     break;
   }
 
-  std::memcpy(branch.ptr, &inst, sizeof(inst));
+  std::memcpy(branch.ptr + m_writable_region_diff, &inst, sizeof(inst));
 }
 
 FixupBranch ARM64XEmitter::WriteFixupBranch()

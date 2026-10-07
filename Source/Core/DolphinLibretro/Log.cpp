@@ -10,6 +10,7 @@
 namespace Libretro
 {
 extern retro_environment_t environ_cb;
+unsigned msg_interface_version = 0;
 namespace Log
 {
 class LogListener : public Common::Log::LogListener
@@ -129,5 +130,88 @@ void LogListener::Log(Common::Log::LogLevel level, const char* text)
   __android_log_print(ANDROID_LOG_INFO, "DolphinEmuLibretro", "%s", text);
 #endif
 }
+
+retro_log_level GetRetroLogLevel(Common::Log::LogLevel level)
+{
+  switch(level)
+  {
+    case Common::Log::LogLevel::LNOTICE:
+      return retro_log_level::RETRO_LOG_INFO;
+    case Common::Log::LogLevel::LERROR:
+      return retro_log_level::RETRO_LOG_ERROR;
+    case Common::Log::LogLevel::LWARNING:
+      return retro_log_level::RETRO_LOG_WARN;
+    case Common::Log::LogLevel::LINFO:
+      return retro_log_level::RETRO_LOG_INFO;
+    case Common::Log::LogLevel::LDEBUG:
+      return retro_log_level::RETRO_LOG_DEBUG;
+  }
+
+  return retro_log_level::RETRO_LOG_INFO;
+}
+
+retro_log_level GetRetroLogLevelForMsgType(Common::MsgType level)
+{
+  switch(level)
+  {
+    case Common::MsgType::Information:
+      return retro_log_level::RETRO_LOG_INFO;
+    case Common::MsgType::Question:
+      return retro_log_level::RETRO_LOG_INFO;
+    case Common::MsgType::Warning:
+      return retro_log_level::RETRO_LOG_WARN;
+    case Common::MsgType::Critical:
+      return retro_log_level::RETRO_LOG_ERROR;
+  }
+
+  return retro_log_level::RETRO_LOG_INFO;
+}
+
+void DoLogFrontEnd(retro_log_level level, const char* text, unsigned int duration)
+{
+  if (msg_interface_version >= 1)
+  {
+    struct retro_message_ext message = {
+        text,
+        duration,
+        3, // priority
+        level,
+        RETRO_MESSAGE_TARGET_ALL,
+        RETRO_MESSAGE_TYPE_NOTIFICATION,
+        -1 // progress
+    };
+
+    environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &message);
+  }
+  else
+  {
+    struct retro_message message = {
+      text,
+      180 // frames
+    };
+
+    environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
+  }
+}
+
+void LogFrontEnd(Common::Log::LogLevel level, const char* text, unsigned int duration)
+{
+  DoLogFrontEnd(GetRetroLogLevel(level), text, duration);
+}
+
+void LogFrontEnd(Common::MsgType style, const char* caption, const char* text, unsigned int duration)
+{
+  char message[1024];
+
+  if (text && std::string(text) == "Failed to create shared context for shader compiling.")
+    return; // ignore
+
+  snprintf(message, sizeof(message), "%s - %s",
+         caption ? caption : "",
+         text ? text : "");
+
+  DoLogFrontEnd(GetRetroLogLevelForMsgType(style), message, duration);
+}
+
 }  // namespace Log
 }  // namespace Libretro

@@ -17,10 +17,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-
-#include <setupapi.h>
 #include <cfgmgr32.h>
 #include <devpropdef.h>
+#include <setupapi.h>
 
 #include "Common/Functional.h"
 

@@ -21,7 +21,7 @@ include:
   # Linux 64-bit
   - project: 'libretro-infrastructure/ci-templates'
     file: '/linux-cmake.yml'
-    
+
   # MacOS x64
   - project: 'libretro-infrastructure/ci-templates'
     file: 'osx-cmake-x86.yml'
@@ -43,6 +43,11 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/tvos-cmake.yml'
 
+  ################################## MISC ####################################
+  # webOS aarch64
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/webos-cmake.yml'
+
 # Stages for building
 stages:
   - build-prepare
@@ -58,9 +63,9 @@ libretro-build-windows-x64:
   extends:
     - .libretro-windows-cmake-x86_64
     - .core-defs
-  image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-mxe-win-cross-cores:gcc12
+  image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-mxe-win-cross-cores:gcc16
   variables:
-    EXTRA_PATH: ../../Binary/x64
+    EXTRA_PATH: Binaries
   before_script:
     - export NUMPROC=$(($(nproc)/5))
     - if builtin type -P ccache &> /dev/null; then ccache -V &> /dev/null; fi
@@ -73,8 +78,17 @@ libretro-build-linux-x64:
     - .core-defs
   image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-amd64-ubuntu:backports
   variables:
-    CC: /usr/bin/gcc-12
-    CXX: /usr/bin/g++-12
+    CC: /usr/bin/gcc-14
+    CXX: /usr/bin/g++-14
+
+# Linux ARM 64-bit
+libretro-build-linux-aarch64:
+  extends:
+    - .libretro-linux-cmake-aarch64
+    - .core-defs
+  variables:
+    CC: /usr/bin/gcc-14
+    CXX: /usr/bin/g++-14
 
 # macOS Intel
 libretro-build-osx-x64:
@@ -98,9 +112,24 @@ android-arm64-v8a:
   extends:
     - .libretro-android-cmake-arm64-v8a
     - .core-defs
+
+# Android ARMv7a (for play only)
+#android-armeabi-v7a:
+#  extends:
+#    - .libretro-android-cmake-armeabi-v7a
+#    - .core-defs
+#  variables:
+#    API_LEVEL: 24
+#    CORE_ARGS: -DLIBRETRO=ON -DENABLE_LTO=ON -DENABLE_GENERIC=ON
+
+# Android x86_64 (for play only)
+android-x86_64:
+  extends:
+    - .libretro-android-cmake-x86_64
+    - .core-defs
   variables:
-    ANDROID_NDK_VERSION: 29.0.14206865
-    NDK_ROOT: /android-sdk-linux/ndk/$ANDROID_NDK_VERSION
+    API_LEVEL: 24
+    CORE_ARGS: -DLIBRETRO=ON -DENABLE_LTO=ON
 
 # iOS arm64
 libretro-build-ios-arm64:
@@ -119,3 +148,10 @@ libretro-build-tvos-arm64:
   variables:
     CMAKE_ADDL_COMP_FLAGS: ""
     MINVER: 14.0
+
+################################## MISC ####################################
+# webOS aarch64
+libretro-build-webos-aarch64:
+  extends:
+    - .libretro-webos-cmake-aarch64
+    - .core-defs

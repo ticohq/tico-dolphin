@@ -8,6 +8,7 @@
 #include "Common/CommonPaths.h"
 #include "Core/CommonTitles.h"
 #include "Common/FileUtil.h"
+#include "Common/StringUtil.h"
 #include "Common/Version.h"
 #include "Core/Boot/Boot.h"
 #include "Core/BootManager.h"
@@ -19,6 +20,7 @@
 #include "Core/GeckoCodeConfig.h"
 #include "Core/HW/DVD/DVDInterface.h"
 #include "Core/HW/EXI/EXI_Device.h"
+#include "Core/HW/HSP/HSP_Device.h"
 #include "Core/HW/VideoInterface.h"
 #include "Core/HW/WiimoteReal/WiimoteReal.h"
 #include "Core/PowerPC/PowerPC.h"
@@ -32,6 +34,7 @@
 #include "DolphinLibretro/Video.h"
 #include "DolphinLibretro/VideoContexts/ContextStatus.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
+#include "InputCommon/ControllerInterface/DualShockUDPClient/DualShockUDPClient.h"
 #include "UICommon/DiscordPresence.h"
 #include "UICommon/UICommon.h"
 #include "VideoCommon/AsyncRequests.h"
@@ -52,6 +55,17 @@ static void InitDiskControlInterface();
 static unsigned disk_index = 0;
 static bool eject_state;
 static std::vector<std::string> disk_paths;
+
+static void ResetDiskControlState()
+{
+  disk_index = 0;
+  eject_state = false;
+  disk_paths.clear();
+}
+
+// GBPlayer
+static std::string GBPlayer_rom_path;
+static bool GBPlayer_active;
 
 // silence forward declaration warnings
 void reload_cheats_from_ini();
@@ -167,13 +181,67 @@ void generate_cht_from_ini(std::string fileName)
 
 bool retro_load_game(const struct retro_game_info* game)
 {
+  Libretro::ResetDiskControlState();
+
   const char* save_dir = NULL;
+  const char* gba_save_dir = NULL;
   const char* system_dir = NULL;
   const char* core_assets_dir = NULL;
+  std::string rebuild_save_dir;
   std::string user_dir;
   std::string sys_dir;
 
-  Libretro::environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &save_dir);
+  /*
+   *  If the GBPlayer is active, we try to reconstruct the GC save dir location
+   *  with regards to content sorting and core sorting. If we do not do this,
+   *  there will be a User directory with GC saves in the GB/GBC/GBA rom save path
+   *  when a user has content/core sorting enabled. Since the user is trying to avoid
+   *  said behavior actively if those sorting options are enabled,
+   *  we should seperate them accordingly.
+   */
+  if (Libretro::GBPlayer_active)
+  {
+    std::filesystem::path gba_content_dir = std::filesystem::path("");
+    if (!Libretro::GBPlayer_rom_path.empty())
+      gba_content_dir = std::filesystem::path(Libretro::GBPlayer_rom_path).parent_path().filename().string();
+
+    Libretro::environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &gba_save_dir);
+    std::filesystem::path base = std::filesystem::path(gba_save_dir);
+
+    bool core_sort = false;
+    retro_system_info sys_info{};
+    retro_get_system_info(&sys_info);
+    const std::string library_name = sys_info.library_name;
+
+    if (!base.empty() && !library_name.empty())
+      core_sort = Common::CaseInsensitiveEquals(base.filename().string(), library_name);
+    if (core_sort)
+      base = base.parent_path();
+
+    bool content_sort = false;
+    std::string gc_content_dir;
+    if (!gba_content_dir.empty() && !base.empty())
+      content_sort = Common::CaseInsensitiveEquals(base.filename().string(), gba_content_dir.string());
+    if (content_sort)
+    {
+      gc_content_dir = std::filesystem::path(game->path).parent_path().filename().string();
+      base = base.parent_path();
+    }
+
+    rebuild_save_dir = base.string();
+    if (content_sort)
+      rebuild_save_dir = rebuild_save_dir + DIR_SEP + gc_content_dir;
+    if (core_sort)
+      rebuild_save_dir = rebuild_save_dir + DIR_SEP + library_name;
+
+    save_dir = rebuild_save_dir.c_str();
+    INFO_LOG_FMT(BOOT, "GBPlayer: GC save dir reconstructed to: '{}'", save_dir);
+  }
+  else
+  {
+    Libretro::environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &save_dir);
+  }
+
   Libretro::environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir);
   Libretro::environ_cb(RETRO_ENVIRONMENT_GET_CORE_ASSETS_DIRECTORY, &core_assets_dir);
   Libretro::InitDiskControlInterface();
@@ -212,6 +280,22 @@ bool retro_load_game(const struct retro_game_info* game)
   UICommon::CreateDirectories();
   UICommon::Init();
   Libretro::Log::Init();
+
+  if (Libretro::GBPlayer_active)
+  {
+    Config::SetBase(Config::MAIN_GBA_ROM_PATHS[Config::GBPLAYER_GBA_INDEX], Libretro::GBPlayer_rom_path);
+    INFO_LOG_FMT(BOOT, "GBPlayer: GBA ROM path applied from subsystem: '{}'", Libretro::GBPlayer_rom_path);
+    Config::SetBase(Config::MAIN_GBA_SAVES_PATH, std::string(gba_save_dir));
+    INFO_LOG_FMT(BOOT, "GBPlayer: ROM save set to: '{}'", gba_save_dir);
+    // In order to prevent confusion for the settings of the save location between RA and the
+    // emulator we just turn this off
+    Config::SetBase(Config::MAIN_GBA_SAVES_IN_ROM_PATH, false);
+  }
+  else
+  {
+    Config::SetBase(Config::MAIN_GBA_ROM_PATHS[Config::GBPLAYER_GBA_INDEX], std::string{});
+  }
+
   Discord::SetDiscordPresenceEnabled(false);
   Common::SetEnableAlert(false);
   Common::SetAbortOnPanicAlert(false);
@@ -219,13 +303,42 @@ bool retro_load_game(const struct retro_game_info* game)
     bool yes_no, Common::MsgType style) -> bool
   {
     // Log the message instead of showing a popup
-    INFO_LOG_FMT(COMMON, "Suppressed popup: {} - {}", caption, text);
+    WARN_LOG_FMT(COMMON, "Suppressed popup: {} - {}", caption, text);
+    Libretro::Log::LogFrontEnd(style, caption, text, 2000);
     return true; // Always "continue"
   });
 
-  INFO_LOG_FMT(COMMON, "SCM Git revision: {}", Common::GetScmRevGitStr());
-  INFO_LOG_FMT(COMMON, "User Directory set to '{}'", user_dir);
-  INFO_LOG_FMT(COMMON, "System Directory set to '{}'", sys_dir);
+  NOTICE_LOG_FMT(BOOT, "SCM Git revision: {}", Common::GetScmRevGitStr());
+  NOTICE_LOG_FMT(BOOT, "User Directory set to '{}'", user_dir);
+  NOTICE_LOG_FMT(BOOT, "System Directory set to '{}'", sys_dir);
+
+  const std::string codehandler = std::string(sys_dir) + DIR_SEP GECKO_CODE_HANDLER;
+
+  if (!File::Exists(codehandler))
+  {
+#if defined(ANDROID) || defined(IPHONEOS)
+    // for reduced area to display the message..
+    const std::string missing_core_files_msg =
+      fmt::format(
+        "IMPORTANT - Open Online Updater ->\n"
+        "Core System Files Downloader -> Dolphin.zip.");
+#else
+    const std::string missing_core_files_msg =
+      fmt::format(
+        "Core file {} missing! Open Online Updater ->\n"
+        "Core System Files Downloader -> Install Dolphin.zip. "
+        "Restart core to take effect.",
+        GECKO_CODE_HANDLER);
+#endif
+
+    //OSD::AddMessage(missing_core_files_msg, OSD::Duration::VERY_LONG, OSD::Color::RED);
+
+    Libretro::Log::LogFrontEnd(
+      Common::Log::LogLevel::LERROR, missing_core_files_msg.c_str(),
+      OSD::Duration::VERY_LONG);
+
+    ERROR_LOG_FMT(BOOT, "{}", missing_core_files_msg);
+  }
 
   // Main.Core
   Config::SetBase(Config::MAIN_CPU_CORE,
@@ -252,6 +365,9 @@ bool retro_load_game(const struct retro_game_info* game)
   // dual core (true) or single core (false)
   Config::SetBase(Config::MAIN_CPU_THREAD,
     Libretro::GetOption<bool>(core::MAIN_CPU_THREAD, /*def=*/true));
+
+  Config::SetBase(Config::MAIN_LOAD_GAME_INTO_MEMORY,
+    Libretro::GetOption<bool>(core::MAIN_LOAD_GAME_INTO_MEMORY, /*def=*/false));
 
   Config::SetBase(Config::MAIN_ENABLE_CHEATS,
                      Libretro::GetOption<bool>(core::CHEATS_ENABLED, /*def=*/false));
@@ -385,6 +501,9 @@ bool retro_load_game(const struct retro_game_info* game)
   if (Common::is_uwp())
     Config::SetBase(Config::GFX_SHADER_CACHE, false);
 
+  Config::SetBase(Config::GFX_MODS_ENABLE,
+    Libretro::GetOption<bool>(gfx_settings::MODS_ENABLE, /*def=*/false));
+
   // Graphics.Enhancements
   Config::SetBase(Config::GFX_ENHANCE_FORCE_TEXTURE_FILTERING,
                   static_cast<TextureFilteringMode>(
@@ -493,13 +612,49 @@ bool retro_load_game(const struct retro_game_info* game)
   Config::SetBase(Config::GFX_PERF_QUERIES_ENABLE,
                  Libretro::GetOption<bool>(gfx_gamespecific::GFX_PERF_QUERIES_ENABLE, /*def=*/false));
 
+#ifdef CIFACE_USE_DUALSHOCKUDPCLIENT
+  // wiimote - alternative input server
+  {
+    const bool dsu_enabled = Libretro::GetOption<bool>(
+        Libretro::Options::wiimote_dsu::DSU_ENABLED, false);
+
+    Config::SetBase(ciface::DualShockUDPClient::Settings::SERVERS_ENABLED, dsu_enabled);
+
+    if (dsu_enabled)
+    {
+      const int o1 = Libretro::GetOption<int>(Libretro::Options::wiimote_dsu::DSU_IP_1, 127);
+      const int o2 = Libretro::GetOption<int>(Libretro::Options::wiimote_dsu::DSU_IP_2, 0);
+      const int o3 = Libretro::GetOption<int>(Libretro::Options::wiimote_dsu::DSU_IP_3, 0);
+      const int o4 = Libretro::GetOption<int>(Libretro::Options::wiimote_dsu::DSU_IP_4, 1);
+      const int port = Libretro::GetOption<int>(Libretro::Options::wiimote_dsu::DSU_PORT, 26760);
+
+      const std::string address = fmt::format("{}.{}.{}.{}", o1, o2, o3, o4);
+      const std::string servers_entry = fmt::format("DS4:{}:{};", address, port);
+
+      Config::SetBase(ciface::DualShockUDPClient::Settings::SERVERS, servers_entry);
+    }
+  }
+#endif
+
   /* disable throttling emulation to match GetTargetRefreshRate() */
   Core::SetIsThrottlerTempDisabled(true);
   SConfig::GetInstance().bBootToPause = true;
 
 #ifdef IPHONEOS
   bool can_jit = false;
-  if (!Libretro::environ_cb(RETRO_ENVIRONMENT_GET_JIT_CAPABLE, &can_jit) || !can_jit)
+  {
+    struct retro_exec_mem_alloc probe = {};
+    probe.version = 1;
+    probe.size = 0;
+    if (Libretro::environ_cb(RETRO_ENVIRONMENT_EXEC_MEM_ALLOC, &probe))
+    {
+      if (probe.mode != RETRO_EXEC_MEM_MODE_UNAVAILABLE)
+        can_jit = true;
+    }
+    else if (!Libretro::environ_cb(RETRO_ENVIRONMENT_GET_JIT_CAPABLE, &can_jit))
+      can_jit = false;
+  }
+  if (!can_jit)
   {
     auto current = Config::Get(Config::MAIN_CPU_CORE);
     if (current == PowerPC::CPUCore::JIT64 ||
@@ -513,9 +668,9 @@ bool retro_load_game(const struct retro_game_info* game)
     OSD::AddMessage("CPU: Just in time compiler disabled as unavailable on your system", OSD::Duration::NORMAL);
   }
 #endif
-  INFO_LOG_FMT(BOOT, "CPU Core: {}", Libretro::Options::CPUCoreToString(Config::Get(Config::MAIN_CPU_CORE)));
-  INFO_LOG_FMT(BOOT, "Fastmem enabled = {}", (Config::Get(Config::MAIN_FASTMEM)) ? "Yes" : "No");
-  INFO_LOG_FMT(BOOT, "JIT debug enabled = {}", Config::IsDebuggingEnabled() ? "Yes" : "No");
+  NOTICE_LOG_FMT(BOOT, "CPU Core: {}", Libretro::Options::CPUCoreToString(Config::Get(Config::MAIN_CPU_CORE)));
+  NOTICE_LOG_FMT(BOOT, "Fastmem enabled = {}", (Config::Get(Config::MAIN_FASTMEM)) ? "Yes" : "No");
+  NOTICE_LOG_FMT(BOOT, "JIT debug enabled = {}", Config::IsDebuggingEnabled() ? "Yes" : "No");
 
   Libretro::FrameTiming::Init();
   Libretro::Audio::Init();
@@ -621,10 +776,44 @@ bool retro_load_game(const struct retro_game_info* game)
   return true;
 }
 
-bool retro_load_game_special(unsigned game_type, const struct retro_game_info* info,
-                             size_t num_info)
+bool retro_load_game_special(unsigned game_type, const struct retro_game_info* info, size_t num_info)
 {
-  return false;
+  if (game_type != Libretro::g_gbplayer_subsystem_id)
+  {
+    ERROR_LOG_FMT(BOOT, "retro_load_game_special: unknown game_type {}", game_type);
+    return false;
+  }
+  if (num_info < 1 || !info)
+  {
+    ERROR_LOG_FMT(BOOT, "retro_load_game_special: no content info");
+    return false;
+  }
+
+  const retro_game_info* gba_slot = (num_info >= 2 && info[0].path && *info[0].path) ? &info[0] : nullptr;
+
+  const retro_game_info* gc_slot = (info[1].path && *info[1].path) ? &info[1] : nullptr;
+
+  if (!gc_slot)
+  {
+    ERROR_LOG_FMT(BOOT, "GBPlayer: no GC disc path provided in slot 0");
+    return false;
+  }
+
+  INFO_LOG_FMT(BOOT, "GBPlayer: GC disc  = '{}'", gc_slot->path);
+  if (gba_slot)
+  {
+    Libretro::GBPlayer_rom_path = gba_slot->path;
+    INFO_LOG_FMT(BOOT, "GBPlayer: ROM = '{}'", gba_slot->path);
+  }
+  else
+  {
+    Libretro::GBPlayer_rom_path.clear();
+    INFO_LOG_FMT(BOOT, "GBPlayer: no ROM");
+  }
+
+  Libretro::GBPlayer_active = true;
+
+  return retro_load_game(gc_slot);
 }
 
 void retro_unload_game(void)
@@ -664,6 +853,7 @@ void retro_unload_game(void)
 
   Core::UndeclareAsCPUThread();
   Core::UndeclareAsGPUThread();
+  Libretro::ResetDiskControlState();
 }
 
 namespace Libretro

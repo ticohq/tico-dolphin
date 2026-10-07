@@ -15,6 +15,7 @@
 #include <initguid.h>
 #include <hidclass.h>
 #include <hidsdi.h>
+#include <hidsdi.h>
 #include <wtypes.h>
 // initguid.h must be included before devpkey.h
 #include <devpkey.h>

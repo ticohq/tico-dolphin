@@ -36,12 +36,12 @@ namespace Libretro
 {
 namespace Video
 {
+int GetAdjustedBaseHeight();
 void Init(void);
 bool Video_InitializeBackend();
 bool SetHWRender(retro_hw_context_type type, const int version_major = -1, const int version_minor = -1);
 void ContextReset(void);
 void ContextDestroy(void);
-int GetAdjustedBaseHeight();
 
 class SWGfx : public SW::SWGfx
 {
@@ -243,11 +243,13 @@ VkInstance CreateInstance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 #endif
 bool CreateDevice(retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
                   VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
-                  const char** required_device_extensions,
-                  unsigned num_required_device_extensions,
+                  const char** required_device_extensions, unsigned num_required_device_extensions,
                   const char** required_device_layers, unsigned num_required_device_layers,
                   const VkPhysicalDeviceFeatures* required_features);
-} // namespace Vk
+bool CreateDevice2(retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
+                   VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
+                   retro_vulkan_create_device_wrapper_t create_device_wrapper, void* opaque);
+}  // namespace Vk
 #endif
 
 }  // namespace Video

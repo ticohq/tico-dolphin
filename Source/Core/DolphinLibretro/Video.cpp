@@ -36,7 +36,9 @@
 #include "Core/Config/MainSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/HW/VideoInterface.h"
 #include "Core/Host.h"
+#include "Core/System.h"
 #include "DolphinLibretro/Common/Options.h"
 #include "DolphinLibretro/VideoContexts/ContextStatus.h"
 
@@ -76,10 +78,15 @@ int GetAdjustedBaseHeight()
 
   if (crop_overscan)
   {
-    if (retro_get_region() == RETRO_REGION_NTSC)
-      return 480;
-    else
-      return 576;
+    // A 480-line signal (native NTSC, or a PAL game that switched to PAL60/EuRGB60 at runtime)
+    // should report 480 so the frontend / CRT switchres picks a 480i@60 mode instead of stretching
+    // a 576-line PAL mode down to ~52 Hz. Detect the 60 Hz output from the current refresh rate,
+    // since the cartridge region stays PAL even after the in-game 60 Hz switch.
+    const bool is_480_line_output =
+      retro_get_region() == RETRO_REGION_NTSC ||
+      Core::System::GetInstance().GetVideoInterface().GetTargetRefreshRate() > 55.0;
+
+    return is_480_line_output ? 480 : 576;
   }
 
   return EFB_HEIGHT;
@@ -233,11 +240,13 @@ bool SetHWRender(retro_hw_context_type type, const int version_major, const int 
           RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN_VERSION,
           Vk::GetApplicationInfo,
           Vk::CreateDevice,
-          NULL, // destroy_device
+          NULL,  // destroy_device
 #ifdef __APPLE__
-          Vk::CreateInstance, // create_instance (v2 API)
-          NULL, // create_device2
+          Vk::CreateInstance,  // create_instance (v2 API)
+#else
+          NULL,  // create_instance
 #endif
+          Vk::CreateDevice2,  // create_device2 (v2 API)
       };
       environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE, (void*)&iface);
 
@@ -463,7 +472,12 @@ bool Video_InitializeBackend()
 {
   WindowSystemInfo wsi = {};
   wsi.type = WindowSystemType::Libretro;
-  wsi.render_surface_scale = 1.0f;
+  // If we don't do this, the ImGui overlay will be
+  // really small at high internal resolutions
+  // (at least in Vulkan and OpenGL).
+  int efbScale = Libretro::Options::GetCached<int>(
+    Libretro::Options::gfx_settings::EFB_SCALE, 1);
+  wsi.render_surface_scale = efbScale;
 
   g_video_backend->PrepareWindow(wsi);
 
@@ -652,12 +666,12 @@ VkInstance CreateInstance(PFN_vkGetInstanceProcAddr get_instance_proc_addr,
 }
 #endif
 
-bool CreateDevice(retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
-                         VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
-                         const char** required_device_extensions,
-                         unsigned num_required_device_extensions,
-                         const char** required_device_layers, unsigned num_required_device_layers,
-                         const VkPhysicalDeviceFeatures* required_features)
+static bool CreateDeviceInternal(
+    retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu, VkSurfaceKHR surface,
+    PFN_vkGetInstanceProcAddr get_instance_proc_addr, const char** required_device_extensions,
+    unsigned num_required_device_extensions, const char** required_device_layers,
+    unsigned num_required_device_layers, const VkPhysicalDeviceFeatures* required_features,
+    retro_vulkan_create_device_wrapper_t create_device_wrapper, void* opaque)
 {
   assert(g_video_backend->GetConfigName() == "Vulkan");
 
@@ -665,7 +679,7 @@ bool CreateDevice(retro_vulkan_context* context, VkInstance instance, VkPhysical
 
   Init(instance, gpu, surface, get_instance_proc_addr, required_device_extensions,
        num_required_device_extensions, required_device_layers, num_required_device_layers,
-       required_features);
+       required_features, create_device_wrapper, opaque);
 
   if (!Vulkan::LoadVulkanInstanceFunctions(instance))
   {
@@ -687,7 +701,8 @@ bool CreateDevice(retro_vulkan_context* context, VkInstance instance, VkPhysical
 
   if (gpu == VK_NULL_HANDLE)
     gpu = gpu_list[0];
-  Vulkan::g_vulkan_context = Vulkan::VulkanContext::Create(instance, gpu, surface, false, false, VK_API_VERSION_1_0);
+  Vulkan::g_vulkan_context =
+      Vulkan::VulkanContext::Create(instance, gpu, surface, false, false, VK_API_VERSION_1_0);
   if (!Vulkan::g_vulkan_context)
   {
     ERROR_LOG_FMT(VIDEO, "Failed to create Vulkan device");
@@ -703,6 +718,32 @@ bool CreateDevice(retro_vulkan_context* context, VkInstance instance, VkPhysical
   context->presentation_queue_family_index = context->queue_family_index;
 
   return true;
+}
+
+bool CreateDevice(retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
+                  VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
+                  const char** required_device_extensions, unsigned num_required_device_extensions,
+                  const char** required_device_layers, unsigned num_required_device_layers,
+                  const VkPhysicalDeviceFeatures* required_features)
+{
+  return CreateDeviceInternal(context, instance, gpu, surface, get_instance_proc_addr,
+                              required_device_extensions, num_required_device_extensions,
+                              required_device_layers, num_required_device_layers, required_features,
+                              nullptr, nullptr);
+}
+
+bool CreateDevice2(retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
+                   VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
+                   retro_vulkan_create_device_wrapper_t create_device_wrapper, void* opaque)
+{
+  if (!create_device_wrapper)
+  {
+    ERROR_LOG_FMT(VIDEO, "Vulkan negotiation v2 requires a device creation wrapper.");
+    return false;
+  }
+
+  return CreateDeviceInternal(context, instance, gpu, surface, get_instance_proc_addr, nullptr, 0,
+                              nullptr, 0, nullptr, create_device_wrapper, opaque);
 }
 }  // namespace Vk
 #endif

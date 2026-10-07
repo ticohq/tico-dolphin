@@ -23,6 +23,7 @@ static constexpr const char* CATEGORY_GFX_HACKS = "graphics_hacks";
 static constexpr const char* CATEGORY_GFX_GAMESPECIFIC = "graphics_gamespecific";
 static constexpr const char* CATEGORY_WIIMOTE = "wiimote";
 static constexpr const char* CATEGORY_RETROARCH_CORE = "retroarch_core";
+static constexpr const char* CATEGORY_WIIMOTE_DSU = "wiimote_dsu";
 
 // V2 Categories
 static const struct retro_core_option_v2_category option_cats[] = {
@@ -85,6 +86,11 @@ static const struct retro_core_option_v2_category option_cats[] = {
     CATEGORY_RETROARCH_CORE,
     "RetroArch Core",
     "Configure settings which are specific to the RetroArch core and do not exist in dolphin standlone."
+  },
+  {
+  CATEGORY_WIIMOTE_DSU,
+    "Wiimote (DSU)",
+    "Configure DSU client for DualShock motion data."
   },
   { NULL, NULL, NULL }
 };
@@ -168,6 +174,20 @@ static struct retro_core_option_v2_definition option_defs[] = {
       { nullptr, nullptr }
     },
     "enabled"
+  },
+  {
+    Libretro::Options::core::MAIN_LOAD_GAME_INTO_MEMORY,
+    "Core > Load Whole Game Into Memory",
+    "Load Whole Game Into Memory",
+    "Load Whole Game Into Memory. Requires core RESTART.",
+    nullptr,
+    CATEGORY_CORE,
+    {
+      { "disabled", "Disabled" },
+      { "enabled",  "Enabled" },
+      { nullptr, nullptr }
+    },
+    "disabled"
   },
   {
     Libretro::Options::core::MAIN_PRECISION_FRAME_TIMING,
@@ -383,7 +403,7 @@ static struct retro_core_option_v2_definition option_defs[] = {
 #endif
       { nullptr,   nullptr }
     },
-    "Info"
+    "4"
   },
   {
     Libretro::Options::main_interface::LOG_BOOT,
@@ -906,6 +926,12 @@ static struct retro_core_option_v2_definition option_defs[] = {
       { "4", "4x Native (2560x2112) for 1440p" },
       { "5", "5x Native (3200x2640)" },
       { "6", "6x Native (3840x3168) for 4K" },
+      { "7", "7x Native (4480x3696)" },
+      { "8", "8x Native (5120x4224) for 5K" },
+      { "9", "9x Native (5760x4752)" },
+      { "10", "10x Native (6400x5280)" },
+      { "11", "11x Native (7040x5808)" },
+      { "12", "12x Native (7680x6336) for 8K" },
       { nullptr, nullptr }
     },
     "1"
@@ -1021,6 +1047,20 @@ static struct retro_core_option_v2_definition option_defs[] = {
     "Graphics > Settings > Disable Fog",
     "Disable Fog",
     "Disable fog rendering effects. May improve performance but reduces visual accuracy.",
+    nullptr,
+    CATEGORY_GFX_SETTINGS,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr, nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::gfx_settings::MODS_ENABLE,
+    "Graphics > Settings > Enable Mods",
+    "Enable Mods",
+    "Loads graphic mods from User/Load/GraphicsMods.",
     nullptr,
     CATEGORY_GFX_SETTINGS,
     {
@@ -1433,7 +1473,7 @@ static struct retro_core_option_v2_definition option_defs[] = {
     Libretro::Options::gfx_gamespecific::GFX_PERF_QUERIES_ENABLE,
     "Graphics > Game Specific > Performance Queries",
     "Performance Queries",
-    "Enable performance queiries.",
+    "Enable performance queries.",
     nullptr,
     CATEGORY_GFX_GAMESPECIFIC,
     {
@@ -1468,6 +1508,31 @@ static struct retro_core_option_v2_definition option_defs[] = {
       { nullptr,  nullptr }
     },
     "L3"
+  },
+  {
+    Libretro::Options::wiimote::HOTKEY_UPRIGHT_TOGGLE,
+    "WiiMote Upright > Toggle Button",
+    "Upright Toggle Button",
+    "Button used to toggle upright mode. Can be disabled.",
+    nullptr,
+    CATEGORY_WIIMOTE,
+    {
+      { MODIFIER_DISABLED_CONTROL, "Disabled" },
+      { "L3",     nullptr },
+      { "R3",     nullptr },
+      { "L1",     nullptr },
+      { "R1",     nullptr },
+      { "L2",     nullptr },
+      { "R2",     nullptr },
+      { "A",      nullptr },
+      { "B",      nullptr },
+      { "X",      nullptr },
+      { "Y",      nullptr },
+      { "Start",  nullptr },
+      { "Select", nullptr },
+      { nullptr,  nullptr }
+    },
+    "Disabled"
   },
 
   // ========== Wiimote IR ==========
@@ -1715,6 +1780,20 @@ static struct retro_core_option_v2_definition option_defs[] = {
     },
     "disabled"
   },
+  {
+    Libretro::Options::wiimote::IR_PASSTHROUGH,
+    "Wiimote IR > Wiimote IR Passthrough",
+    "Wiimote IR Passthrough",
+    "Take the Wiimote camera's view of the sensor bar straight from the frontend, instead of deriving it from a cursor position. The frontend supplies up to four IR objects on pointer indices 1-4; Wiimote IR Mode, Total Yaw, Total Pitch and Vertical Offset are all bypassed. For frontends that know the real geometry (a VR room, a tracked light gun) this is exact, and it carries roll and distance, which a cursor cannot. Leave off for a mouse or a gamepad.",
+    nullptr,
+    CATEGORY_WIIMOTE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr, nullptr }
+    },
+    "disabled"
+  },
 
 #if defined(HAS_OPENGL) && defined(__WEBOS__)
   {
@@ -1772,12 +1851,109 @@ static struct retro_core_option_v2_definition option_defs[] = {
       { "enabled",  nullptr },
       { nullptr, nullptr }
     },
-#if defined(ANDROID)
-    "enabled" // enable by default because of SAF
+#if defined(ANDROID) || defined(__WEBOS__)
+    "enabled" // enable by default because of SAF (android play version) / storage (webOS)
 #else
     "disabled"
 #endif
   },
+  {
+    Libretro::Options::retroarch_core::ENABLE_DEFAULT_MOUSE_BINDINGS,
+    "RetroArch core > Enable Default Mouse Bindings",
+    "Enable Default Mouse Bindings",
+    "Enable default Mouse Bindings, disable for more control on bindings.",
+    nullptr,
+    CATEGORY_RETROARCH_CORE,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr, nullptr }
+    },
+    "enabled"
+  },
+#ifdef CIFACE_USE_DUALSHOCKUDPCLIENT
+  // ========== DSU Client ==========
+  {
+    Libretro::Options::wiimote_dsu::DSU_ENABLED,
+    "Wiimote (DSU) > Enable DSU Client",
+    "Enable DSU Client",
+    "Enable DSU client for DualShock motion data. Restart core to take effect.",
+    nullptr,
+    CATEGORY_WIIMOTE_DSU,
+    {
+      { "disabled", nullptr },
+      { "enabled",  nullptr },
+      { nullptr, nullptr }
+    },
+    "disabled"
+  },
+  {
+    Libretro::Options::wiimote_dsu::DSU_IP_1,
+    "Wiimote (DSU) > Server IP Octet 1",
+    "Server IP Octet 1",
+    "First octet of DSU server IP. e.g. for 192.168.1.10 set this to 192.",
+    nullptr,
+    CATEGORY_WIIMOTE_DSU,
+    {
+      { "127", nullptr },
+      { "192", nullptr },
+      { nullptr, nullptr }
+    },
+    "127"
+  },
+  {
+    Libretro::Options::wiimote_dsu::DSU_IP_2,
+    "Wiimote (DSU) > Server IP Octet 2",
+    "Server IP Octet 2",
+    "Second octet of DSU server IP. e.g. for 192.168.1.10 set this to 168.",
+    nullptr,
+    CATEGORY_WIIMOTE_DSU,
+    {
+      { "0", nullptr },
+      { "168", nullptr },
+      { nullptr, nullptr }
+    },
+    "0"
+  },
+  {
+    Libretro::Options::wiimote_dsu::DSU_IP_3,
+    "Wiimote (DSU) > Server IP Octet 3",
+    "Server IP Octet 3",
+    "Third octet of DSU server IP. e.g. for 192.168.1.10 set this to 1.",
+    nullptr,
+    CATEGORY_WIIMOTE_DSU,
+    { OCTET_VALUES },
+    "0"
+  },
+  {
+    Libretro::Options::wiimote_dsu::DSU_IP_4,
+    "Wiimote (DSU) > Server IP Octet 4",
+    "Server IP Octet 4",
+    "Fourth octet of DSU server IP. e.g. for 192.168.1.10 set this to 10.",
+    nullptr,
+    CATEGORY_WIIMOTE_DSU,
+    { OCTET_VALUES },
+    "1"
+  },
+  {
+    Libretro::Options::wiimote_dsu::DSU_PORT,
+    "Wiimote (DSU) > Server Port",
+    "Server Port",
+    "UDP port of DSU server. Default is 26760.",
+    nullptr,
+    CATEGORY_WIIMOTE_DSU,
+    {
+      { "26760", "26760 (default)" },
+      { "26761", "26761" },
+      { "26762", "26762" },
+      { "26763", "26763" },
+      { "26764", "26764" },
+      { "26765", "26765" },
+      { nullptr, nullptr }
+    },
+    "26760"
+  },
+#endif
 
   { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{0}}, nullptr }
 };
