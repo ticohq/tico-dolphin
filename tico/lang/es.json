@@ -232,5 +232,7 @@
   "settings_dolphin_pointer_yaw": "Rango del puntero (grados)",
   "settings_dolphin_calibrate_on_recenter": "Calibrar soporte al recentrar",
   "settings_dolphin_gc_bba": "Adaptador de banda ancha (juego en línea)",
-  "settings_dolphin_wiilink": "WiiConnect24 con WiiLink"
+  "settings_dolphin_wiilink": "WiiConnect24 con WiiLink",
+  "settings_dolphin_bba_dns": "DNS del adaptador de banda ancha",
+  "settings_dolphin_correct_time_drift": "Corregir desfase de tiempo (juego en línea)"
 }

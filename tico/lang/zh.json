@@ -232,5 +232,7 @@
   "settings_dolphin_pointer_yaw": "指针范围（度）",
   "settings_dolphin_calibrate_on_recenter": "重新居中时校准安装角度",
   "settings_dolphin_gc_bba": "宽带适配器（在线游戏）",
-  "settings_dolphin_wiilink": "通过 WiiLink 使用 WiiConnect24"
+  "settings_dolphin_wiilink": "通过 WiiLink 使用 WiiConnect24",
+  "settings_dolphin_bba_dns": "宽带适配器 DNS",
+  "settings_dolphin_correct_time_drift": "校正时间偏差（在线游戏）"
 }

@@ -244,5 +244,7 @@
   "emulator_cheats_download_none": "The code server has no Gecko codes for this game",
   "emulator_cheats_downloaded": "Added %d new Gecko codes",
   "settings_dolphin_gc_bba": "Broadband Adapter (online play)",
-  "settings_dolphin_wiilink": "WiiConnect24 via WiiLink"
+  "settings_dolphin_wiilink": "WiiConnect24 via WiiLink",
+  "settings_dolphin_bba_dns": "Broadband Adapter DNS",
+  "settings_dolphin_correct_time_drift": "Correct time drift (online play)"
 }

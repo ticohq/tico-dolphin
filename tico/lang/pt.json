@@ -232,5 +232,7 @@
   "settings_dolphin_pointer_yaw": "Alcance do ponteiro (graus)",
   "settings_dolphin_calibrate_on_recenter": "Calibrar suporte ao recentralizar",
   "settings_dolphin_gc_bba": "Adaptador de banda larga (jogo online)",
-  "settings_dolphin_wiilink": "WiiConnect24 via WiiLink"
+  "settings_dolphin_wiilink": "WiiConnect24 via WiiLink",
+  "settings_dolphin_bba_dns": "DNS do adaptador de banda larga",
+  "settings_dolphin_correct_time_drift": "Corrigir desvio de tempo (jogo online)"
 }
