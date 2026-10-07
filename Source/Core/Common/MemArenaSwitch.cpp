@@ -5,8 +5,7 @@
 #include "Common/MemArena.h"
 
 #include <algorithm>
-#include <cstdarg>
-#include <cstdio>
+#include <array>
 #include <cstdlib>
 #include <cstring>
 #include <malloc.h>
@@ -16,8 +15,10 @@
 #include "Common/Assert.h"
 #include "Common/CommonFuncs.h"
 #include "Common/CommonTypes.h"
+#include "Common/HorizonFastmem.h"
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
+#include "Common/ScopeGuard.h"
 
 namespace EMM
 {
@@ -28,33 +29,125 @@ namespace Common
 {
 namespace
 {
+constexpr size_t HORIZON_PAGE_SIZE = 0x1000;
+constexpr unsigned SVC_SET_MEMORY_PERMISSION = 0x02;
+constexpr unsigned SVC_SET_PROCESS_MEMORY_PERMISSION = 0x73;
 constexpr unsigned SVC_MAP_PROCESS_MEMORY = 0x74;
 constexpr unsigned SVC_UNMAP_PROCESS_MEMORY = 0x75;
 constexpr unsigned SVC_MAP_PROCESS_CODE_MEMORY = 0x77;
 constexpr unsigned SVC_UNMAP_PROCESS_CODE_MEMORY = 0x78;
 
-void NxDumpAddressSpace(const char* when)
+struct FastmemSupport
 {
-  u64 aslr_base = 0, aslr_size = 0, heap_base = 0, heap_size = 0, alias_base = 0, alias_size = 0,
-      stack_base = 0, stack_size = 0;
-  svcGetInfo(&aslr_base, 12, CUR_PROCESS_HANDLE, 0);
-  svcGetInfo(&aslr_size, 13, CUR_PROCESS_HANDLE, 0);
-  svcGetInfo(&heap_base, 4, CUR_PROCESS_HANDLE, 0);
-  svcGetInfo(&heap_size, 5, CUR_PROCESS_HANDLE, 0);
-  svcGetInfo(&alias_base, 2, CUR_PROCESS_HANDLE, 0);
-  svcGetInfo(&alias_size, 3, CUR_PROCESS_HANDLE, 0);
-  svcGetInfo(&stack_base, 14, CUR_PROCESS_HANDLE, 0);
-  svcGetInfo(&stack_size, 15, CUR_PROCESS_HANDLE, 0);
+  bool arena = false;
+  bool read_only_mappings = false;
+};
+
+FastmemSupport DetectFastmemSupport()
+{
+  FastmemSupport support;
+  constexpr std::array arena_syscalls = {
+      SVC_SET_PROCESS_MEMORY_PERMISSION, SVC_MAP_PROCESS_MEMORY,
+      SVC_UNMAP_PROCESS_MEMORY,          SVC_MAP_PROCESS_CODE_MEMORY,
+      SVC_UNMAP_PROCESS_CODE_MEMORY,
+  };
+  if (!std::ranges::all_of(arena_syscalls, envIsSyscallHinted))
+    return support;
+
+  const Handle self = envGetOwnProcessHandle();
+  if (self == INVALID_HANDLE)
+    return support;
+
+  void* const backing = memalign(HORIZON_PAGE_SIZE, HORIZON_PAGE_SIZE);
+  if (!backing)
+    return support;
+  ScopeGuard backing_guard([backing] { free(backing); });
+
+  virtmemLock();
+  void* const canonical = virtmemFindCodeMemory(HORIZON_PAGE_SIZE, HORIZON_PAGE_SIZE);
+  VirtmemReservation* const canonical_reservation =
+      canonical ? virtmemAddReservation(canonical, HORIZON_PAGE_SIZE) : nullptr;
+  virtmemUnlock();
+  if (!canonical_reservation)
+    return support;
+  ScopeGuard canonical_reservation_guard([canonical_reservation] {
+    virtmemLock();
+    virtmemRemoveReservation(canonical_reservation);
+    virtmemUnlock();
+  });
+
+  Result result = svcMapProcessCodeMemory(self, reinterpret_cast<u64>(canonical),
+                                           reinterpret_cast<u64>(backing), HORIZON_PAGE_SIZE);
+  if (R_FAILED(result))
+    return support;
+  ScopeGuard canonical_mapping_guard([self, canonical, backing] {
+    svcUnmapProcessCodeMemory(self, reinterpret_cast<u64>(canonical),
+                              reinterpret_cast<u64>(backing), HORIZON_PAGE_SIZE);
+  });
+
+  result = svcSetProcessMemoryPermission(self, reinterpret_cast<u64>(canonical),
+                                         HORIZON_PAGE_SIZE, Perm_Rw);
+  if (R_FAILED(result))
+    return support;
+
+  virtmemLock();
+  void* const alias = virtmemFindAslr(HORIZON_PAGE_SIZE, HORIZON_PAGE_SIZE);
+  VirtmemReservation* const alias_reservation =
+      alias ? virtmemAddReservation(alias, HORIZON_PAGE_SIZE) : nullptr;
+  virtmemUnlock();
+  if (!alias_reservation)
+    return support;
+  ScopeGuard alias_reservation_guard([alias_reservation] {
+    virtmemLock();
+    virtmemRemoveReservation(alias_reservation);
+    virtmemUnlock();
+  });
+
+  result = svcMapProcessMemory(alias, self, reinterpret_cast<u64>(canonical), HORIZON_PAGE_SIZE);
+  if (R_FAILED(result))
+    return support;
+  ScopeGuard alias_mapping_guard([alias, self, canonical] {
+    svcUnmapProcessMemory(alias, self, reinterpret_cast<u64>(canonical), HORIZON_PAGE_SIZE);
+  });
+
+  constexpr u32 pattern = 0x4E58564B;
+  *static_cast<volatile u32*>(alias) = pattern;
+  if (*static_cast<volatile u32*>(canonical) != pattern)
+    return support;
+  *static_cast<volatile u32*>(canonical) = 0;
+  support.arena = true;
+
+  if (!envIsSyscallHinted(SVC_SET_MEMORY_PERMISSION))
+    return support;
+
+  result = svcSetMemoryPermission(alias, HORIZON_PAGE_SIZE, Perm_R);
+  if (R_SUCCEEDED(result))
+  {
+    support.read_only_mappings =
+        R_SUCCEEDED(svcSetMemoryPermission(alias, HORIZON_PAGE_SIZE, Perm_Rw));
+  }
+  return support;
 }
 
-bool HasSwitchFastmemSyscalls()
+const FastmemSupport& GetFastmemSupport()
 {
-  return envIsSyscallHinted(SVC_MAP_PROCESS_MEMORY) &&
-         envIsSyscallHinted(SVC_UNMAP_PROCESS_MEMORY) &&
-         envIsSyscallHinted(SVC_MAP_PROCESS_CODE_MEMORY) &&
-         envIsSyscallHinted(SVC_UNMAP_PROCESS_CODE_MEMORY);
+  static const FastmemSupport support = DetectFastmemSupport();
+  return support;
 }
 }  // namespace
+
+namespace HorizonFastmem
+{
+bool IsArenaSupported()
+{
+  return GetFastmemSupport().arena;
+}
+
+bool AreReadOnlyMappingsSupported()
+{
+  return GetFastmemSupport().read_only_mappings;
+}
+}  // namespace HorizonFastmem
 
 MemArena::MemArena() = default;
 
@@ -66,8 +159,6 @@ MemArena::~MemArena()
 
 void MemArena::GrabSHMSegment(size_t size, std::string_view base_name)
 {
-  NxDumpAddressSpace("GrabSHMSegment-entry");
-
   size_t aligned_size = (size + 0x1FFFFF) & ~size_t{0x1FFFFF};
   m_shm_buffer = memalign(0x200000, aligned_size);
 
@@ -81,16 +172,9 @@ void MemArena::GrabSHMSegment(size_t size, std::string_view base_name)
   memset(m_shm_buffer, 0, aligned_size);
   m_shm_size = aligned_size;
 
-  if (!HasSwitchFastmemSyscalls())
+  if (!HorizonFastmem::IsArenaSupported())
   {
-    WARN_LOG_FMT(MEMMAP,
-                 "Switch: required fastmem syscalls are not hinted by the environment "
-                 "(MapProcessMemory={}, UnmapProcessMemory={}, MapProcessCodeMemory={}, "
-                 "UnmapProcessCodeMemory={}); falling back to non-fastmem views",
-                 envIsSyscallHinted(SVC_MAP_PROCESS_MEMORY),
-                 envIsSyscallHinted(SVC_UNMAP_PROCESS_MEMORY),
-                 envIsSyscallHinted(SVC_MAP_PROCESS_CODE_MEMORY),
-                 envIsSyscallHinted(SVC_UNMAP_PROCESS_CODE_MEMORY));
+    WARN_LOG_FMT(MEMMAP, "Switch: fastmem aliases are unavailable; using direct memory views");
     INFO_LOG_FMT(MEMMAP, "Switch: Allocated {} bytes SHM backing buffer at {} (no fastmem)",
                  aligned_size, fmt::ptr(m_shm_buffer));
     return;
@@ -149,7 +233,7 @@ void MemArena::ReleaseSHMSegment()
   if (m_rw_mirror)
   {
     virtmemLock();
-   svcUnmapProcessCodeMemory(envGetOwnProcessHandle(), (u64)m_rw_mirror, (u64)m_shm_buffer,
+    svcUnmapProcessCodeMemory(envGetOwnProcessHandle(), (u64)m_rw_mirror, (u64)m_shm_buffer,
                               m_shm_size);
     virtmemUnlock();
     m_rw_mirror = nullptr;
@@ -193,8 +277,6 @@ void MemArena::ReleaseView(void* view, size_t size)
 
 u8* MemArena::ReserveMemoryRegion(size_t memory_size)
 {
-  NxDumpAddressSpace("ReserveMemoryRegion-entry");
-
   if (!m_code_mirror)
   {
     WARN_LOG_FMT(MEMMAP,
@@ -210,14 +292,6 @@ u8* MemArena::ReserveMemoryRegion(size_t memory_size)
   if (m_reserved_region == nullptr)
   {
     virtmemUnlock();
-
-    for (size_t probe : {size_t(0x1'0000'0000ull), size_t(0x4000'0000ull),
-                         size_t(0x1000'0000ull), size_t(0x100'0000ull)})
-    {
-      virtmemLock();
-      void* p = virtmemFindAslr(probe, 0x1000);
-      virtmemUnlock();
-    }
     ERROR_LOG_FMT(MEMMAP, "Switch: virtmemFindAslr failed for {} bytes", aligned_size);
     return nullptr;
   }
@@ -262,13 +336,14 @@ void* MemArena::MapInMemoryRegion(s64 offset, size_t size, void* base, bool writ
     return nullptr;
   }
 
-  if (!HasSwitchFastmemSyscalls())
+  if (!HorizonFastmem::IsArenaSupported())
   {
-    ERROR_LOG_FMT(MEMMAP,
-                  "Switch: MapInMemoryRegion called but required fastmem syscalls are not "
-                  "hinted by the environment");
+    ERROR_LOG_FMT(MEMMAP, "Switch: MapInMemoryRegion called without fastmem alias support");
     return nullptr;
   }
+
+  if (!writeable && !HorizonFastmem::AreReadOnlyMappingsSupported())
+    return nullptr;
 
   size_t aligned_size = (size + 0xFFF) & ~0xFFF;
 
@@ -289,7 +364,7 @@ void* MemArena::MapInMemoryRegion(s64 offset, size_t size, void* base, bool writ
     return nullptr;
   }
 
-  if (!ChangeMappingProtection(base, aligned_size, writeable))
+  if (!writeable && !ChangeMappingProtection(base, aligned_size, false))
   {
     svcUnmapProcessMemory(base, envGetOwnProcessHandle(), (u64)m_code_mirror + offset,
                           aligned_size);
@@ -308,13 +383,19 @@ bool MemArena::ChangeMappingProtection(void* view, size_t size, bool writeable)
   if (!view || size == 0)
     return true;
 
-  if (writeable)
-    return true;
+  if (!HorizonFastmem::AreReadOnlyMappingsSupported())
+    return writeable;
 
-  WARN_LOG_FMT(MEMMAP,
-               "Switch: cannot make ProcessMemory mapping at {} (size {}) read-only; "
-               "leaving as RW (inherited from source alias)",
-               fmt::ptr(view), size);
+  const size_t aligned_size = (size + HORIZON_PAGE_SIZE - 1) & ~(HORIZON_PAGE_SIZE - 1);
+  const Result result =
+      svcSetMemoryPermission(view, aligned_size, writeable ? Perm_Rw : Perm_R);
+  if (R_FAILED(result))
+  {
+    ERROR_LOG_FMT(MEMMAP,
+                  "Switch: svcSetMemoryPermission failed for {} (size {}, writeable={}): 0x{:X}",
+                  fmt::ptr(view), aligned_size, writeable, result);
+    return false;
+  }
   return true;
 }
 
@@ -447,19 +528,64 @@ void LazyMemoryRegion::MakeMemoryPageCommitted(size_t page_index)
 
   void* page_addr = static_cast<u8*>(m_memory) + page_index * SWITCH_PAGE_SIZE;
   rc = svcMapPhysicalMemory(page_addr, SWITCH_PAGE_SIZE);
-  m_committed_pages[page_index] = 1;
+  if (R_SUCCEEDED(rc))
+  {
+    m_committed_pages[page_index] = 1;
+  }
+  else
+  {
+    ERROR_LOG_FMT(MEMMAP, "Switch: failed to commit lazy memory page {}: 0x{:X}", page_index,
+                  rc);
+  }
 }
 
 void LazyMemoryRegion::Clear()
 {
   ASSERT(m_memory);
-  for (size_t i = 0; i < m_committed_pages.size(); ++i)
+
+  // Discard every mapping, including pages committed by the fault handler.
+  const uintptr_t lazy_base = reinterpret_cast<uintptr_t>(m_memory);
+  const uintptr_t lazy_end = lazy_base + m_size;
+  uintptr_t probe = lazy_base;
+  while (probe < lazy_end)
   {
-    if (m_committed_pages[i])
+    MemoryInfo info{};
+    u32 page_info = 0;
+    const Result query_rc = svcQueryMemory(&info, &page_info, probe);
+    if (R_FAILED(query_rc))
     {
-      std::memset(static_cast<u8*>(m_memory) + i * SWITCH_PAGE_SIZE, 0, SWITCH_PAGE_SIZE);
+      ERROR_LOG_FMT(MEMMAP, "Switch: failed to query lazy memory at {} while clearing: 0x{:X}",
+                    fmt::ptr(reinterpret_cast<void*>(probe)), query_rc);
+      break;
     }
+
+    const uintptr_t span_start = static_cast<uintptr_t>(info.addr);
+    const uintptr_t span_end = span_start + static_cast<uintptr_t>(info.size);
+    if (info.type != MemType_Unmapped)
+    {
+      const uintptr_t unmap_start = std::max(span_start, lazy_base);
+      const uintptr_t unmap_end = std::min(span_end, lazy_end);
+      if (unmap_start < unmap_end)
+      {
+        const Result unmap_rc = svcUnmapPhysicalMemory(reinterpret_cast<void*>(unmap_start),
+                                                        unmap_end - unmap_start);
+        if (R_FAILED(unmap_rc))
+        {
+          ERROR_LOG_FMT(MEMMAP,
+                        "Switch: failed to discard lazy memory range {}..{} while clearing: "
+                        "0x{:X}",
+                        fmt::ptr(reinterpret_cast<void*>(unmap_start)),
+                        fmt::ptr(reinterpret_cast<void*>(unmap_end)), unmap_rc);
+        }
+      }
+    }
+
+    if (span_end <= probe)
+      break;
+    probe = span_end;
   }
+
+  std::fill(m_committed_pages.begin(), m_committed_pages.end(), 0);
 }
 
 void LazyMemoryRegion::Release()
@@ -489,11 +615,12 @@ void LazyMemoryRegion::Release()
       const uintptr_t unmap_end = std::min(span_end, lazy_end);
       if (unmap_start < unmap_end)
         svcUnmapPhysicalMemory(reinterpret_cast<void*>(unmap_start),
-                                    unmap_end - unmap_start);
+                               unmap_end - unmap_start);
     }
 
     if (span_end <= probe)
-      break;  
+      break;
+    probe = span_end;
   }
 
   m_committed_pages.clear();

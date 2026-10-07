@@ -234,8 +234,14 @@ const u8* JitBaseBlockCache::Dispatch()
   const auto& ppc_state = m_jit.m_ppc_state;
   if (m_entry_points_ptr)
   {
-    u8* entry_point =
-        m_entry_points_ptr[FastLookupIndexForAddress(ppc_state.pc, ppc_state.feature_flags)];
+    const size_t index = FastLookupIndexForAddress(ppc_state.pc, ppc_state.feature_flags);
+#ifdef __SWITCH__
+    u8* entry_point = m_entry_points_arena.IsMemoryPageCommitted(index * sizeof(u8*)) ?
+                          m_entry_points_ptr[index] :
+                          nullptr;
+#else
+    u8* entry_point = m_entry_points_ptr[index];
+#endif
     if (entry_point)
     {
       return entry_point;
@@ -577,6 +583,13 @@ size_t JitBaseBlockCache::FastLookupIndexForAddress(u32 address, u32 feature_fla
   }
   else
   {
+#ifdef __SWITCH__
+    // Fold the high PC bits in, so code far apart does not share entries.
+    const u32 word_address = address >> 2;
+    return (word_address ^ (word_address >> FAST_BLOCK_MAP_FALLBACK_BITS)) &
+           FAST_BLOCK_MAP_FALLBACK_MASK;
+#else
     return (address >> 2) & FAST_BLOCK_MAP_FALLBACK_MASK;
+#endif
   }
 }

@@ -15,16 +15,28 @@
 #include "Core/System.h"
 
 #ifdef __SWITCH__
+#include <atomic>
+
 #include "Core/HW/Memmap.h"
 #include "Core/PowerPC/PowerPC.h"
 
-static uintptr_t s_lazy_region_base = 0;
-static size_t s_lazy_region_size = 0;
+static std::atomic<uintptr_t> s_lazy_region_base{0};
+static std::atomic<size_t> s_lazy_region_size{0};
 
 void EMM::SetLazyRegionInfo(uintptr_t base, size_t size)
 {
-  s_lazy_region_base = base;
-  s_lazy_region_size = size;
+  // The fault handler reads these from any thread: publish the size before
+  // the base, and withdraw the base first.
+  if (base == 0)
+  {
+    s_lazy_region_base.store(0, std::memory_order_release);
+    s_lazy_region_size.store(0, std::memory_order_relaxed);
+  }
+  else
+  {
+    s_lazy_region_size.store(size, std::memory_order_relaxed);
+    s_lazy_region_base.store(base, std::memory_order_release);
+  }
 }
 #endif
 
@@ -419,11 +431,13 @@ void __libnx_exception_handler(ThreadExceptionDump* ctx);
       "msr nzcv, x16\n"
 
       // === Prepare SP and PC ===
+      // x18 carries the target: JIT code never allocates it, so a resumed
+      // block gets every register it uses back.
       "ldr x16, [x21, #264]\n"   // x16 = new SP
-      "ldr x17, [x21, #272]\n"   // x17 = new PC
+      "ldr x18, [x21, #272]\n"   // x18 = new PC
       // Push target PC onto the new stack (pre-decrement, 16-byte aligned)
-      "str x17, [x16, #-16]!\n"
-      "mov x17, x16\n"           // x17 = adjusted SP
+      "str x18, [x16, #-16]!\n"
+      "mov x18, x16\n"           // x18 = adjusted SP
 
       // === Restore GPRs ===
       "ldr x30, [x21, #256]\n"   // LR
@@ -436,24 +450,23 @@ void __libnx_exception_handler(ThreadExceptionDump* ctx);
       "ldp x10, x11, [x21, #96]\n"
       "ldp x12, x13, [x21, #112]\n"
       "ldp x14, x15, [x21, #128]\n"
-      "ldr x16, [x21, #144]\n"   // x16 restored (clobbers our temp)
-      // x17 still holds adjusted SP — sacrifice x17 (AAPCS64 scratch)
-      "ldp x18, x19, [x21, #160]\n"
+      "ldp x16, x17, [x21, #144]\n"
+      "ldr x19, [x21, #168]\n"
       "ldr x20, [x21, #176]\n"
       "ldp x22, x23, [x21, #192]\n"
       "ldp x24, x25, [x21, #208]\n"
       "ldp x26, x27, [x21, #224]\n"
       "ldr x28, [x21, #240]\n"
 
-      // Set SP to the adjusted new stack (x17 still valid, not yet overwritten)
-      "mov sp, x17\n"
+      // Set SP to the adjusted new stack
+      "mov sp, x18\n"
 
       // Restore x21 last (we lose our base pointer)
       "ldr x21, [x21, #184]\n"
 
-      // Pop target PC into x17 (scratch) and jump
-      "ldr x17, [sp], #16\n"
-      "br x17\n"
+      // Pop target PC into x18 and jump
+      "ldr x18, [sp], #16\n"
+      "br x18\n"
       :
       : "r"(ctx)
       : "memory");
@@ -466,7 +479,9 @@ void __libnx_exception_handler(ThreadExceptionDump* ctx);
 // For all other faults, we return and let libnx call svcBreak (clean crash).
 extern "C" void __libnx_exception_handler(ThreadExceptionDump* ctx)
 {
-  uintptr_t fault_address = ctx->far.x;
+  const uintptr_t fault_address = ctx->far.x;
+  const uintptr_t lazy_region_base = s_lazy_region_base.load(std::memory_order_acquire);
+  const size_t lazy_region_size = s_lazy_region_size.load(std::memory_order_relaxed);
 
   // Lazy entry-points arena: the JitArm64 dispatcher reads m_entry_points_ptr
   // unconditionally on every dispatch, so uncommitted pages in the
@@ -477,16 +492,16 @@ extern "C" void __libnx_exception_handler(ThreadExceptionDump* ctx)
   // requested range (mesosphere kern_k_page_table_base.cpp:4480) so a
   // partial overlap with previously-committed pages still succeeds. We
   // fall back to a single-page commit only on resource-limit failure.
-  if (s_lazy_region_size != 0 && fault_address >= s_lazy_region_base &&
-      fault_address < s_lazy_region_base + s_lazy_region_size) [[unlikely]]
+  if (lazy_region_size != 0 && fault_address >= lazy_region_base &&
+      fault_address - lazy_region_base < lazy_region_size) [[unlikely]]
   {
     constexpr uintptr_t kCommitWindow = 64 * 1024;
     uintptr_t window_start = fault_address & ~(kCommitWindow - 1);
-    if (window_start < s_lazy_region_base)
-      window_start = s_lazy_region_base;
+    if (window_start < lazy_region_base)
+      window_start = lazy_region_base;
     uintptr_t window_end = window_start + kCommitWindow;
-    if (window_end > s_lazy_region_base + s_lazy_region_size)
-      window_end = s_lazy_region_base + s_lazy_region_size;
+    if (window_end > lazy_region_base + lazy_region_size)
+      window_end = lazy_region_base + lazy_region_size;
 
     void* batch_addr = reinterpret_cast<void*>(window_start);
     if (R_SUCCEEDED(svcMapPhysicalMemory(batch_addr, window_end - window_start)))

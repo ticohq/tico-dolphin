@@ -16,6 +16,7 @@
 #include "Common/FileUtil.h"
 #include "Common/Logging/Log.h"
 
+#include "Core/Config/GraphicsSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
@@ -26,6 +27,7 @@
 #include "Core/System.h"
 
 // TODO: ugly
+
 #ifdef _WIN32
 #include "VideoBackends/D3D/VideoBackend.h"
 #include "VideoBackends/D3D12/VideoBackend.h"
@@ -73,6 +75,9 @@
 #endif
 
 VideoBackendBase* g_video_backend = nullptr;
+
+// Only custom textures and graphics mods need the resource manager.
+static bool s_custom_resource_manager_enabled = true;
 
 #ifdef _WIN32
 #include <windows.h>
@@ -324,6 +329,10 @@ bool VideoBackendBase::InitializeShared(std::unique_ptr<AbstractGfx> gfx,
 #endif
   // do not initialize again for the config window
   m_initialized = true;
+#ifdef __SWITCH__
+  s_custom_resource_manager_enabled =
+      Config::Get(Config::GFX_HIRES_TEXTURES) || Config::Get(Config::GFX_MODS_ENABLE);
+#endif
 
   g_gfx = std::move(gfx);
   g_vertex_manager = std::move(vertex_manager);
@@ -429,7 +438,8 @@ bool VideoBackendBase::InitializeShared(std::unique_ptr<AbstractGfx> gfx,
   }
 
   g_shader_cache->InitializeShaderCache();
-  system.GetCustomResourceManager().Initialize();
+  if (s_custom_resource_manager_enabled)
+    system.GetCustomResourceManager().Initialize();
 
   return true;
 }
@@ -437,7 +447,8 @@ bool VideoBackendBase::InitializeShared(std::unique_ptr<AbstractGfx> gfx,
 void VideoBackendBase::ShutdownShared()
 {
   auto& system = Core::System::GetInstance();
-  system.GetCustomResourceManager().Shutdown();
+  if (s_custom_resource_manager_enabled)
+    system.GetCustomResourceManager().Shutdown();
   g_frame_dumper.reset();
   g_presenter.reset();
 

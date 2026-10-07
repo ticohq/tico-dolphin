@@ -228,6 +228,18 @@ public:
 #endif
   }
 
+#ifdef __SWITCH__
+  ///
+  /// False when the page holding this offset was never committed, so it reads as zero. C++ code
+  /// checks this instead of reading it: only a fault in JIT code is resumed exactly.
+  ///
+  bool IsMemoryPageCommitted(size_t offset) const
+  {
+    const size_t page_index = offset / SWITCH_PAGE_SIZE;
+    return page_index < m_committed_pages.size() && m_committed_pages[page_index];
+  }
+#endif
+
 private:
   void* m_memory = nullptr;
   size_t m_size = 0;

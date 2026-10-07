@@ -150,7 +150,13 @@ public:
   // The size of the fast map is determined like this:
   // ((4 GiB guest memory space) / (4-byte alignment) * sizeof(JitBlock*)) << (3 feature flag bits)
   static constexpr u64 FAST_BLOCK_MAP_SIZE = 0x10'0000'0000;
-  static constexpr u32 FAST_BLOCK_MAP_FALLBACK_ELEMENTS = 0x10000;
+#ifdef __SWITCH__
+  // Horizon may have no room for the full map; a 2 MiB compact one is used then.
+  static constexpr u32 FAST_BLOCK_MAP_FALLBACK_BITS = 18;
+#else
+  static constexpr u32 FAST_BLOCK_MAP_FALLBACK_BITS = 16;
+#endif
+  static constexpr u32 FAST_BLOCK_MAP_FALLBACK_ELEMENTS = 1U << FAST_BLOCK_MAP_FALLBACK_BITS;
   static constexpr u32 FAST_BLOCK_MAP_FALLBACK_MASK = FAST_BLOCK_MAP_FALLBACK_ELEMENTS - 1;
 
   explicit JitBaseBlockCache(JitBase& jit);
