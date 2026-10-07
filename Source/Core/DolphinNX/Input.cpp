@@ -42,6 +42,7 @@
 #include "InputCommon/InputConfig.h"
 #include "DolphinNX/ControllerProfiles.h"
 #include "overlay/overlay_ui.h"
+#include "overlay/translation_manager.h"
 #include "DolphinNX/Overlay/VulkanOverlay.h"
 #include "DolphinNX/TicoCore.h"
 
@@ -1688,6 +1689,69 @@ void Update()
       }
     }
   }
+}
+
+std::vector<std::string> DescribePorts()
+{
+  using SwitchFrontend::OverlayTranslation::tr;
+  const bool wii = Core::System::GetInstance().IsWii();
+  std::vector<std::string> ports(MAX_SWITCH_PLAYERS);
+  for (unsigned player = 0; player < MAX_SWITCH_PLAYERS; ++player)
+  {
+    u32 style = hidGetNpadStyleSet(s_player_npad_ids[player]);
+    // player 1 also reads the handheld Joy-Con
+    if (player == 0 && !style)
+      style = hidGetNpadStyleSet(HidNpadIdType_Handheld);
+
+    const char* controller = nullptr;
+    if (style & HidNpadStyleTag_NpadFullKey)
+      controller = "emulator_pad_pro";
+    else if (style & HidNpadStyleTag_NpadHandheld)
+      controller = "emulator_pad_handheld";
+    else if (style & HidNpadStyleTag_NpadJoyDual)
+      controller = "emulator_pad_joycon_pair";
+    else if (style & HidNpadStyleTag_NpadJoyLeft)
+      controller = "emulator_pad_joycon_left";
+    else if (style & HidNpadStyleTag_NpadJoyRight)
+      controller = "emulator_pad_joycon_right";
+    else if (style & HidNpadStyleTag_NpadGc)
+      controller = "emulator_pad_gamecube";
+    else if (style)
+      controller = "emulator_pad_other";
+    if (!controller)
+      continue;
+
+    // what the game gets from it
+    const PlayerControllerConfig& config = s_controller_config[player];
+    std::string emulated;
+    if (wii && config.wiimote_enabled)
+      emulated = GetWiiControllerModeName(s_wii_controller_states[player].mode);
+    else if (!wii && config.gc_port_enabled)
+      emulated = "GameCube Controller";
+    else
+      emulated = tr("emulator_off");
+    ports[player] = tr(controller) + "  >  " + emulated;
+  }
+  return ports;
+}
+
+std::string PortsNote()
+{
+  using SwitchFrontend::OverlayTranslation::tr;
+  if (!Core::System::GetInstance().IsWii())
+    return {};
+  return tr("emulator_controller_help_line_full") + ". " +
+         tr("emulator_controller_help_line_split") + ".";
+}
+
+bool ShowControllerOrder()
+{
+  HidLaControllerSupportArg arg;
+  hidLaCreateControllerSupportArg(&arg);
+  arg.hdr.player_count_min = 0;
+  arg.hdr.player_count_max = MAX_SWITCH_PLAYERS;
+  HidLaControllerSupportResultInfo info{};
+  return R_SUCCEEDED(hidLaShowControllerSupport(&info, &arg));
 }
 
 void RefreshLiveSettings()
