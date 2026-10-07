@@ -19,5 +19,8 @@ void Shutdown();
 
 PadState* GetPad();
 
+// Re-reads "dolphin_calibrate_on_recenter" and applies it to every Wii Remote.
+void RefreshCalibrateMountOnRecenter();
+
 }  // namespace Input
 }  // namespace DolphinNX
