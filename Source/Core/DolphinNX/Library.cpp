@@ -42,9 +42,9 @@ const std::vector<Console> &Consoles()
 {
     static const std::vector<Console> consoles = {
         {"gc", "GameCube", "GC",
-         {".iso", ".gcm", ".chd", ".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".m3u"}},
+         {".iso", ".gcm", ".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".m3u"}},
         {"wii", "Wii", "Wii",
-         {".iso", ".gcm", ".chd", ".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".m3u", ".wad"}},
+         {".iso", ".gcm", ".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".m3u", ".wad"}},
     };
     return consoles;
 }
