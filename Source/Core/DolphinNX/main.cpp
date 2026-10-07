@@ -62,6 +62,7 @@
 #include "DolphinNX/Discs.h"
 #include "DolphinNX/LibraryScreen.h"
 #include "DolphinNX/Riivolution.h"
+#include "sdcache/sd_cache.h"
 #include "DolphinNX/Saves.h"
 #include "DolphinNX/Input.h"
 #include "DolphinNX/TicoCore.h"
@@ -714,6 +715,9 @@ static void ConfigureNextLoadForTico()
 static int ExitSwitchFrontend(int exit_code)
 {
   LOG("ExitSwitchFrontend(%d)\n", exit_code);
+  LOG("SD cache: %u card reads (%llu ms, %llu KB), %u reads from memory, %u MB held\n",
+      wine_nx_sd_reads, wine_nx_sd_read_ns / 1000000, wine_nx_sd_bytes / 1024, wine_nx_sd_hits,
+      wine_nx_sd_cache_mb());
   ConfigureNextLoadForTico();
   UsbStorage::Shutdown();  // flush and unmount before tico takes over again
   RestoreSwitchPerformance();
@@ -1298,6 +1302,9 @@ static bool EnsureGcSysInstalled()
 int main(int argc, char* argv[])
 {
   appletLockExit();
+  // before any file is opened: small reads near each other (a compressed
+  // disc's pieces, streamed audio) come from memory instead of the card
+  wine_nx_sd_cache_install();
 
   ConfigureSwitchPerformance();
   socketInitializeDefault();
