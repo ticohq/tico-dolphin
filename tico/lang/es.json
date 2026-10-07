@@ -125,5 +125,6 @@
   "settings_dolphin_vi_skip": "Salto de VI",
   "settings_dolphin_fast_texture_sampling": "Muestreo Rápido de Texturas",
   "settings_dolphin_performance_queries": "Consultas de Rendimiento",
-  "settings_dolphin_pointer_yaw": "Rango del puntero (grados)"
+  "settings_dolphin_pointer_yaw": "Rango del puntero (grados)",
+  "settings_dolphin_calibrate_on_recenter": "Calibrar soporte al recentrar"
 }

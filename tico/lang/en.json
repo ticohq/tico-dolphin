@@ -125,5 +125,6 @@
   "settings_dolphin_vi_skip": "VI Skip",
   "settings_dolphin_fast_texture_sampling": "Fast Texture Sampling",
   "settings_dolphin_performance_queries": "Performance Queries",
-  "settings_dolphin_pointer_yaw": "Pointer Range (degrees)"
+  "settings_dolphin_pointer_yaw": "Pointer Range (degrees)",
+  "settings_dolphin_calibrate_on_recenter": "Calibrate Mount on Recenter"
 }

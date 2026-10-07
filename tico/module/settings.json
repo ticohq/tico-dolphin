@@ -1145,6 +1145,12 @@
                   "value": "120"
                 }
               ]
+            },
+            {
+              "key": "dolphin_calibrate_on_recenter",
+              "label": "settings_dolphin_calibrate_on_recenter",
+              "type": "bool",
+              "default": "disabled"
             }
           ]
         }

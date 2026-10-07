@@ -125,5 +125,6 @@
   "settings_dolphin_vi_skip": "VIスキップ",
   "settings_dolphin_fast_texture_sampling": "高速テクスチャサンプリング",
   "settings_dolphin_performance_queries": "パフォーマンスクエリ",
-  "settings_dolphin_pointer_yaw": "ポインター範囲（度）"
+  "settings_dolphin_pointer_yaw": "ポインター範囲（度）",
+  "settings_dolphin_calibrate_on_recenter": "リセンター時にマウント角度を補正"
 }
