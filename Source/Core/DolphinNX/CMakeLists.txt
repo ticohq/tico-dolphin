@@ -19,6 +19,7 @@ add_executable(dolphin-nx
   TicoCore.cpp
   Achievements.cpp
   Cheats.cpp
+  Discs.cpp
   MbedTLSEntropy.cpp
   Overlay/VulkanOverlay.cpp
   # tico's overlay and frontend pieces, shared with the other cores

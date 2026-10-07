@@ -27,6 +27,7 @@
         ".m3u",
         ".wad"
       ],
+      "disc_based": true,
       "naming": "redump",
       "games_file": "gc.json",
       "retroachievements_id": 16,
@@ -51,6 +52,7 @@
         ".m3u",
         ".wad"
       ],
+      "disc_based": true,
       "naming": "redump",
       "games_file": "wii.json",
       "retroachievements_id": 19,

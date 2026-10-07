@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -146,6 +147,12 @@ public:
   void ChangeDisc(const Core::CPUThreadGuard& guard, const std::vector<std::string>& paths);
   void ChangeDisc(const Core::CPUThreadGuard& guard, const std::string& new_path);
   bool AutoChangeDisc(const Core::CPUThreadGuard& guard);
+  // The image the last disc change inserted, or empty while the booted disc is
+  // still in. Any thread.
+  std::string GetChangedDiscPath() const;
+  // Puts this image in the drive at once, without the eject and the wait (e.g.
+  // right before loading a state made with it in). False when it cannot be read.
+  bool InsertDiscNow(const Core::CPUThreadGuard& guard, const std::string& path);
 
   // This function returns true and calls SConfig::SetRunningGameMetadata(Volume&, Partition&)
   // if both of the following conditions are true:
@@ -294,6 +301,8 @@ private:
   // Disc changing
   std::string m_disc_path_to_insert;
   std::vector<std::string> m_auto_disc_change_paths;
+  mutable std::mutex m_inserted_disc_path_lock;
+  std::string m_inserted_disc_path;
   size_t m_auto_disc_change_index = 0;
 
   // Events

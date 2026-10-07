@@ -456,6 +456,8 @@ void DVDInterface::InsertDiscCallback(Core::System& system, u64 userdata, s64 cy
   {
     AchievementManager::GetInstance().ChangeDisc(new_disc.get());
     di.SetDisc(std::move(new_disc), {});
+    std::lock_guard lock(di.m_inserted_disc_path_lock);
+    di.m_inserted_disc_path = di.m_disc_path_to_insert;
   }
   else
   {
@@ -517,6 +519,24 @@ void DVDInterface::ChangeDisc(const Core::CPUThreadGuard& guard, const std::stri
 }
 
 // Must only be called on the CPU thread
+bool DVDInterface::InsertDiscNow(const Core::CPUThreadGuard& guard, const std::string& path)
+{
+  std::unique_ptr<DiscIO::VolumeDisc> new_disc = DiscIO::CreateDiscForCore(path);
+  if (!new_disc)
+    return false;
+  AchievementManager::GetInstance().ChangeDisc(new_disc.get());
+  SetDisc(std::move(new_disc), {});
+  std::lock_guard lock(m_inserted_disc_path_lock);
+  m_inserted_disc_path = path;
+  return true;
+}
+
+std::string DVDInterface::GetChangedDiscPath() const
+{
+  std::lock_guard lock(m_inserted_disc_path_lock);
+  return m_inserted_disc_path;
+}
+
 bool DVDInterface::AutoChangeDisc(const Core::CPUThreadGuard& guard)
 {
   if (m_auto_disc_change_paths.empty())

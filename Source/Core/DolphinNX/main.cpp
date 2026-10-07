@@ -40,6 +40,7 @@
 #include "Core/Config/SYSCONFSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/HW/DVD/DVDInterface.h"
 #include "Core/HW/ProcessorInterface.h"
 #include "Core/Host.h"
 #include "Core/PowerPC/PowerPC.h"
@@ -58,6 +59,7 @@
 #include "DolphinNX/Achievements.h"
 #include "DolphinNX/Audio.h"
 #include "DolphinNX/Cheats.h"
+#include "DolphinNX/Discs.h"
 #include "DolphinNX/Input.h"
 #include "DolphinNX/TicoCore.h"
 #include "DolphinNX/Overlay/VulkanOverlay.h"
@@ -129,6 +131,44 @@ static std::string TrFormat(const char* key, int value)
   return text;
 }
 
+// The game's discs (an .m3u's, or "(Disc N)" images beside each other) and the
+// one it booted with.
+static std::vector<DolphinNX::Discs::DiscEntry> s_discs;
+static std::string s_boot_disc;
+
+// The image in the drive now: the booted one until a disc change.
+static std::string CurrentDiscPath(Core::System& system)
+{
+  const std::string changed = system.GetDVDInterface().GetChangedDiscPath();
+  return DolphinNX::Discs::NormalizeDiscPath(changed.empty() ? s_boot_disc : changed);
+}
+
+// Which disc was in when a state was saved, beside it: both discs of a game
+// share its states (they are named after the game ID).
+static std::string StateDiscPath(int slot)
+{
+  return StateSlotPath(slot) + ".disc";
+}
+
+static void RecordStateDisc(Core::System& system, int slot)
+{
+  File::WriteStringToFile(StateDiscPath(slot), CurrentDiscPath(system));
+}
+
+// Before loading a state made with another disc in: that disc goes in first.
+static void InsertStateDisc(Core::System& system, int slot)
+{
+  std::string disc;
+  if (!File::ReadFileToString(StateDiscPath(slot), disc) || disc.empty() ||
+      disc == CurrentDiscPath(system) || !File::Exists(disc))
+  {
+    return;
+  }
+  const Core::CPUThreadGuard guard(system);
+  if (system.GetDVDInterface().InsertDiscNow(guard, disc))
+    LOG("State slot %d was saved with %s in: inserted it\n", slot, disc.c_str());
+}
+
 // Each state's picture sits beside it.
 static std::string StatePicturePath(int slot)
 {
@@ -173,6 +213,7 @@ static void WriteAutoSave(Core::System& system)
   s_auto_saved = true;
   State::Save(system, SwitchFrontend::OverlayUI::kAutoStateSlot);
   KeepPausePictureFor(SwitchFrontend::OverlayUI::kAutoStateSlot);
+  RecordStateDisc(system, SwitchFrontend::OverlayUI::kAutoStateSlot);
   LOG("Auto save written\n");
 }
 
@@ -199,7 +240,10 @@ static void StartStateLoad(Core::System& system, int slot,
     else if (action == Action::UndoSaveState)
       State::UndoSaveState(system);
     else
+    {
+      InsertStateDisc(system, slot);
       State::Load(system, slot);
+    }
     AudioCommon::SetSoundStreamRunning(system, true);
     s_state_load_in_progress.store(false, std::memory_order_release);
   });
@@ -1412,6 +1456,17 @@ int main(int argc, char* argv[])
       return preview;
     });
 
+    // Change Disc: the game's discs, the one in the drive marked
+    s_discs = DolphinNX::Discs::ScanDiscs(rom_path);
+    s_boot_disc = DolphinNX::Discs::NormalizeDiscPath(
+        rom_path.ends_with(".m3u") && !s_discs.empty() ? s_discs.front().romPath : rom_path);
+    SwitchFrontend::OverlayUI::SetDiscCallback([&system] {
+      std::vector<SwitchFrontend::OverlayUI::DiscMenuEntry> entries;
+      const std::string current = CurrentDiscPath(system);
+      for (const auto& disc : s_discs)
+        entries.push_back({disc.displayName, disc.romPath == current});
+      return entries;
+    });
     SwitchFrontend::OverlayUI::SetCheatCallbacks(&DolphinNX::Cheats::List,
                                                  &DolphinNX::Cheats::Toggle);
     SwitchFrontend::OverlayUI::SetUndoStateCallback([] {
@@ -1581,6 +1636,7 @@ int main(int argc, char* argv[])
           const int slot = OverlayUI::GetStateSlotForAction(overlay_action);
           State::Save(system, slot);
           KeepPausePictureFor(slot);
+          RecordStateDisc(system, slot);
           OverlayUI::ShowToast(TrFormat("emulator_state_saved", slot));
           DolphinNX::VulkanOverlay::SetVisible(false);
           LOG("Overlay: SaveState slot %d\n", slot);
@@ -1640,6 +1696,21 @@ int main(int argc, char* argv[])
             system.GetProcessorInterface().ResetButton_Tap();
             DolphinNX::VulkanOverlay::SetVisible(false);
             break;
+          case Action::SwapDisc:
+          {
+            const int index = OverlayUI::ConsumeDiscIndex();
+            if (index >= 0 && index < static_cast<int>(s_discs.size()))
+            {
+              // ejected now, the other disc inserted a moment later, as on the console
+              const auto& disc = s_discs[static_cast<std::size_t>(index)];
+              const Core::CPUThreadGuard guard(system);
+              system.GetDVDInterface().ChangeDisc(guard, disc.romPath);
+              OverlayUI::ShowToast(disc.displayName);
+              LOG("Overlay: changing disc to %s\n", disc.romPath.c_str());
+            }
+            DolphinNX::VulkanOverlay::SetVisible(false);
+            break;
+          }
           case Action::AddCheat:
             // the Cheats menu's "Download Gecko codes" row
             if (!s_cheat_download_in_progress.exchange(true))
