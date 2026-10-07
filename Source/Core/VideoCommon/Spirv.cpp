@@ -307,4 +307,27 @@ std::optional<CodeVector> CompileComputeShader(std::string_view source_code, API
   return CompileShaderToSPV(EShLangCompute, api_type, language_version, "cs", source_code,
                             shader_includer);
 }
+
+std::optional<std::string> PreprocessShader(EShLanguage stage, std::string_view source_code,
+                                            glslang::TShader::Includer* shader_includer)
+{
+  if (!InitializeGlslang())
+    return std::nullopt;
+
+  glslang::TShader shader(stage);
+  const char* source = source_code.data();
+  const int source_length = static_cast<int>(source_code.size());
+  shader.setStringsWithLengths(&source, &source_length, 1);
+
+  glslang::TShader::ForbidIncluder forbid_includer;
+  std::string output;
+  if (!shader.preprocess(GetCompilerResourceLimits(), 450, ECoreProfile, false, true, EShMsgDefault,
+                         &output, shader_includer ? *shader_includer : forbid_includer))
+  {
+    ERROR_LOG_FMT(VIDEO, "Failed to preprocess shader:\n{}", shader.getInfoLog());
+    return std::nullopt;
+  }
+
+  return output;
+}
 }  // namespace SPIRV

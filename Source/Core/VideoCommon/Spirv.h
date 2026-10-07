@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -38,4 +39,8 @@ std::optional<CodeVector> CompileFragmentShader(std::string_view source_code, AP
 std::optional<CodeVector> CompileComputeShader(std::string_view source_code, APIType api_type,
                                                glslang::EShTargetLanguageVersion language_version,
                                                glslang::TShader::Includer* shader_includer);
+
+// For compilers that cannot resolve #include directives themselves (deko3d's uam).
+std::optional<std::string> PreprocessShader(EShLanguage stage, std::string_view source_code,
+                                            glslang::TShader::Includer* shader_includer);
 }  // namespace SPIRV

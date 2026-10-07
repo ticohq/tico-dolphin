@@ -61,6 +61,7 @@ add_library(videocommon
   EFBInterface.h
   Fifo.cpp
   Fifo.h
+  FrameGeneration.h
   FramebufferManager.cpp
   FramebufferManager.h
   FramebufferShaderGen.cpp

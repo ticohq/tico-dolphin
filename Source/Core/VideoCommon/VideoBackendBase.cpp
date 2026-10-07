@@ -40,6 +40,9 @@
 #ifdef HAS_VULKAN
 #include "VideoBackends/Vulkan/VideoBackend.h"
 #endif
+#ifdef HAS_DEKO3D
+#include "VideoBackends/Deko3D/VideoBackend.h"
+#endif
 #if defined(__APPLE__) && !defined(__LIBRETRO__)
 #include "VideoBackends/Metal/VideoBackend.h"
 #endif
@@ -227,6 +230,9 @@ const std::vector<std::unique_ptr<VideoBackendBase>>& VideoBackendBase::GetAvail
 #else
     backends.push_back(std::make_unique<Vulkan::VideoBackend>());
 #endif
+#endif
+#ifdef HAS_DEKO3D
+    backends.push_back(std::make_unique<Deko3D::VideoBackend>());
 #endif
 #if defined(__APPLE__) && !defined(__LIBRETRO__)
     backends.emplace(backends.begin(), std::make_unique<Metal::VideoBackend>());
