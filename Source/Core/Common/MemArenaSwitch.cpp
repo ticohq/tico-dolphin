@@ -129,6 +129,20 @@ FastmemSupport DetectFastmemSupport()
   return support;
 }
 
+// Horizon can map 2 MiB at once only where the address is 2 MiB-aligned too:
+// ask for one large page more and align up. Fewer TLB misses on guest RAM.
+constexpr size_t LARGE_PAGE_SIZE = 0x200000;
+
+void* FindLargePageAligned(void* (*find)(size_t, size_t), size_t size, size_t guard_size)
+{
+  void* const found = find(size + LARGE_PAGE_SIZE, guard_size);
+  if (!found)
+    return nullptr;
+  const uintptr_t aligned =
+      (reinterpret_cast<uintptr_t>(found) + LARGE_PAGE_SIZE - 1) & ~(LARGE_PAGE_SIZE - 1);
+  return reinterpret_cast<void*>(aligned);
+}
+
 const FastmemSupport& GetFastmemSupport()
 {
   static const FastmemSupport support = DetectFastmemSupport();
@@ -182,7 +196,7 @@ void MemArena::GrabSHMSegment(size_t size, std::string_view base_name)
 
   virtmemLock();
 
-  m_rw_mirror = virtmemFindCodeMemory(aligned_size, 0x200000);
+  m_rw_mirror = FindLargePageAligned(virtmemFindCodeMemory, aligned_size, 0x200000);
   if (m_rw_mirror == nullptr)
   {
     virtmemUnlock();
@@ -288,7 +302,7 @@ u8* MemArena::ReserveMemoryRegion(size_t memory_size)
   size_t aligned_size = (memory_size + 0x1FFFFF) & ~size_t{0x1FFFFF};
 
   virtmemLock();
-  m_reserved_region = virtmemFindAslr(aligned_size, 0x200000);
+  m_reserved_region = FindLargePageAligned(virtmemFindAslr, aligned_size, 0x200000);
   if (m_reserved_region == nullptr)
   {
     virtmemUnlock();
