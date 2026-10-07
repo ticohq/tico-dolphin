@@ -125,9 +125,13 @@ CEXIIPL::CEXIIPL(Core::System& system) : IEXIDevice(system)
     else
       memcpy(&m_rom[0], iplverPAL, sizeof(iplverPAL));
 
-    // Load fonts
-    LoadFontFile((File::GetSysDirectory() + GC_SYS_DIR + DIR_SEP + FONT_SHIFT_JIS), 0x1aff00);
-    LoadFontFile((File::GetSysDirectory() + GC_SYS_DIR + DIR_SEP + FONT_WINDOWS_1252), 0x1fcf00);
+    // Load fonts: the user's own first (as for the IPL and DSP ROMs), then the shipped ones
+    const auto font_path = [](const char* name) {
+      const std::string user = File::GetUserPath(D_GCUSER_IDX) + name;
+      return File::Exists(user) ? user : File::GetSysDirectory() + GC_SYS_DIR + DIR_SEP + name;
+    };
+    LoadFontFile(font_path(FONT_SHIFT_JIS), 0x1aff00);
+    LoadFontFile(font_path(FONT_WINDOWS_1252), 0x1fcf00);
   }
 
   auto& sram = system.GetSRAM();
