@@ -21,6 +21,7 @@ add_executable(dolphin-nx
   Cheats.cpp
   Discs.cpp
   Saves.cpp
+  Riivolution.cpp
   Library.cpp
   LibraryScreen.cpp
   MbedTLSEntropy.cpp

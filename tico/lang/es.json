@@ -234,5 +234,9 @@
   "settings_dolphin_gc_bba": "Adaptador de banda ancha (juego en línea)",
   "settings_dolphin_wiilink": "WiiConnect24 con WiiLink",
   "settings_dolphin_bba_dns": "DNS del adaptador de banda ancha",
-  "settings_dolphin_correct_time_drift": "Corregir desfase de tiempo (juego en línea)"
+  "settings_dolphin_correct_time_drift": "Corregir desfase de tiempo (juego en línea)",
+  "emulator_mods": "Mods",
+  "emulator_mods_disabled": "Desactivado",
+  "emulator_mods_none": "No hay mods de Riivolution para este juego",
+  "emulator_mods_where": "Cópialos en sdmc:/tico/mods/wii"
 }

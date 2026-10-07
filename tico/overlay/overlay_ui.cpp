@@ -53,6 +53,7 @@ enum class MenuScreen {
     Rewind,
     Discs,
     Cheats,
+    Mods,
     SettingsCategories,
     SettingsOptions,
     ShaderBrowser,
@@ -76,6 +77,7 @@ enum class QuickItem {
     Rewind,
     ChangeDisc,
     Cheats,
+    Mods,
     Settings,
     Reset,
     Restart,
@@ -131,6 +133,9 @@ CheatToggleFn s_cheat_toggle_cb;
 RewindListFn s_rewind_list_cb;
 DiscListFn s_disc_list_cb;
 std::vector<CheatMenuEntry> s_cheat_entries;
+ModListFn s_mod_list_cb;
+ModStepFn s_mod_step_cb;
+std::vector<ModMenuEntry> s_mod_entries;
 std::vector<DiscMenuEntry> s_disc_entries;
 std::array<bool, kOverlaySlotCount> s_slot_occupied{};
 std::array<SlotPreview, kOverlaySlotCount> s_slot_preview{};
@@ -421,6 +426,9 @@ std::vector<QuickItem> BuildQuickItems() {
     if (!s_hardcore && s_cheat_list_cb) {
         items.push_back(QuickItem::Cheats);
     }
+    if (!s_hardcore && s_mod_list_cb) {
+        items.push_back(QuickItem::Mods);
+    }
     items.push_back(QuickItem::Reset);
     return items;
 }
@@ -437,6 +445,8 @@ std::string QuickItemLabel(QuickItem item) {
         return TrOr("emulator_select_disc", "Change Disc");
     case QuickItem::Cheats:
         return TrOr("emulator_cheats", "Cheats");
+    case QuickItem::Mods:
+        return TrOr("emulator_mods", "Mods");
     case QuickItem::Settings:
         return TrOr("emulator_settings", "Settings");
     case QuickItem::Reset:
@@ -853,6 +863,22 @@ void RefreshCheats() {
     s_cheat_entries = s_cheat_list_cb ? s_cheat_list_cb() : std::vector<CheatMenuEntry>{};
 }
 
+void RefreshMods() {
+    s_mod_entries = s_mod_list_cb ? s_mod_list_cb() : std::vector<ModMenuEntry>{};
+}
+
+// Steps the selected mod option's choice; it applies on the next start.
+void StepMod(int direction) {
+    if (!s_mod_step_cb || s_selected < 0 || s_selected >= static_cast<int>(s_mod_entries.size())) {
+        return;
+    }
+    const ModMenuEntry& entry = s_mod_entries[static_cast<std::size_t>(s_selected)];
+    if (entry.source_index >= 0 && s_mod_step_cb(entry.source_index, direction)) {
+        RefreshMods();
+        ShowToast(TrOr("emulator_applies_next_launch", "Use Restart to apply"));
+    }
+}
+
 void RefreshSlots() {
     for (int i = 0; i < kOverlaySlotCount; ++i) {
         s_slot_preview[i] = s_slot_preview_cb ? s_slot_preview_cb(i + 1) : SlotPreview{};
@@ -1026,6 +1052,16 @@ std::vector<MenuRow> BuildRows() {
             rows.push_back(row);
         }
         break;
+    case MenuScreen::Mods:
+        for (const ModMenuEntry& entry : s_mod_entries) {
+            MenuRow row{entry.name, entry.value};
+            if (entry.source_index < 0) {
+                row.dimmed = true;
+                row.static_value = true;
+            }
+            rows.push_back(row);
+        }
+        break;
     case MenuScreen::SettingsCategories:
         for (int i = 0; i < CategoryCount(); ++i) {
             rows.push_back({CategoryLabel(i)});
@@ -1130,6 +1166,9 @@ std::string BuildTitle() {
         break;
     case MenuScreen::Cheats:
         title = TrOr("emulator_cheats", "Cheats");
+        break;
+    case MenuScreen::Mods:
+        title = TrOr("emulator_mods", "Mods");
         break;
     case MenuScreen::ShaderBrowser:
         title = TrOr("emulator_shader", "Shader");
@@ -1460,7 +1499,8 @@ void RenderSidebar(ImDrawList* dl, ImVec2 menu_pos, ImVec2 menu_size, float item
 }
 
 void RenderMenu(ImDrawList* dl, ImVec2 display_size, float ease, const std::vector<MenuRow>& rows) {
-    const bool wide = s_menu == MenuScreen::Cheats || s_menu == MenuScreen::ShaderBrowser ||
+    const bool wide = s_menu == MenuScreen::Cheats || s_menu == MenuScreen::Mods ||
+                      s_menu == MenuScreen::ShaderBrowser ||
                       s_menu == MenuScreen::Library || s_menu == MenuScreen::FolderBrowser ||
                       s_menu == MenuScreen::FolderActions || s_menu == MenuScreen::FolderConfirm ||
                       s_menu == MenuScreen::GameConfirm || s_menu == MenuScreen::GameSettingsConfirm ||
@@ -1753,6 +1793,8 @@ void RenderHelpersBar(ImDrawList* dl, ImVec2 display_size, float ease) {
         accept = TrOr("emulator_change", "Change");
     else if (s_menu == MenuScreen::Cheats && !s_cheat_entries.empty())
         accept = TrOr("emulator_toggle", "Toggle");
+    else if (s_menu == MenuScreen::Mods)
+        accept = TrOr("emulator_change", "Change");
     else if (s_menu == MenuScreen::SettingsOptions)
         accept = TrOr("emulator_change", "Change");
     else if (s_menu == MenuScreen::ShaderBrowser || s_menu == MenuScreen::FolderBrowser)
@@ -2138,6 +2180,10 @@ Action AcceptSelection(const std::vector<MenuRow>& rows) {
             RefreshCheats();
             OpenScreen(MenuScreen::Cheats);
             break;
+        case QuickItem::Mods:
+            RefreshMods();
+            OpenScreen(MenuScreen::Mods);
+            break;
         case QuickItem::Settings:
             OpenScreen(MenuScreen::SettingsCategories);
             break;
@@ -2193,6 +2239,9 @@ Action AcceptSelection(const std::vector<MenuRow>& rows) {
                 RefreshCheats();
             }
         }
+        return Action::None;
+    case MenuScreen::Mods:
+        StepMod(1);
         return Action::None;
     case MenuScreen::SettingsCategories:
         s_category_selected = s_selected;
@@ -2678,6 +2727,7 @@ void SetVisible(bool visible) {
     } else if (!visible) {
         s_anim_timer = 0.0f;
         s_cheat_entries.clear();
+        s_mod_entries.clear();
         s_rewind_points.clear();
         s_disc_entries.clear();
         OpenScreen(RootScreen());
@@ -2758,6 +2808,12 @@ void SetCheatCallbacks(CheatListFn list_callback, CheatToggleFn toggle_callback)
 
 void RefreshCheatList() {
     RefreshCheats();
+}
+
+void SetModCallbacks(ModListFn list_callback, ModStepFn step_callback) {
+    s_mod_list_cb = std::move(list_callback);
+    s_mod_step_cb = std::move(step_callback);
+    s_mod_entries.clear();
 }
 
 void SetRewindCallback(RewindListFn callback) {
@@ -2942,6 +2998,10 @@ Action Render(int display_w, int display_h) {
         s_menu == MenuScreen::SettingsOptions && (nav.left || nav.right) ? SelectedOption() : nullptr;
     if (s_menu == MenuScreen::SettingsOptions && ShaderCategoryActive() && (nav.left || nav.right)) {
         StepShaderParameter(s_selected, nav.right ? 1 : -1);
+        rows = BuildRows();
+    }
+    if (s_menu == MenuScreen::Mods && (nav.left || nav.right)) {
+        StepMod(nav.right ? 1 : -1);
         rows = BuildRows();
     }
     if (stepped) {
