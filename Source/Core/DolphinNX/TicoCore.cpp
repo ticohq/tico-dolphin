@@ -34,6 +34,7 @@
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "DiscIO/Enums.h"
+#include "DolphinNX/Saves.h"
 #include "VideoCommon/VideoConfig.h"
 
 namespace DolphinNX::TicoCore
@@ -980,6 +981,9 @@ private:
       for (int port = 0; port < 4; ++port)
         Config::SetBase(Config::GetInfoForSIDevice(port), SerialInterface::SIDEVICE_GC_CONTROLLER);
     }
+
+    // memory cards in tico's saves folder
+    DolphinNX::Saves::ApplyGameCubeCardPaths();
 
     Core::SetIsThrottlerTempDisabled(false);
   }
