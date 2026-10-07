@@ -106,15 +106,31 @@ ${DEVKITA64}/bin/aarch64-none-elf-strip --strip-all "${BUILD_DIR}/Binaries/dolph
 
 elf2nro \
   "${BUILD_DIR}/Binaries/dolphin-nx" \
-  "${BUILD_DIR}/dolphin.nro" \
+  "${BUILD_DIR}/tico-dolphin.nro" \
   --nacp="${BUILD_DIR}/dolphin.nacp" \
   --romfsdir="${ROMFS_DIR}"
 
+# The tico module: a directory that extracts to sdmc:/tico/modules/<id>/.
+# tico reads module.json, the settings definition and the strings from it,
+# and launches the NRO beside them.
+echo ""
+echo "=== Packaging the module ==="
+MODULE_SRC="${SCRIPT_DIR}/tico/module"
+MODULE_ID=$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${MODULE_SRC}/module.json" | head -1)
+PACKAGE_DIR="${SCRIPT_DIR}/build_tico"
+MODULE_OUT="${PACKAGE_DIR}/module/${MODULE_ID}"
+rm -rf "${PACKAGE_DIR}"
+mkdir -p "${MODULE_OUT}"
+cp -r "${MODULE_SRC}/." "${MODULE_OUT}/"
+cp "${BUILD_DIR}/tico-dolphin.nro" "${MODULE_OUT}/"
+cp -R "${SCRIPT_DIR}/tico/lang" "${MODULE_OUT}/"
+gzip -f -9 "${MODULE_OUT}"/gamelists/*.json 2>/dev/null || true
+BUNDLE="${PACKAGE_DIR}/tico-${MODULE_ID}-module.zip"
+( cd "${PACKAGE_DIR}/module" && zip -qr "${BUNDLE}" "${MODULE_ID}" )
+
 echo ""
 echo "=== Done ==="
-echo "Output: ${BUILD_DIR}/dolphin.nro"
-echo ""
-echo "Deploy to Switch:"
-echo "  cp ${BUILD_DIR}/dolphin.nro /path/to/sd/switch/dolphin/"
-echo ""
-echo "Launch from hbmenu with a ROM file to chainload."
+echo "NRO:    ${BUILD_DIR}/tico-dolphin.nro"
+echo "Module: ${BUNDLE}"
+echo "        extracts to sdmc:/tico/modules/${MODULE_ID}/"
+find "${MODULE_OUT}" -type f | sed "s|${PACKAGE_DIR}/module/|    |"
