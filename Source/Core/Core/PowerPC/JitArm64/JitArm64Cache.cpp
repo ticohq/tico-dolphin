@@ -90,6 +90,10 @@ void JitArm64BlockCache::WriteLinkBlock(const JitBlock::LinkData& source, const 
   u8* location = source.exitPtrs;
   ARM64XEmitter emit(location, location + BLOCK_LINK_SIZE);
 
+  auto& jit = static_cast<JitArm64&>(m_jit);
+  auto& jit_emitter = static_cast<Arm64Gen::ARM64XEmitter&>(jit);
+  emit.SetWritableRegionDiff(jit_emitter.GetWritableRegionDiff());
+
   WriteLinkBlock(emit, source, dest);
   // Flush with W^X-aware addresses
   u8* rw_start = location;
@@ -105,6 +109,11 @@ void JitArm64BlockCache::WriteDestroyBlock(const JitBlock& block)
   u8* rw_start = static_cast<JitArm64&>(m_jit).ConvertToWritable(block.normalEntry);
   // Only clear the entry point as we might still be within this block.
   ARM64XEmitter emit(rw_start, rw_start + 4);
+
+  auto& jit = static_cast<JitArm64&>(m_jit);
+  auto& jit_emitter = static_cast<Arm64Gen::ARM64XEmitter&>(jit);
+  emit.SetWritableRegionDiff(jit_emitter.GetWritableRegionDiff());
+
   const Common::ScopedJITPageWriteAndNoExecute enable_jit_page_writes(rw_start);
   emit.BRK(0x123);
   // Flush with W^X-aware addresses: RW (where written) and RX (where executed)

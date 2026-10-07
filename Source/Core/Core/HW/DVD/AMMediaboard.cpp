@@ -12,6 +12,9 @@
 #include <fmt/format.h>
 
 #include "Common/BitUtils.h"
+#ifdef __LIBRETRO__
+#include "Common/CommonPaths.h"
+#endif
 #include "Common/CommonTypes.h"
 #include "Common/FileUtil.h"
 #include "Common/IOFile.h"
@@ -33,7 +36,7 @@
 #include "VideoCommon/OnScreenDisplay.h"
 
 #if defined(__linux__) or defined(__APPLE__) or defined(__FreeBSD__) or defined(__NetBSD__) or     \
-    defined(__HAIKU__) or defined(__SWITCH__)
+    defined(__OpenBSD__) or defined(__HAIKU__) or defined(__SWITCH__)
 
 #include <unistd.h>
 
@@ -494,6 +497,22 @@ void Init()
   if (!s_backup.IsOpen())
     PanicAlertFmt("Failed to open/create: {}", base_path + "backup.bin");
 
+#ifdef __LIBRETRO__
+  // SegaBoot is firmware, but older installations keep it alongside other Triforce data.
+  const std::string system_sega_boot_filename =
+      File::GetSysDirectory() + TRI_SYS_DIR DIR_SEP "segaboot.gcm";
+  const std::string legacy_sega_boot_filename = base_path + "segaboot.gcm";
+  File::IOFile sega_boot(system_sega_boot_filename, "rb");
+  if (!sega_boot.IsOpen())
+    sega_boot.Open(legacy_sega_boot_filename, "rb");
+
+  if (!sega_boot.IsOpen())
+  {
+    PanicAlertFmt("Failed to read segaboot.gcm, which is required for test menus. Tried {} and {}",
+                  system_sega_boot_filename, legacy_sega_boot_filename);
+    return;
+  }
+#else
   // This is the firmware for the Triforce
   const std::string sega_boot_filename = base_path + "segaboot.gcm";
 
@@ -510,6 +529,7 @@ void Init()
     PanicAlertFmt("Failed to read: {}", sega_boot_filename);
     return;
   }
+#endif
 
   const u64 length = std::min<u64>(sega_boot.GetSize(), sizeof(s_firmware));
   sega_boot.ReadBytes(s_firmware.data(), length);

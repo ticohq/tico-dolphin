@@ -75,7 +75,11 @@ namespace Libretro
 extern retro_environment_t environ_cb;
 static bool widescreen;
 double g_core_refresh_rate{0};
+// Reset per game (see retro_run): the first refresh-rate settle after boot must not
+// trigger a mode-family reinit, only a real in-game 50<->60 switch should.
+static bool s_refresh_rate_settled = false;
 extern void reload_cheats_from_ini();
+extern unsigned msg_interface_version;
 }  // namespace Libretro
 
 extern "C" {
@@ -86,12 +90,39 @@ void retro_set_environment(retro_environment_t cb)
 #ifdef PERF_TEST
   environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf_cb);
 #endif
+static const struct retro_subsystem_memory_info gbp_gba_memory[] = {
+  {"srm", RETRO_MEMORY_SAVE_RAM},
+};
+static const struct retro_subsystem_rom_info gbp_roms[] = {
+  {"GBA ROM", "gba|gbc|gb|zip|7z",
+    true,
+    true,
+    false,
+    gbp_gba_memory, 1},
+  {"GameCube Disc", "rvz|gcm|iso|ciso|wbfs|gcz|tgc|m3u",
+    true,
+    false,
+    true,
+    nullptr, 0},
+};
+static const struct retro_subsystem_info subsystems[] = {
+  {
+    "Game Boy Player",
+    "GBP",
+    gbp_roms, 2,
+    Libretro::g_gbplayer_subsystem_id
+  },
+  {nullptr, nullptr, nullptr, 0, 0}};
+cb(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, (void*)subsystems);
 }
 
 void retro_init(void)
 {
   enum retro_pixel_format xrgb888 = RETRO_PIXEL_FORMAT_XRGB8888;
   Libretro::environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &xrgb888);
+
+  Libretro::environ_cb(RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION,
+    &Libretro::msg_interface_version);
 }
 
 void retro_deinit(void)
@@ -141,18 +172,16 @@ void retro_get_system_av_info(retro_system_av_info* info)
   int efbScale = Libretro::Options::GetCached<int>(
     Libretro::Options::gfx_settings::EFB_SCALE);
 
-  int base_height = EFB_HEIGHT;
-  const bool crop_overscan = Libretro::Options::GetCached<bool>(
-    Libretro::Options::gfx_settings::CROP_OVERSCAN);
+  int base_height = Libretro::Video::GetAdjustedBaseHeight();
 
-  if (crop_overscan && retro_get_region() == RETRO_REGION_NTSC)
-    base_height = 480;
+  // Fixed max (>= any runtime height) so base can grow via SET_GEOMETRY alone.
+  int max_height = base_height > 576 ? base_height : 576;
 
   info->geometry.base_width  = EFB_WIDTH * efbScale;
   info->geometry.base_height = base_height * efbScale;
 
-  info->geometry.max_width   = info->geometry.base_width;
-  info->geometry.max_height  = info->geometry.base_height;
+  info->geometry.max_width   = EFB_WIDTH * efbScale;
+  info->geometry.max_height  = max_height * efbScale;
 
   if (g_widescreen)
     Libretro::widescreen = g_widescreen->IsGameWidescreen() || g_Config.bWidescreenHack;
@@ -205,16 +234,8 @@ void retro_run(void)
       Libretro::Options::gfx_settings::WIDESCREEN_HACK);
   }
 
-  if (Libretro::Options::IsUpdated(Libretro::Options::gfx_settings::CROP_OVERSCAN))
-  {
-    const bool crop_overscan = Libretro::Options::GetCached<bool>(
-      Libretro::Options::gfx_settings::CROP_OVERSCAN);
-
-    if (crop_overscan && retro_get_region() == RETRO_REGION_NTSC)
-      g_Config.bCropToAspectRatio = true;
-    else
-      g_Config.bCropToAspectRatio = false;
-  }
+  // Crop to 4:3 when advertising 480-line geometry (NTSC / PAL60), tracked per frame.
+  g_Config.bCropToAspectRatio = (Libretro::Video::GetAdjustedBaseHeight() == 480);
 
   Libretro::Input::Update();
 
@@ -254,6 +275,7 @@ void retro_run(void)
       Common::SleepCurrentThread(100);
 
     Libretro::g_core_refresh_rate = system.GetVideoInterface().GetTargetRefreshRate();
+    Libretro::s_refresh_rate_settled = false;
 
     // Expose GameCube and Wii memory maps to libretro
     {
@@ -286,7 +308,7 @@ void retro_run(void)
 
   if(!Libretro::g_emuthread_launched)
   {
-    DEBUG_LOG_FMT(COMMON, "retro_run() - waiting for g_emuthread_launched");
+    DEBUG_LOG_FMT(BOOT, "retro_run() - waiting for g_emuthread_launched");
     return;
   }
 
@@ -314,7 +336,8 @@ void retro_run(void)
   {
     retro_system_av_info info;
     retro_get_system_av_info(&info);
-    Libretro::environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info);
+    // SET_GEOMETRY, not SET_SYSTEM_AV_INFO: the reinit would drop KMS to 240p.
+    Libretro::environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &info);
   }
 
   if (g_widescreen &&
@@ -330,11 +353,31 @@ void retro_run(void)
 
   if (round(Libretro::g_core_refresh_rate * 1e6) != round(new_rate * 1e6))
   {
+    const double old_rate = Libretro::g_core_refresh_rate;
+
+    NOTICE_LOG_FMT(VIDEO, "Target refresh rate changed: {:.4f} Hz -> {:.4f} Hz",
+                   old_rate, new_rate);
+
     Libretro::g_core_refresh_rate = new_rate;
+
+    // Re-pace the audio-callback frame timing to the new rate (PAL60 50->60).
+    if (Libretro::FrameTiming::IsEnabled() && new_rate > 1.0)
+      Libretro::FrameTiming::target_frame_duration_usec.store(
+          static_cast<retro_usec_t>(lround(1e6 / new_rate)), std::memory_order_relaxed);
 
     retro_system_av_info info;
     retro_get_system_av_info(&info);
-    Libretro::environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info);
+
+    // 50<->60 switch needs a new CRT mode family: only SET_SYSTEM_AV_INFO carries
+    // the fps switchres uses, then SET_GEOMETRY rebuilds the surface its reinit drops.
+    // First settle after boot keeps the initial mode, so geometry-only (no reinit flash).
+    const bool crosses_50_60 =
+      Libretro::s_refresh_rate_settled && ((old_rate > 55.0) != (new_rate > 55.0));
+    Libretro::s_refresh_rate_settled = true;
+
+    if (crosses_50_60)
+      Libretro::environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info);
+    Libretro::environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &info);
   }
 
   WiimoteUpdateFlags flags;
@@ -350,6 +393,8 @@ void retro_run(void)
     flags.swingModifier = Libretro::Options::IsUpdated(Libretro::Options::wiimote::SWING_MODIFIER);
     flags.swingAngle = Libretro::Options::IsUpdated(Libretro::Options::wiimote::SWING_ANGLE);
     flags.sideways = Libretro::Options::IsUpdated(Libretro::Options::wiimote::HOTKEY_SIDEWAYS_TOGGLE);
+    flags.upright = Libretro::Options::IsUpdated(Libretro::Options::wiimote::HOTKEY_UPRIGHT_TOGGLE);
+    flags.irPassthrough = Libretro::Options::IsUpdated(Libretro::Options::wiimote::IR_PASSTHROUGH);
   }
 
   flags.rumble = Libretro::Options::IsUpdated(Libretro::Options::sysconf::ENABLE_RUMBLE);

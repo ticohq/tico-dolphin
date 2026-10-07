@@ -199,6 +199,11 @@ int WiimoteAndroid::IOWrite(u8 const* buf, size_t len)
 void InitAdapterClass()
 {
 }
+
+std::string WiimoteAndroid::GetId() const
+{
+  return "";
+}
 }  // namespace WiimoteReal
 
 // TODO: refactor or remove?

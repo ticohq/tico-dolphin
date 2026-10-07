@@ -12,6 +12,9 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#ifdef __LIBRETRO__
+#include <vector>
+#endif
 
 #include "Common/CommonTypes.h"
 #include "Common/IOFile.h"
@@ -229,6 +232,9 @@ private:
   std::map<GXUberPipelineUid, std::pair<std::unique_ptr<AbstractPipeline>, bool>>
       m_gx_uber_pipeline_cache;
   File::IOFile m_gx_pipeline_uid_cache_file;
+#ifdef __LIBRETRO__
+  std::vector<SerializedGXPipelineUid> m_pending_gx_pipeline_uids;
+#endif
   Common::LinearDiskCache<SerializedGXPipelineUid, u8> m_gx_pipeline_disk_cache;
   Common::LinearDiskCache<SerializedGXUberPipelineUid, u8> m_gx_uber_pipeline_disk_cache;
 

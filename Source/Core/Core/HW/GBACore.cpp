@@ -758,8 +758,14 @@ bool Core::GetRomInfo(const char* rom_path, std::array<u8, 20>& hash, std::strin
 
 std::string Core::GetSavePath(std::string_view rom_path, int device_number)
 {
+  // This is done to make the save file compatible with the save from the mGBA core in RA as it
+  // saves in *.srm format.
+#ifdef __LIBRETRO__
+  std::string save_path = fmt::format("{}.srm", rom_path.substr(0, rom_path.find_last_of('.')));
+#else
   std::string save_path =
       fmt::format("{}-{}.sav", rom_path.substr(0, rom_path.find_last_of('.')), device_number + 1);
+#endif
 
   if (!Config::Get(Config::MAIN_GBA_SAVES_IN_ROM_PATH))
   {

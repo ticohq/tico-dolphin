@@ -13,6 +13,7 @@ extern retro_environment_t environ_cb;
 extern bool g_emuthread_launched;
 extern std::vector<Gecko::GeckoCode> g_gecko_codes;
 extern std::vector<ActionReplay::ARCode> g_ar_codes;
+inline constexpr unsigned g_gbplayer_subsystem_id = 0x101;
 
 namespace Input
 {

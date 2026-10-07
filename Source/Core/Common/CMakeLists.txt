@@ -47,6 +47,8 @@ add_library(common
   Crypto/HMAC.h
   Crypto/SHA1.cpp
   Crypto/SHA1.h
+  CWDemangler.cpp
+  CWDemangler.h
   Debug/MemoryPatches.cpp
   Debug/MemoryPatches.h
   Debug/Threads.h
@@ -148,7 +150,6 @@ target_sources(common PRIVATE
   ScopeGuard.h
   SDCardUtil.cpp
   SDCardUtil.h
-  Semaphore.h
   SettingsHandler.cpp
   SettingsHandler.h
 )
@@ -164,7 +165,6 @@ target_sources(common PRIVATE
   SocketContext.h
   SpanUtils.h
   SPSCQueue.h
-  StringLiteral.h
   StringUtil.cpp
   StringUtil.h
   SymbolDB.cpp

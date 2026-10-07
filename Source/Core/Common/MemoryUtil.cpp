@@ -37,6 +37,9 @@ std::mutex g_switch_jit_mutex;
 #if defined(_M_ARM_64) && defined(__APPLE__)
 #include <pthread.h>
 #endif
+#if defined(__APPLE__) && defined(__aarch64__)
+#include <mach/mach.h>
+#endif
 #if defined __APPLE__ || defined __FreeBSD__ || defined __OpenBSD__ || defined __NetBSD__
 #include <sys/sysctl.h>
 #elif defined __HAIKU__
@@ -50,6 +53,30 @@ std::mutex g_switch_jit_mutex;
 
 #ifdef IPHONEOS
 #include "Common/JITMemoryTracker.h"
+#ifdef __LIBRETRO__
+#include <algorithm>
+#include <mutex>
+#include <vector>
+#include "DolphinLibretro/Common/Globals.h"
+static void* s_last_exec_rw = nullptr;
+static unsigned s_last_exec_mode = 0;
+// Regions the frontend allocated for us. Whether they are dual-mapped says
+// nothing about who owns them, so ownership is recorded rather than inferred.
+static std::mutex s_frontend_regions_mutex;
+static std::vector<void*> s_frontend_regions;
+#endif
+#endif
+
+#ifdef IPHONEOS
+namespace Common
+{
+static JitType g_jit_type = JitType::Legacy;
+
+void SetJitType(JitType type)
+{
+  g_jit_type = type;
+}
+}  // namespace Common
 #endif
 
 namespace Common
@@ -65,6 +92,29 @@ ExecutableMemory AllocateExecutableMemory(size_t size)
 {
   void* ptr = nullptr;
   void* rx_ptr = nullptr;
+#if defined(IPHONEOS) && defined(__LIBRETRO__)
+  {
+    struct retro_exec_mem_alloc alloc = {};
+    alloc.version = 1;
+    alloc.size = size;
+    if (Libretro::environ_cb &&
+        Libretro::environ_cb(RETRO_ENVIRONMENT_EXEC_MEM_ALLOC, &alloc) &&
+        alloc.mode != RETRO_EXEC_MEM_MODE_UNAVAILABLE &&
+        alloc.rx != nullptr)
+    {
+      s_last_exec_rw = alloc.rw;
+      s_last_exec_mode = alloc.mode;
+      SetJitType(alloc.mode == RETRO_EXEC_MEM_MODE_DUAL_MAP ? JitType::LuckTXM :
+                                                              JitType::Legacy);
+      {
+        std::scoped_lock lk(s_frontend_regions_mutex);
+        s_frontend_regions.push_back(alloc.rx);
+      }
+      g_jit_memory_tracker.RegisterJITRegion(alloc.rx, size);
+      return {alloc.rx, alloc.rx};
+    }
+  }
+#endif
 #if defined(_WIN32)
   ptr = VirtualAlloc(nullptr, size, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
   rx_ptr = ptr;
@@ -103,11 +153,7 @@ ExecutableMemory AllocateExecutableMemory(size_t size)
   map_flags |= MAP_JIT;
 #endif
 
-  int map_prot = PROT_READ | PROT_EXEC;
-#ifndef IPHONEOS
-  // The default protection is r-x on non-iOS platforms.
-  map_prot |= PROT_WRITE;
-#endif
+  int map_prot = PROT_READ | PROT_WRITE | PROT_EXEC;
 
   ptr = mmap(nullptr, size, map_prot, map_flags, -1, 0);
   if (ptr == MAP_FAILED)
@@ -200,12 +246,14 @@ void JITPageWriteDisableExecuteEnable()
 #else
 void JITPageWriteEnableExecuteDisable(void* ptr)
 {
-  g_jit_memory_tracker.JITRegionWriteEnableExecuteDisable(ptr);
+  if (g_jit_type == JitType::Legacy)
+    g_jit_memory_tracker.JITRegionWriteEnableExecuteDisable(ptr);
 }
 
 void JITPageWriteDisableExecuteEnable(void* ptr)
 {
-  g_jit_memory_tracker.JITRegionWriteDisableExecuteEnable(ptr);
+  if (g_jit_type == JitType::Legacy)
+    g_jit_memory_tracker.JITRegionWriteDisableExecuteEnable(ptr);
 }
 #endif
 
@@ -429,5 +477,82 @@ size_t MemPhysical()
   return (size_t)memInfo.totalram * memInfo.mem_unit;
 #endif
 }
+
+#if defined(__APPLE__) && defined(__aarch64__)
+ptrdiff_t AllocateWritableRegionAndGetDiff(void* rx_ptr, size_t size)
+{
+#if defined(IPHONEOS) && defined(__LIBRETRO__)
+  if (s_last_exec_rw && s_last_exec_mode == RETRO_EXEC_MEM_MODE_DUAL_MAP)
+  {
+    ptrdiff_t diff = static_cast<u8*>(s_last_exec_rw) - static_cast<u8*>(rx_ptr);
+    s_last_exec_rw = nullptr;
+    return diff;
+  }
+  return 0;
+#endif
+  vm_address_t rw_region = 0;
+  vm_prot_t cur_protection = 0;
+  vm_prot_t max_protection = 0;
+
+  kern_return_t retval =
+      vm_remap(mach_task_self(), &rw_region, size, 0, true, mach_task_self(),
+               (vm_address_t)rx_ptr, false, &cur_protection, &max_protection,
+               VM_INHERIT_DEFAULT);
+  if (retval != KERN_SUCCESS)
+  {
+    PanicAlertFmt("AllocateWritableRegionAndGetDiff failed! vm_remap returned {0:#x}", retval);
+    return 0;
+  }
+
+  u8* rw_ptr = reinterpret_cast<u8*>(rw_region);
+  if (mprotect(rw_ptr, size, PROT_READ | PROT_WRITE) != 0)
+  {
+    PanicAlertFmt("AllocateWritableRegionAndGetDiff failed! mprotect returned {}",
+                  LastStrerrorString());
+    return 0;
+  }
+
+  return rw_ptr - static_cast<u8*>(rx_ptr);
+}
+
+void FreeWritableRegion(void* rx_ptr, size_t size, ptrdiff_t diff)
+{
+#if defined(IPHONEOS) && defined(__LIBRETRO__)
+  // Frontend owns the writable region; nothing to do here.
+  // FreeExecutableMemory will tell the frontend to free everything.
+#else
+  if (diff == 0)
+    return;
+  u8* rw_ptr = static_cast<u8*>(rx_ptr) + diff;
+  vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(rw_ptr), size);
+#endif
+}
+
+void FreeExecutableMemory(void* ptr, size_t size)
+{
+  if (!ptr)
+    return;
+#ifdef IPHONEOS
+  g_jit_memory_tracker.UnregisterJITRegion(ptr);
+#endif
+#if defined(IPHONEOS) && defined(__LIBRETRO__)
+  {
+    std::scoped_lock lk(s_frontend_regions_mutex);
+    auto it = std::find(s_frontend_regions.begin(), s_frontend_regions.end(), ptr);
+    if (it != s_frontend_regions.end())
+    {
+      s_frontend_regions.erase(it);
+      struct retro_exec_mem_free f = {};
+      f.rx = ptr;
+      if (Libretro::environ_cb)
+        Libretro::environ_cb(RETRO_ENVIRONMENT_EXEC_MEM_FREE, &f);
+      return;
+    }
+  }
+#endif
+  munmap(ptr, size);
+}
+#endif
+
 
 }  // namespace Common

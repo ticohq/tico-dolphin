@@ -9,6 +9,10 @@
 
 #include "Common/CommonTypes.h"
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 namespace Common
 {
 struct ExecutableMemory
@@ -18,6 +22,25 @@ struct ExecutableMemory
 };
 
 ExecutableMemory AllocateExecutableMemory(size_t size);
+
+#ifdef IPHONEOS
+// Which of the executable-memory strategies is in use. Dual-mapped modes write
+// through an alias, so the W^X toggling below must not run for them.
+enum class JitType
+{
+  Legacy,
+  LuckNoTXM,
+  LuckTXM
+};
+
+void SetJitType(JitType type);
+#endif
+
+#if defined(IPHONEOS) || (defined(__APPLE__) && defined(__aarch64__) && !TARGET_OS_IPHONE)
+ptrdiff_t AllocateWritableRegionAndGetDiff(void* rx_ptr, size_t size);
+void FreeWritableRegion(void* rx_ptr, size_t size, ptrdiff_t diff);
+void FreeExecutableMemory(void* ptr, size_t size);
+#endif
 
 // These two functions control the executable/writable state of the W^X memory
 // allocations. More detailed documentation about them is in the .cpp file.
