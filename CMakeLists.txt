@@ -571,8 +571,9 @@ if(SWITCH_STANDALONE)
   set(USE_SYSTEM_LIBLZMA OFF CACHE BOOL "" FORCE)
   set(USE_SYSTEM_ZSTD OFF CACHE BOOL "" FORCE)
   set(USE_SYSTEM_FMT OFF CACHE BOOL "" FORCE)
-  # No /dev/urandom on Switch
-  add_definitions(-DMBEDTLS_NO_PLATFORM_ENTROPY)
+  # No /dev/urandom on Switch: mbedtls gets its entropy from the console's
+  # random service instead (DolphinNX/MbedTLSEntropy.cpp)
+  add_definitions(-DMBEDTLS_NO_PLATFORM_ENTROPY -DMBEDTLS_ENTROPY_HARDWARE_ALT)
 endif()
 
 if(ENABLE_HEADLESS)
