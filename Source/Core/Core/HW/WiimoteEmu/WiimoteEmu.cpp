@@ -878,8 +878,47 @@ void Wiimote::RefreshConfig()
   m_speaker_logic.SetSpeakerEnabled(Config::Get(Config::MAIN_WIIMOTE_ENABLE_SPEAKER));
 }
 
+void Wiimote::UpdateIMUMountCalibration()
+{
+  // "Recenter" is expected to be pressed while aiming at the centre of the screen, which is also
+  // the pose a mount calibration needs, so the two can optionally share the button.
+  const bool pressed = m_imu_ir->controls[0]->GetState<bool>();
+  const bool triggered = pressed && !m_imu_recenter_pressed;
+  m_imu_recenter_pressed = pressed;
+
+  if (!triggered || !m_calibrate_mount_on_recenter.load(std::memory_order_relaxed))
+    return;
+
+  const auto accel = m_imu_accelerometer->GetState();
+  if (!accel.has_value() || !accel->LengthSquared())
+    return;
+
+  const bool changed = m_imu_ir->CalibrateMountFromAccelerometer(*accel);
+
+  // The accumulated orientation was integrated in the old mount's frame, so start over.
+  // The pose held during calibration becomes the new neutral pose.
+  m_imu_cursor_state = {};
+
+  // Writing the input config from the emulation thread causes a visible hitch, and recentering
+  // happens often during play, so leave persisting the new angles to the frontend.
+  if (changed)
+    m_mount_calibration_unsaved.store(true, std::memory_order_relaxed);
+}
+
+bool Wiimote::ConsumeUnsavedMountCalibration()
+{
+  return m_mount_calibration_unsaved.exchange(false, std::memory_order_relaxed);
+}
+
+void Wiimote::SetCalibrateMountOnRecenter(bool enabled)
+{
+  m_calibrate_mount_on_recenter.store(enabled, std::memory_order_relaxed);
+}
+
 void Wiimote::StepDynamics()
 {
+  UpdateIMUMountCalibration();
+
   EmulateSwing(&m_swing_state, m_swing, 1.f / ::Wiimote::UPDATE_FREQ);
   EmulateTilt(&m_tilt_state, m_tilt, 1.f / ::Wiimote::UPDATE_FREQ);
   EmulatePoint(&m_point_state, m_ir, m_input_override_function, 1.f / ::Wiimote::UPDATE_FREQ);
@@ -994,7 +1033,12 @@ Wiimote::OverrideVec3(const ControllerEmu::ControlGroup* control_group, Common::
 Common::Vec3 Wiimote::GetTotalAcceleration() const
 {
   const Common::Vec3 default_accel = Common::Vec3(0, 0, float(GRAVITY_ACCELERATION));
-  const Common::Vec3 accel = m_imu_accelerometer->GetState().value_or(default_accel);
+  const auto measured_accel = m_imu_accelerometer->GetState();
+
+  // Real data is in the physical device's frame and needs the mount correction applied.
+  // The fallback is already expressed in the emulated Wii Remote's frame.
+  const Common::Vec3 accel =
+      measured_accel.has_value() ? m_imu_ir->GetMountRotation() * *measured_accel : default_accel;
 
   return OverrideVec3(m_imu_accelerometer, GetAcceleration(accel));
 }
@@ -1002,7 +1046,8 @@ Common::Vec3 Wiimote::GetTotalAcceleration() const
 Common::Vec3 Wiimote::GetTotalAngularVelocity() const
 {
   const Common::Vec3 default_ang_vel = {};
-  const Common::Vec3 ang_vel = m_imu_gyroscope->GetState().value_or(default_ang_vel);
+  const Common::Vec3 ang_vel =
+      m_imu_ir->GetMountRotation() * m_imu_gyroscope->GetState().value_or(default_ang_vel);
 
   return OverrideVec3(m_imu_gyroscope, GetAngularVelocity(ang_vel));
 }

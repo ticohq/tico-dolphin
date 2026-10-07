@@ -64,7 +64,8 @@
         "Up": "Y1+",
         "Down": "Y1-",
         "Left": "X1-",
-        "Right": "X1+"
+        "Right": "X1+",
+        "Recenter": "R3"
       },
       "IMUAccelerometer": {
         "Up": "Accel Up",
@@ -111,7 +112,8 @@
         "Up": "Y1+",
         "Down": "Y1-",
         "Left": "X1-",
-        "Right": "X1+"
+        "Right": "X1+",
+        "Recenter": "R3"
       },
       "IMUAccelerometer": {
         "Up": "Accel Up",

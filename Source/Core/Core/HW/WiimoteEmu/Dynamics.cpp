@@ -316,13 +316,17 @@ void EmulateIMUCursor(IMUCursorState* state, ControllerEmu::IMUCursor* imu_ir_gr
     return;
   }
 
+  // Correct for the device being mounted at a fixed angle relative to the direction it aims.
+  const auto mount_rotation = imu_ir_group->GetMountRotation();
+
   // Apply rotation from gyro data.
-  const auto gyro_rotation = GetRotationFromGyroscope(*ang_vel * -1 * time_elapsed);
+  const auto gyro_rotation =
+      GetRotationFromGyroscope(mount_rotation * (*ang_vel * -1 * time_elapsed));
   state->rotation = gyro_rotation * state->rotation;
 
   // If we have some non-zero accel data use it to adjust gyro drift.
   const auto accel_weight = imu_ir_group->GetAccelWeight();
-  auto const accel = imu_accelerometer_group->GetState().value_or(Common::Vec3{});
+  auto const accel = mount_rotation * imu_accelerometer_group->GetState().value_or(Common::Vec3{});
   if (accel.LengthSquared())
     state->rotation = ComplementaryFilter(state->rotation, accel, accel_weight);
 
