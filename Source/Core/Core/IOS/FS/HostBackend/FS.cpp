@@ -724,6 +724,28 @@ static u64 ComputeUsedClusters(const File::FSTEntry& parent_entry)
   return clusters;
 }
 
+#ifdef __SWITCH__
+// Horizon reports the size a file had when it was opened; IOS FS needs what
+// the game has written to it since.
+static void FillOpenFileSizes(
+    File::FSTEntry* dir, const std::map<std::string, std::weak_ptr<File::IOFile>>& open_files)
+{
+  for (File::FSTEntry& entry : dir->children)
+  {
+    if (entry.isDirectory)
+    {
+      FillOpenFileSizes(&entry, open_files);
+      continue;
+    }
+    const auto it = open_files.find(entry.physicalName);
+    if (it == open_files.end())
+      continue;
+    if (const std::shared_ptr<File::IOFile> file = it->second.lock())
+      entry.size = file->GetSize();
+  }
+}
+#endif
+
 Result<NandStats> HostFileSystem::GetNandStats()
 {
   const auto root_stats = GetDirectoryStats("/");
@@ -770,6 +792,9 @@ HostFileSystem::GetExtendedDirectoryStats(const std::string& wii_path)
   if (info.IsDirectory())
   {
     File::FSTEntry parent_dir = File::ScanDirectoryTree(path, true);
+#ifdef __SWITCH__
+    FillOpenFileSizes(&parent_dir, m_open_files);
+#endif
     FixupDirectoryEntries(&parent_dir, wii_path == "/");
 
     // add one for the folder itself
