@@ -235,5 +235,12 @@
   "emulator_undo_load": "Undo Last Load",
   "emulator_undo_save": "Load Overwritten State",
   "emulator_undo_load_done": "Went back to before the last load",
-  "emulator_undo_save_done": "Loaded the overwritten state"
+  "emulator_undo_save_done": "Loaded the overwritten state",
+  "emulator_cheat_unnamed": "Unnamed code",
+  "emulator_cheats_disabled": "Cheats are off: turn on Enable Cheats in Settings, then Restart",
+  "emulator_cheats_download": "Download Gecko Codes",
+  "emulator_cheats_downloading": "Downloading Gecko codes...",
+  "emulator_cheats_download_failed": "Could not download Gecko codes",
+  "emulator_cheats_download_none": "The code server has no Gecko codes for this game",
+  "emulator_cheats_downloaded": "Added %d new Gecko codes"
 }

@@ -53,6 +53,7 @@
 #include "VideoCommon/Resources/CustomResourceManager.h"
 
 #include "DolphinNX/Audio.h"
+#include "DolphinNX/Cheats.h"
 #include "DolphinNX/Input.h"
 #include "DolphinNX/TicoCore.h"
 #include "DolphinNX/Overlay/VulkanOverlay.h"
@@ -75,6 +76,8 @@ static std::atomic<u64> s_presented_frames{0};
 
 static std::thread s_state_load_thread;
 static std::atomic<bool> s_state_load_in_progress{false};
+static std::thread s_cheat_download_thread;
+static std::atomic<bool> s_cheat_download_in_progress{false};
 
 static std::optional<std::string> GetLaunchRomPath(int argc, char* argv[])
 {
@@ -1315,6 +1318,8 @@ int main(int argc, char* argv[])
       return preview;
     });
 
+    SwitchFrontend::OverlayUI::SetCheatCallbacks(&DolphinNX::Cheats::List,
+                                                 &DolphinNX::Cheats::Toggle);
     SwitchFrontend::OverlayUI::SetUndoStateCallback([] {
       SwitchFrontend::OverlayUI::UndoStateInfo info;
       info.can_undo_load = State::CanUndoLoadState();
@@ -1432,6 +1437,9 @@ int main(int argc, char* argv[])
           LOG("Overlay: settings applied\n");
         }
 
+        // cheats toggled in the menu reach the game
+        DolphinNX::Cheats::ApplyIfChanged();
+
         const Action overlay_action = DolphinNX::VulkanOverlay::ConsumeAction();
         if (OverlayUI::IsSaveStateAction(overlay_action))
         {
@@ -1510,6 +1518,22 @@ int main(int argc, char* argv[])
             system.GetProcessorInterface().ResetButton_Tap();
             DolphinNX::VulkanOverlay::SetVisible(false);
             break;
+          case Action::AddCheat:
+            // the Cheats menu's "Download Gecko codes" row
+            if (!s_cheat_download_in_progress.exchange(true))
+            {
+              if (s_cheat_download_thread.joinable())
+                s_cheat_download_thread.join();
+              OverlayUI::ShowToast(
+                  SwitchFrontend::OverlayTranslation::tr("emulator_cheats_downloading"));
+              s_cheat_download_thread = std::thread([] {
+                const std::string message = DolphinNX::Cheats::DownloadGeckoCodes();
+                SwitchFrontend::OverlayUI::ShowToast(message);
+                DolphinNX::VulkanOverlay::RequestCheatRefresh();
+                s_cheat_download_in_progress.store(false);
+              });
+            }
+            break;
           case Action::NoticeChoice:
             // the controller modes tip: any choice closes it
             OverlayUI::ConsumeNoticeChoice();
@@ -1569,6 +1593,8 @@ int main(int argc, char* argv[])
       s_state_load_thread.join();
     }
 
+    if (s_cheat_download_thread.joinable())
+      s_cheat_download_thread.join();
     LOG("VulkanOverlay::Shutdown...\n");
     DolphinNX::VulkanOverlay::Shutdown();
 

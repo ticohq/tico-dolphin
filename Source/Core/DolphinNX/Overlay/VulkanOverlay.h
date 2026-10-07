@@ -32,6 +32,9 @@ void SetVisible(bool visible);
 // modes tip); the choice comes back as Action::NoticeChoice.
 void ShowNotice(std::string message, std::vector<std::string> choices);
 
+// Reads the Cheats menu's list again on the next frame (e.g. after a download).
+void RequestCheatRefresh();
+
 // The action the menu returned since the last call, once.
 SwitchFrontend::OverlayUI::Action ConsumeAction();
 }  // namespace DolphinNX::VulkanOverlay
