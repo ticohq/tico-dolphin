@@ -92,22 +92,38 @@ target_link_libraries(dolphin-nx PRIVATE
 # NVK / Vulkan (static) — replaces OGL/EGL Mesa stack
 # Use Mesa's public loaderless libvulkan.a package instead of linking
 # libnvk.a and every support archive manually.
-if(DEFINED MESA_NVK_DIR)
-  target_link_libraries(dolphin-nx PRIVATE
-    ${MESA_NVK_DIR}/src/nouveau/vulkan/libvulkan.a
-  )
+# A /nvk-build tree is used when there is one, otherwise switch-dev's Mesa
+# for Horizon in the portlibs.
+if(DEFINED MESA_NVK_DIR AND EXISTS "${MESA_NVK_DIR}/src/nouveau/vulkan/libvulkan.a")
+  set(DOLPHIN_NX_VULKAN_LIBRARY "${MESA_NVK_DIR}/src/nouveau/vulkan/libvulkan.a")
+else()
+  set(DOLPHIN_NX_VULKAN_LIBRARY "${DEVKITPRO}/portlibs/switch/lib/libvulkan.a")
 endif()
+target_link_libraries(dolphin-nx PRIVATE ${DOLPHIN_NX_VULKAN_LIBRARY})
 
-# Nouveau DRM + compression (system libraries from devkitPro portlibs)
-target_link_libraries(dolphin-nx PRIVATE
-  -ldrm_nouveau
-  -lzstd
-  -lz
-)
+# The /nvk-build driver needs libdrm_nouveau; the portlibs one needs what its
+# vulkan.pc names instead (libelf, expat). Both need zstd and zlib.
+foreach(dep drm_nouveau elf expat zstd z)
+  find_library(DOLPHIN_NX_VULKAN_DEP_${dep} ${dep}
+    PATHS "${DEVKITPRO}/portlibs/switch/lib" NO_DEFAULT_PATH)
+  if(DOLPHIN_NX_VULKAN_DEP_${dep})
+    target_link_libraries(dolphin-nx PRIVATE ${DOLPHIN_NX_VULKAN_DEP_${dep}})
+  endif()
+endforeach()
 
 # libnx + SDL2 (from devkitPro portlibs, NOT bundled) — full paths to avoid search issues
 target_link_libraries(dolphin-nx PRIVATE
   ${DEVKITPRO}/portlibs/switch/lib/libSDL2.a
+)
+# switch-dev's SDL2 is built with its EGL video driver.
+foreach(dep EGL GLESv2 glapi)
+  find_library(DOLPHIN_NX_SDL_DEP_${dep} ${dep}
+    PATHS "${DEVKITPRO}/portlibs/switch/lib" NO_DEFAULT_PATH)
+  if(DOLPHIN_NX_SDL_DEP_${dep})
+    target_link_libraries(dolphin-nx PRIVATE ${DOLPHIN_NX_SDL_DEP_${dep}})
+  endif()
+endforeach()
+target_link_libraries(dolphin-nx PRIVATE
   ${DEVKITPRO}/libnx/lib/libnx.a
   m
 )
