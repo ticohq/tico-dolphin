@@ -59,6 +59,7 @@ enum NavBits : unsigned int
 // --- shared between the main loop and the drawing thread ---
 std::atomic_bool s_registered = false;
 std::atomic_bool s_visible = false;
+std::atomic_bool s_cheat_refresh = false;
 std::atomic_int s_pending_action = 0;
 std::atomic_uint s_pending_nav = 0;
 std::atomic_bool s_touch_down = false;
@@ -185,6 +186,9 @@ void DrawCallback(Vulkan::VKFramebuffer* fb, VkCommandBuffer cmd)
       s_pending_notice.reset();
     }
   }
+
+  if (s_cheat_refresh.exchange(false))
+    OverlayUI::RefreshCheatList();
 
   const bool visible = s_visible.load();
   if (visible != s_shown)
@@ -379,6 +383,11 @@ void ShowNotice(std::string message, std::vector<std::string> choices)
   std::lock_guard lock(s_notice_mutex);
   s_pending_notice.emplace(std::move(message), std::move(choices));
   s_visible.store(true);
+}
+
+void RequestCheatRefresh()
+{
+  s_cheat_refresh.store(true);
 }
 
 Action ConsumeAction()
