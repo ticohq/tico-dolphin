@@ -546,7 +546,7 @@ bool WIARVZFileReader<RVZ>::ReadFromGroups(u64* offset, u64* size, u8** out_ptr,
 
       if (!chunk.Read(offset_in_group, bytes_to_read, *out_ptr))
       {
-        m_cached_chunk_offset = std::numeric_limits<u64>::max();  // Invalidate the cache
+        DropCachedChunk(group_offset_in_file);
         return false;
       }
 
@@ -576,8 +576,14 @@ WIARVZFileReader<RVZ>::ReadCompressedData(u64 offset_in_file, u64 compressed_siz
                                           WIARVZCompressionType compression_type,
                                           u32 exception_lists, u32 rvz_packed_size, u64 data_offset)
 {
-  if (offset_in_file == m_cached_chunk_offset)
-    return m_cached_chunk;
+  for (auto it = m_cached_chunks.begin(); it != m_cached_chunks.end(); ++it)
+  {
+    if (it->offset_in_file == offset_in_file)
+    {
+      m_cached_chunks.splice(m_cached_chunks.begin(), m_cached_chunks, it);
+      return m_cached_chunks.front().chunk;
+    }
+  }
 
   std::unique_ptr<Decompressor> decompressor;
   switch (compression_type)
@@ -607,11 +613,35 @@ WIARVZFileReader<RVZ>::ReadCompressedData(u64 offset_in_file, u64 compressed_siz
 
   const bool compressed_exception_lists = compression_type > WIARVZCompressionType::Purge;
 
-  m_cached_chunk =
-      Chunk(&m_file, offset_in_file, compressed_size, decompressed_size, exception_lists,
-            compressed_exception_lists, rvz_packed_size, data_offset, std::move(decompressor));
-  m_cached_chunk_offset = offset_in_file;
-  return m_cached_chunk;
+  // room for it, from the chunk read longest ago
+  const u64 size = compressed_size + decompressed_size;
+  while (!m_cached_chunks.empty() && (m_cached_chunks.size() >= MAX_CACHED_CHUNKS ||
+                                      m_cached_chunk_bytes + size > MAX_CACHED_CHUNK_BYTES))
+  {
+    m_cached_chunk_bytes -= m_cached_chunks.back().size;
+    m_cached_chunks.pop_back();
+  }
+
+  m_cached_chunks.push_front(
+      {offset_in_file, size,
+       Chunk(&m_file, offset_in_file, compressed_size, decompressed_size, exception_lists,
+             compressed_exception_lists, rvz_packed_size, data_offset, std::move(decompressor))});
+  m_cached_chunk_bytes += size;
+  return m_cached_chunks.front().chunk;
+}
+
+template <bool RVZ>
+void WIARVZFileReader<RVZ>::DropCachedChunk(u64 offset_in_file)
+{
+  for (auto it = m_cached_chunks.begin(); it != m_cached_chunks.end(); ++it)
+  {
+    if (it->offset_in_file == offset_in_file)
+    {
+      m_cached_chunk_bytes -= it->size;
+      m_cached_chunks.erase(it);
+      return;
+    }
+  }
 }
 
 template <bool RVZ>

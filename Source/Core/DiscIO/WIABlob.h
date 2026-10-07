@@ -5,6 +5,7 @@
 
 #include <array>
 #include <limits>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -368,8 +369,20 @@ private:
 
   File::DirectIOFile m_file;
   std::string m_path;
-  Chunk m_cached_chunk;
-  u64 m_cached_chunk_offset = std::numeric_limits<u64>::max();
+  // The chunks read last, most recent first. A game often reads from two places
+  // at once (streamed audio and its data, for one), and with only one chunk kept
+  // each switch read and decompressed a whole chunk again.
+  struct CachedChunk
+  {
+    u64 offset_in_file;
+    u64 size;  // the compressed and decompressed buffers together
+    Chunk chunk;
+  };
+  static constexpr size_t MAX_CACHED_CHUNKS = 8;
+  static constexpr u64 MAX_CACHED_CHUNK_BYTES = 32 * 1024 * 1024;
+  std::list<CachedChunk> m_cached_chunks;
+  u64 m_cached_chunk_bytes = 0;
+  void DropCachedChunk(u64 offset_in_file);
   WiiEncryptionCache m_encryption_cache;
 
   std::vector<HashExceptionEntry> m_exception_list;
