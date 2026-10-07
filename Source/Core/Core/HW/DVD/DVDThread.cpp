@@ -12,6 +12,7 @@
 #include "Common/ChunkFile.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
+#include "Common/Thread.h"
 #include "Common/MsgHandler.h"
 #include "Common/SPSCQueue.h"
 #include "Common/Timer.h"
@@ -295,6 +296,13 @@ void DVDThread::FinishRead(u64 id, s64 cycles_late)
 
 void DVDThread::ProcessReadRequest(ReadRequest&& request)
 {
+#ifdef __SWITCH__
+  // Ahead of the threads it shares a core with (Vulkan's submit thread, audio,
+  // shader compiling), which Horizon doesn't take turns with: emulation waits
+  // for a read that isn't done in time, and reads are short bursts.
+  [[maybe_unused]] static thread_local const bool priority_raised =
+      Common::AdjustCurrentThreadPriority(-1);
+#endif
   m_file_logger.Log(*m_disc, request.partition, request.dvd_offset);
 
   std::vector<u8> buffer(request.length);
