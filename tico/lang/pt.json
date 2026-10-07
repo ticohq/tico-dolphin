@@ -230,5 +230,7 @@
   "settings_dolphin_fast_texture_sampling": "Amostragem Rápida de Texturas",
   "settings_dolphin_performance_queries": "Consultas de Desempenho",
   "settings_dolphin_pointer_yaw": "Alcance do ponteiro (graus)",
-  "settings_dolphin_calibrate_on_recenter": "Calibrar suporte ao recentralizar"
+  "settings_dolphin_calibrate_on_recenter": "Calibrar suporte ao recentralizar",
+  "settings_dolphin_gc_bba": "Adaptador de banda larga (jogo online)",
+  "settings_dolphin_wiilink": "WiiConnect24 via WiiLink"
 }

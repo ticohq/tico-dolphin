@@ -620,6 +620,13 @@
               "type": "bool",
               "default": "disabled",
               "restart": true
+            },
+            {
+              "key": "dolphin_gc_bba",
+              "label": "settings_dolphin_gc_bba",
+              "type": "bool",
+              "default": "disabled",
+              "restart": true
             }
           ]
         },
@@ -751,6 +758,13 @@
             {
               "key": "dolphin_wii_logi_microphone_enable",
               "label": "settings_dolphin_logitech_usb_microphone",
+              "type": "bool",
+              "default": "disabled",
+              "restart": true
+            },
+            {
+              "key": "dolphin_wiilink",
+              "label": "settings_dolphin_wiilink",
               "type": "bool",
               "default": "disabled",
               "restart": true

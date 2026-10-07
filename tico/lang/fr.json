@@ -230,5 +230,7 @@
   "settings_dolphin_fast_texture_sampling": "Échantillonnage Rapide Textures",
   "settings_dolphin_performance_queries": "Requêtes de Performance",
   "settings_dolphin_pointer_yaw": "Portée du pointeur (degrés)",
-  "settings_dolphin_calibrate_on_recenter": "Calibrer le support au recentrage"
+  "settings_dolphin_calibrate_on_recenter": "Calibrer le support au recentrage",
+  "settings_dolphin_gc_bba": "Adaptateur haut débit (jeu en ligne)",
+  "settings_dolphin_wiilink": "WiiConnect24 via WiiLink"
 }

@@ -47,6 +47,9 @@
 #include <resolv.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
 #endif
 
 #ifdef __ANDROID__
@@ -404,6 +407,29 @@ static std::optional<DefaultInterface> GetSystemDefaultInterface()
       }
     }
   }
+#elif defined(__SWITCH__)
+  // The console's IPv4 configuration, from NIFM (Horizon has no getifaddrs).
+  if (R_FAILED(nifmInitialize(NifmServiceType_User)))
+    return std::nullopt;
+  Common::ScopeGuard nifm_guard{[] { nifmExit(); }};
+
+  u32 address = 0;
+  u32 netmask = 0;
+  u32 gateway = 0;
+  u32 primary_dns = 0;
+  u32 secondary_dns = 0;
+  if (R_FAILED(nifmGetCurrentIpConfigInfo(&address, &netmask, &gateway, &primary_dns,
+                                          &secondary_dns)) ||
+      address == 0)
+  {
+    return std::nullopt;
+  }
+
+  const in_addr broadcast = std::bit_cast<in_addr>((address & netmask) | ~netmask);
+  if (routing_table.empty())
+    routing_table = {{0, {}, {}, std::bit_cast<in_addr>(gateway)}};
+  return DefaultInterface{std::bit_cast<in_addr>(address), std::bit_cast<in_addr>(netmask),
+                          broadcast, std::move(routing_table)};
 #elif defined(__ANDROID__)
   const u32 addr = GetNetworkIpAddress();
   const u32 prefix_length = GetNetworkPrefixLength();
@@ -1117,6 +1143,22 @@ IPCReply NetIPTopDevice::HandleGetInterfaceOptRequest(const IOCtlVRequest& reque
       if (AdapterAddresses != nullptr)
       {
         FREE(AdapterAddresses);
+      }
+    }
+#elif defined(__SWITCH__)
+    // the console's DNS server, from NIFM
+    if (!Core::WantsDeterminism() && R_SUCCEEDED(nifmInitialize(NifmServiceType_User)))
+    {
+      Common::ScopeGuard nifm_guard{[] { nifmExit(); }};
+      u32 current_address = 0;
+      u32 netmask = 0;
+      u32 gateway = 0;
+      u32 primary_dns = 0;
+      u32 secondary_dns = 0;
+      if (R_SUCCEEDED(nifmGetCurrentIpConfigInfo(&current_address, &netmask, &gateway,
+                                                 &primary_dns, &secondary_dns)))
+      {
+        address = ntohl(primary_dns);
       }
     }
 #elif (defined(__linux__) && !defined(ANDROID)) || defined(__APPLE__) || defined(__FreeBSD__) ||   \
