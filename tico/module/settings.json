@@ -630,9 +630,13 @@
               "key": "dolphin_language",
               "label": "settings_dolphin_system_language",
               "type": "enum",
-              "default": "1",
+              "default": "auto",
               "restart": true,
               "choices": [
+                {
+                  "label": "Auto (console language)",
+                  "value": "auto"
+                },
                 {
                   "label": "Japanese",
                   "value": "0"
@@ -2825,7 +2829,7 @@
               "key": "dolphin_gpu_texture_decoding",
               "label": "settings_dolphin_gpu_texture_decoding",
               "type": "bool",
-              "default": "disabled"
+              "default": "enabled"
             },
             {
               "key": "dolphin_pixel_lighting",

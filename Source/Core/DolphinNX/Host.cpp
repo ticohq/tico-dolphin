@@ -2,9 +2,12 @@
 // Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <switch.h>
 
 #include "Common/Logging/Log.h"
 #include "Core/Host.h"
@@ -15,7 +18,18 @@ extern bool s_running;
 
 std::vector<std::string> Host_GetPreferredLocales()
 {
-  return {};
+  // the console's language, e.g. "en-US" or "zh-Hans"
+  if (R_FAILED(setInitialize()))
+    return {};
+  u64 language_code = 0;
+  const Result rc = setGetSystemLanguage(&language_code);
+  setExit();
+  if (R_FAILED(rc))
+    return {};
+
+  char tag[sizeof(language_code) + 1] = {};
+  std::memcpy(tag, &language_code, sizeof(language_code));
+  return {tag};
 }
 
 void Host_PPCSymbolsChanged() {}
