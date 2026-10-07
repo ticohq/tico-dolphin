@@ -289,6 +289,13 @@ void CPUInfo::Detect()
     bCRC32 = model_number >= minimum_model;
   }
 #endif
+#elif defined(__SWITCH__)
+  // The Tegra X1's Cortex-A57 cores have the CRC32 and crypto extensions.
+  model_name = "Nintendo Switch";
+  bAES = true;
+  bSHA1 = true;
+  bSHA2 = true;
+  bCRC32 = true;
 #elif defined(_WIN32)
   // NOTE All this info is from cpu core 0 only.
 
