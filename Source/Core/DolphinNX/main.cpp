@@ -497,7 +497,7 @@ static bool SetSwitchClockRate(bool cpu, u32 hz)
   return true;
 }
 
-// A clock manager (sys-clk, or Horizon-OC's hoc-clk) puts its own clocks back
+// A clock manager (sys-clk and its forks) puts its own clocks back
 // when it sees others: hoc-clk resets any clock it didn't set to stock on its
 // next tick. Both take an override (command 8: module, Hz) that they keep
 // applying, docked or not, until it is cleared with 0.
@@ -529,7 +529,8 @@ static bool HasService(const char* name)
 
 static bool OverrideClocksWithClockManager()
 {
-  for (const char* name : {"hoc:clk", "sysclk"})
+  // Horizon-OC's hoc-clk, kefir/4IFIR's sys-clk-OC, sys-clk
+  for (const char* name : {"hoc:clk", "sysclkOC", "sysclk"})
   {
     // GetService waits for a service that isn't there, so ask first
     if (!HasService(name))
