@@ -345,6 +345,17 @@ void FrameDumper::SaveScreenshot(std::string filename)
   m_screenshot_request.Set();
 }
 
+void FrameDumper::RequestScreenshot(std::string filename)
+{
+  m_screenshot_completed.Reset();
+  SaveScreenshot(std::move(filename));
+}
+
+bool FrameDumper::WaitForScreenshot(std::chrono::milliseconds timeout)
+{
+  return m_screenshot_completed.WaitFor(timeout);
+}
+
 bool FrameDumper::IsFrameDumping() const
 {
   if (m_screenshot_request.IsSet())

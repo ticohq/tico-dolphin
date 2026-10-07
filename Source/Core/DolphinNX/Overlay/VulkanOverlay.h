@@ -32,6 +32,15 @@ void SetVisible(bool visible);
 // modes tip); the choice comes back as Action::NoticeChoice.
 void ShowNotice(std::string message, std::vector<std::string> choices);
 
+// Opens the menu on "Continue where you left off?"; Continue comes back as the
+// auto slot's load action, Start Over as Action::Resume.
+void ShowResumePrompt();
+
+// A picture (PNG) as a texture for the menu, and its width / height; 0 when there
+// is none. Only while the menu is being drawn (e.g. from a slot preview callback).
+unsigned long long LoadPicture(const std::string& path, float* aspect);
+void FreePicture(unsigned long long texture);
+
 // Reads the Cheats menu's list again on the next frame (e.g. after a download).
 void RequestCheatRefresh();
 

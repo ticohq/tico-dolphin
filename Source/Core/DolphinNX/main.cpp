@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <cstdarg>
 #include <atomic>
 #include <memory>
@@ -32,6 +33,7 @@
 #include "Common/Version.h"
 #include "Core/Boot/Boot.h"
 #include "Core/BootManager.h"
+#include "Core/Config/AchievementSettings.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "AudioCommon/AudioCommon.h"
@@ -49,6 +51,7 @@
 #include "VideoCommon/VideoConfig.h"
 #include "VideoCommon/VideoEvents.h"
 #include "VideoCommon/Fifo.h"
+#include "VideoCommon/FrameDumper.h"
 #include "VideoCommon/Present.h"
 #include "VideoCommon/Resources/CustomResourceManager.h"
 
@@ -109,6 +112,8 @@ static std::string s_self_nro;
 static std::vector<std::string> s_launch_args;
 static bool s_relaunch = false;
 
+static void LOG(const char* fmt, ...);
+
 static std::string StateSlotPath(int slot)
 {
   char suffix[8];
@@ -124,6 +129,82 @@ static std::string TrFormat(const char* key, int value)
   return text;
 }
 
+// Each state's picture sits beside it.
+static std::string StatePicturePath(int slot)
+{
+  return StateSlotPath(slot) + ".png";
+}
+
+// The picture taken when the menu opened (or the session ended): the game as
+// it is saved.
+static std::string PausePicturePath()
+{
+  return File::GetUserPath(D_STATESAVES_IDX) + "pause.png";
+}
+
+// Left by Restart: the next launch starts over instead of offering the auto save.
+static std::string RestartMarkerPath()
+{
+  return StateSlotPath(SwitchFrontend::OverlayUI::kAutoStateSlot) + ".restart";
+}
+
+// A picture of the next frame the game draws.
+static void RequestPausePicture()
+{
+  if (!g_frame_dumper)
+    return;
+  std::remove(PausePicturePath().c_str());
+  g_frame_dumper->RequestScreenshot(PausePicturePath());
+}
+
+static void KeepPausePictureFor(int slot)
+{
+  if (File::Exists(PausePicturePath()))
+    File::Copy(PausePicturePath(), StatePicturePath(slot), true);
+}
+
+// The game's state goes to the auto slot (listed first in Load State) whatever
+// ends the session: Exit, Restart or HOME.
+static bool s_auto_saved = false;
+static void WriteAutoSave(Core::System& system)
+{
+  if (s_auto_saved)
+    return;
+  s_auto_saved = true;
+  State::Save(system, SwitchFrontend::OverlayUI::kAutoStateSlot);
+  KeepPausePictureFor(SwitchFrontend::OverlayUI::kAutoStateSlot);
+  LOG("Auto save written\n");
+}
+
+// Loads a state (slot 0: one of Load State's undo rows) on a worker, with the
+// sound off meanwhile; the main loop waits for it.
+static void StartStateLoad(Core::System& system, int slot,
+                           SwitchFrontend::OverlayUI::Action action)
+{
+  using Action = SwitchFrontend::OverlayUI::Action;
+  if (s_state_load_in_progress.exchange(true, std::memory_order_acq_rel))
+  {
+    LOG("Overlay: LoadState slot %d ignored (load already in progress)\n", slot);
+    return;
+  }
+  if (s_state_load_thread.joinable())
+    s_state_load_thread.join();
+  AudioCommon::SetSoundStreamRunning(system, false);
+
+  s_state_load_thread = std::thread([&system, slot, action]() {
+    Common::SetCurrentThreadName("StateLoad - switchnx");
+    Common::SetCurrentThreadAffinity(2);
+    if (action == Action::UndoLoadState)
+      State::UndoLoadState(system);
+    else if (action == Action::UndoSaveState)
+      State::UndoSaveState(system);
+    else
+      State::Load(system, slot);
+    AudioCommon::SetSoundStreamRunning(system, true);
+    s_state_load_in_progress.store(false, std::memory_order_release);
+  });
+}
+
 // The first boot's tip: which hotkeys change the Wii controller mode.
 static void ShowControllerModesTip()
 {
@@ -135,7 +216,6 @@ static void ShowControllerModesTip()
        tr("emulator_controller_help_line_nso"), "OK"});
 }
 
-static void LOG(const char* fmt, ...);
 
 struct BootGameMetadata
 {
@@ -1310,15 +1390,25 @@ int main(int argc, char* argv[])
 
     SwitchFrontend::OverlayUI::SetSlotOccupiedCallback(
         [](int slot) { return File::Exists(StateSlotPath(slot)); });
+    // Called while the menu is drawn: each slot's picture, taken when it was saved.
     SwitchFrontend::OverlayUI::SetSlotPreviewCallback([](int slot) {
+      static std::array<unsigned long long, SwitchFrontend::OverlayUI::kAutoStateSlot + 1>
+          pictures{};
       SwitchFrontend::OverlayUI::SlotPreview preview;
+      if (slot < 1 || slot >= static_cast<int>(pictures.size()))
+        return preview;
+      // the slot may have been saved again since
+      DolphinNX::VulkanOverlay::FreePicture(pictures[slot]);
+      pictures[slot] = 0;
+
       struct stat st;
-      if (stat(StateSlotPath(slot).c_str(), &st) == 0)
-      {
-        char when[32];
-        if (std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M", std::localtime(&st.st_mtime)))
-          preview.saved_at = when;
-      }
+      if (stat(StateSlotPath(slot).c_str(), &st) != 0)
+        return preview;
+      char when[32];
+      if (std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M", std::localtime(&st.st_mtime)))
+        preview.saved_at = when;
+      pictures[slot] = DolphinNX::VulkanOverlay::LoadPicture(StatePicturePath(slot), &preview.aspect);
+      preview.texture = pictures[slot];
       return preview;
     });
 
@@ -1357,6 +1447,8 @@ int main(int argc, char* argv[])
     int frame = 0;
     bool overlay_paused_core = false;
     bool overlay_was_visible = false;
+    bool pause_pending = false;
+    auto pause_deadline = std::chrono::steady_clock::now();
     bool controller_modes_tip_pending = !PathIsFile(kControllerModesTipMarker);
     const auto startup_started_at = std::chrono::steady_clock::now();
     bool startup_watchdog_fired = false;
@@ -1383,7 +1475,32 @@ int main(int argc, char* argv[])
           {
             LOG("Overlay init succeeded during main loop after %llu presents\n",
                 static_cast<unsigned long long>(presented_frames));
-            if (controller_modes_tip_pending)
+            // Continue where you left off (tico's General > Continue Last Game), unless
+            // the game was restarted or runs in hardcore mode.
+            namespace OverlayUI = SwitchFrontend::OverlayUI;
+            const bool restarted = std::remove(RestartMarkerPath().c_str()) == 0;
+            const bool hardcore =
+                Config::Get(Config::RA_ENABLED) && Config::Get(Config::RA_HARDCORE_ENABLED);
+            bool resume_prompt = false;
+            if (!restarted && !hardcore && File::Exists(StateSlotPath(OverlayUI::kAutoStateSlot)))
+            {
+              const std::string mode = SwitchFrontend::TicoConfig::ResumeOnLaunch();
+              if (mode == "always")
+              {
+                StartStateLoad(system, OverlayUI::kAutoStateSlot, OverlayUI::Action::None);
+                OverlayUI::ShowToast(
+                    SwitchFrontend::OverlayTranslation::tr("emulator_auto_loaded"));
+                LOG("Overlay: auto save loaded (Continue Last Game: always)\n");
+              }
+              else if (mode != "never")
+              {
+                DolphinNX::VulkanOverlay::ShowResumePrompt();
+                resume_prompt = true;
+                LOG("Overlay: resume prompt opened\n");
+              }
+            }
+            // the first boot's tip waits for a launch without the resume prompt
+            if (controller_modes_tip_pending && !resume_prompt)
             {
               ShowControllerModesTip();
               MarkControllerModesTipShown();
@@ -1414,8 +1531,21 @@ int main(int argc, char* argv[])
         const bool overlay_just_closed = !overlay_visible && overlay_was_visible;
         bool just_paused_for_overlay = false;
 
+        // The game pauses once the picture of it (saved with the states made from
+        // this menu) is taken, a frame or two after the menu opens.
         if (overlay_just_opened && Core::GetState(system) == Core::State::Running)
         {
+          RequestPausePicture();
+          pause_pending = true;
+          pause_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+        }
+        if (!overlay_visible)
+          pause_pending = false;
+        if (pause_pending && Core::GetState(system) == Core::State::Running &&
+            (!g_frame_dumper || g_frame_dumper->WaitForScreenshot(std::chrono::milliseconds(0)) ||
+             std::chrono::steady_clock::now() >= pause_deadline))
+        {
+          pause_pending = false;
           Core::SetState(system, Core::State::Paused);
           // Wait for the GPU thread to finish its in-flight frame before the main
           // thread starts driving presents via g_presenter->Present(). Without this,
@@ -1450,6 +1580,7 @@ int main(int argc, char* argv[])
         {
           const int slot = OverlayUI::GetStateSlotForAction(overlay_action);
           State::Save(system, slot);
+          KeepPausePictureFor(slot);
           OverlayUI::ShowToast(TrFormat("emulator_state_saved", slot));
           DolphinNX::VulkanOverlay::SetVisible(false);
           LOG("Overlay: SaveState slot %d\n", slot);
@@ -1462,24 +1593,9 @@ int main(int argc, char* argv[])
           const int slot = OverlayUI::IsLoadStateAction(overlay_action) ?
                                OverlayUI::GetStateSlotForAction(overlay_action) :
                                0;
-          if (!s_state_load_in_progress.exchange(true, std::memory_order_acq_rel))
+          if (!s_state_load_in_progress.load(std::memory_order_acquire))
           {
-            if (s_state_load_thread.joinable())
-              s_state_load_thread.join();
-            AudioCommon::SetSoundStreamRunning(system, false);
-
-            s_state_load_thread = std::thread([&system, slot, overlay_action]() {
-              Common::SetCurrentThreadName("StateLoad - switchnx");
-              Common::SetCurrentThreadAffinity(2);
-              if (overlay_action == Action::UndoLoadState)
-                State::UndoLoadState(system);
-              else if (overlay_action == Action::UndoSaveState)
-                State::UndoSaveState(system);
-              else
-                State::Load(system, slot);
-              AudioCommon::SetSoundStreamRunning(system, true);
-              s_state_load_in_progress.store(false, std::memory_order_release);
-            });
+            StartStateLoad(system, slot, overlay_action);
             if (slot == 0)
             {
               OverlayUI::ShowToast(SwitchFrontend::OverlayTranslation::tr(
@@ -1496,10 +1612,6 @@ int main(int argc, char* argv[])
               LOG("Overlay: LoadState slot %d (worker spawned)\n", slot);
             }
           }
-          else
-          {
-            LOG("Overlay: LoadState slot %d ignored (load already in progress)\n", slot);
-          }
           DolphinNX::VulkanOverlay::SetVisible(false);
         }
         else
@@ -1508,12 +1620,17 @@ int main(int argc, char* argv[])
           {
           case Action::Exit:
             LOG("Overlay: Exit requested\n");
+            WriteAutoSave(system);
             DolphinNX::VulkanOverlay::SetVisible(false);
             RequestChainloadBackToTico();
             break;
           case Action::Restart:
             // the NRO starts itself again with the same arguments
             LOG("Overlay: Restart requested\n");
+            WriteAutoSave(system);
+            // the relaunched game starts over instead of offering the auto save
+            if (std::FILE* marker = std::fopen(RestartMarkerPath().c_str(), "wb"))
+              std::fclose(marker);
             DolphinNX::VulkanOverlay::SetVisible(false);
             s_relaunch = true;
             s_running = false;
@@ -1596,6 +1713,18 @@ int main(int argc, char* argv[])
     {
       LOG("Waiting for in-flight state load worker before shutdown...\n");
       s_state_load_thread.join();
+    }
+
+    // HOME (or the game ending another way): the session's auto save, with a
+    // picture of the game when it is still running (paused, the menu took one)
+    if (presented_frames > 0 && Core::IsRunning(system))
+    {
+      if (Core::GetState(system) == Core::State::Running && g_frame_dumper)
+      {
+        RequestPausePicture();
+        g_frame_dumper->WaitForScreenshot(std::chrono::milliseconds(700));
+      }
+      WriteAutoSave(system);
     }
 
     if (s_cheat_download_thread.joinable())
