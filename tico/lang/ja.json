@@ -239,5 +239,11 @@
   "emulator_mods_disabled": "無効",
   "emulator_mods_none": "このゲームのRiivolution Modはありません",
   "emulator_mods_where": "sdmc:/tico/mods/wii にコピーしてください",
-  "settings_dolphin_override_region_settings": "リージョン不一致の設定を許可"
+  "settings_dolphin_override_region_settings": "リージョン不一致の設定を許可",
+  "settings_dolphin_skylander_portal": "スカイランダーズのポータルをエミュレート",
+  "emulator_portal": "ポータル",
+  "emulator_portal_slot": "スロット",
+  "emulator_portal_empty": "空き",
+  "emulator_portal_none": "フィギュアが見つかりません",
+  "emulator_portal_where": "フィギュアのダンプを sdmc:/tico/skylanders にコピーしてください"
 }

@@ -239,5 +239,11 @@
   "emulator_mods_disabled": "已禁用",
   "emulator_mods_none": "此游戏没有 Riivolution 模组",
   "emulator_mods_where": "请复制到 sdmc:/tico/mods/wii",
-  "settings_dolphin_override_region_settings": "允许不匹配的区域设置"
+  "settings_dolphin_override_region_settings": "允许不匹配的区域设置",
+  "settings_dolphin_skylander_portal": "模拟 Skylanders 传送门",
+  "emulator_portal": "传送门",
+  "emulator_portal_slot": "槽位",
+  "emulator_portal_empty": "空",
+  "emulator_portal_none": "未找到人偶",
+  "emulator_portal_where": "请将人偶转储复制到 sdmc:/tico/skylanders"
 }

@@ -724,6 +724,13 @@
               "restart": true
             },
             {
+              "key": "dolphin_emulate_skylander_portal",
+              "label": "settings_dolphin_skylander_portal",
+              "type": "bool",
+              "default": "disabled",
+              "restart": true
+            },
+            {
               "key": "dolphin_widescreen",
               "label": "settings_dolphin_widescreen_wii",
               "type": "bool",

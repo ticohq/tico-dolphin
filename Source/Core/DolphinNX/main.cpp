@@ -61,6 +61,7 @@
 #include "DolphinNX/Cheats.h"
 #include "DolphinNX/Discs.h"
 #include "DolphinNX/LibraryScreen.h"
+#include "DolphinNX/Portal.h"
 #include "DolphinNX/Riivolution.h"
 #include "sdcache/sd_cache.h"
 #include "DolphinNX/Saves.h"
@@ -1555,6 +1556,10 @@ int main(int argc, char* argv[])
     if (is_wii_disc)
       SwitchFrontend::OverlayUI::SetModCallbacks(&DolphinNX::Riivolution::List,
                                                  &DolphinNX::Riivolution::Step);
+    if (boot_game_metadata && !IsGameCubeDisc(boot_game_metadata) &&
+        Config::Get(Config::MAIN_EMULATE_SKYLANDER_PORTAL))
+      SwitchFrontend::OverlayUI::SetPortalCallbacks(&DolphinNX::Portal::List,
+                                                    &DolphinNX::Portal::Step);
     SwitchFrontend::OverlayUI::SetUndoStateCallback([] {
       SwitchFrontend::OverlayUI::UndoStateInfo info;
       info.can_undo_load = State::CanUndoLoadState();
