@@ -23,6 +23,7 @@
 #include "Common/FileUtil.h"
 #include "Common/Logging/Log.h"
 #include "Common/Logging/LogManager.h"
+#include "Core/Config/DefaultLocale.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/SessionSettings.h"
@@ -95,7 +96,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 74> kDefault
     {"dolphin_cheats_enabled", "disabled"},
     {"dolphin_cheats_import", "enabled"},
     {"dolphin_skip_gc_bios", "disabled"},
-    {"dolphin_language", "1"},
+    {"dolphin_language", "auto"},
     {"dolphin_fast_disc_speed", "disabled"},
     {"dolphin_main_mmu", "disabled"},
     {"dolphin_rush_presentation", "disabled"},
@@ -120,7 +121,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 74> kDefault
     {"dolphin_wait_for_shaders", "disabled"},
     {"dolphin_anti_aliasing", "0"},
     {"dolphin_texture_cache_accuracy", "128"},
-    {"dolphin_gpu_texture_decoding", "disabled"},
+    {"dolphin_gpu_texture_decoding", "enabled"},
     {"dolphin_pixel_lighting", "disabled"},
     {"dolphin_fast_depth_calculation", "enabled"},
     {"dolphin_disable_fog", "disabled"},
@@ -1038,9 +1039,13 @@ private:
                     GetBool("dolphin_early_presentation",
                             Config::Get(Config::MAIN_SMOOTH_EARLY_PRESENTATION)));
 
+    // "auto": the console's language (Host_GetPreferredLocales)
     const int language =
-        std::clamp(GetInt("dolphin_language", static_cast<int>(Config::Get(Config::SYSCONF_LANGUAGE))),
-                   0, 9);
+        GetString("dolphin_language", "auto") == "auto" ?
+            static_cast<int>(Config::GetDefaultLanguage()) :
+            std::clamp(GetInt("dolphin_language",
+                              static_cast<int>(Config::Get(Config::SYSCONF_LANGUAGE))),
+                       0, 9);
     Config::SetBase(Config::SYSCONF_LANGUAGE, static_cast<u32>(language));
     Config::SetBase(Config::MAIN_GC_LANGUAGE,
                     DiscIO::ToGameCubeLanguage(static_cast<DiscIO::Language>(language)));
