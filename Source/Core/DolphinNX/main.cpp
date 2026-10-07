@@ -23,6 +23,9 @@
 
 #include <switch.h>
 
+#include <exception>
+#include <new>
+#include <malloc.h>
 #include <fmt/format.h>
 
 #include "Common/CommonPaths.h"
@@ -1391,6 +1394,72 @@ static void RemoveOldSystemCopy()
     fclose(f);
 }
 
+// Diagnostics: whatever ends the process says who did it in the log, with the
+// caller's address (map it with the load base logged at startup and the ELF).
+extern "C" {
+[[noreturn]] void __real_abort();
+[[noreturn]] void __real_exit(int code);
+[[noreturn]] void __real__exit(int code);
+
+[[noreturn]] void __wrap_abort()
+{
+  u64 thread_id = 0;
+  svcGetThreadId(&thread_id, CUR_THREAD_HANDLE);
+  LOG("FATAL: abort() from %p (thread %llx)\n", __builtin_return_address(0),
+      static_cast<unsigned long long>(thread_id));
+  __real_abort();
+}
+
+[[noreturn]] void __wrap_exit(int code)
+{
+  u64 thread_id = 0;
+  svcGetThreadId(&thread_id, CUR_THREAD_HANDLE);
+  LOG("exit(%d) from %p (thread %llx)\n", code, __builtin_return_address(0),
+      static_cast<unsigned long long>(thread_id));
+  __real_exit(code);
+}
+
+[[noreturn]] void __wrap__exit(int code)
+{
+  u64 thread_id = 0;
+  svcGetThreadId(&thread_id, CUR_THREAD_HANDLE);
+  LOG("_exit(%d) from %p (thread %llx)\n", code, __builtin_return_address(0),
+      static_cast<unsigned long long>(thread_id));
+  __real__exit(code);
+}
+}
+
+static void InstallCrashDiagnostics()
+{
+  LOG("Diagnostics: InstallCrashDiagnostics=%p (NRO load base = this - its ELF address)\n",
+      reinterpret_cast<void*>(&InstallCrashDiagnostics));
+  // built without exceptions: a failed allocation or a broken invariant ends here
+  std::set_terminate([] {
+    u64 thread_id = 0;
+    svcGetThreadId(&thread_id, CUR_THREAD_HANDLE);
+    LOG("FATAL: std::terminate (thread %llx), stack:\n",
+        static_cast<unsigned long long>(thread_id));
+    // the frame pointer chain, as Atmosphère's crash reports walk it
+    void** frame = static_cast<void**>(__builtin_frame_address(0));
+    for (int i = 0; i < 16 && frame && (reinterpret_cast<uintptr_t>(frame) & 0xF) == 0; ++i)
+    {
+      LOG("  #%d %p\n", i, frame[1]);
+      void** next = static_cast<void**>(frame[0]);
+      if (next <= frame)
+        break;
+      frame = next;
+    }
+    __real_abort();
+  });
+  std::set_new_handler([] {
+    struct mallinfo heap = mallinfo();
+    LOG("FATAL: out of memory (heap in use %zu MB, free %zu MB, SD cache %u MB)\n",
+        static_cast<size_t>(heap.uordblks) >> 20, static_cast<size_t>(heap.fordblks) >> 20,
+        wine_nx_sd_cache_mb());
+    __real_abort();
+  });
+}
+
 int main(int argc, char* argv[])
 {
   appletLockExit();
@@ -1412,6 +1481,7 @@ int main(int argc, char* argv[])
 
   LOG("=== Dolphin NX Standalone Boot Log ===\n");
   LOG("argc=%d\n", argc);
+  InstallCrashDiagnostics();
 
   EnsureRootMesaCacheMatchesCoreVersion();
 
@@ -2022,8 +2092,10 @@ int main(int argc, char* argv[])
     {
       LOG("Skipping Core::Stop/Core::Shutdown after a no-present startup stall to avoid exit "
           "deadlock\n");
+      // libnx can't detach a thread, and a joinable std::thread destroyed at exit
+      // ends the process: the stalled worker is left to the exit, unowned
       if (s_state_load_thread.joinable())
-        s_state_load_thread.detach();
+        new std::thread(std::move(s_state_load_thread));
       RequestChainloadBackToTico();
       return 1;
     }
