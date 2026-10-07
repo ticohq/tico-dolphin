@@ -91,6 +91,15 @@ MemoryCard::~MemoryCard()
   }
 }
 
+void MemoryCard::FlushForExit()
+{
+  if (m_flush_thread.joinable())
+  {
+    m_flush_trigger.Set();
+    m_flush_thread.join();
+  }
+}
+
 void MemoryCard::FlushThread()
 {
   if (!Config::Get(Config::SESSION_SAVE_DATA_WRITABLE))

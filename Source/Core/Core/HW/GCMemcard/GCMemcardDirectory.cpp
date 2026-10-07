@@ -295,11 +295,20 @@ GCMemcardDirectory::~GCMemcardDirectory()
   m_exiting.Set();
   m_flush_trigger.Set();
 
-#ifdef __LIBRETRO__
+#if defined(__LIBRETRO__) || defined(__SWITCH__)
   if (m_flush_thread.joinable())
 #endif
     m_flush_thread.join();
 
+  FlushToFile();
+}
+
+void GCMemcardDirectory::FlushForExit()
+{
+  m_exiting.Set();
+  m_flush_trigger.Set();
+  if (m_flush_thread.joinable())
+    m_flush_thread.join();
   FlushToFile();
 }
 

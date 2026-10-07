@@ -16,8 +16,9 @@ public:
                           int size_mbits = Memcard::MBIT_SIZE_MEMORY_CARD_2043)
       : m_card_slot(card_slot), m_nintendo_card_id(size_mbits)
   {
+    Register(this);
   }
-  virtual ~MemoryCardBase() = default;
+  virtual ~MemoryCardBase() { Unregister(this); }
   virtual s32 Read(u32 src_address, s32 length, u8* dest_address) = 0;
   virtual s32 Write(u32 dest_address, s32 length, const u8* src_address) = 0;
   virtual void ClearBlock(u32 address) = 0;
@@ -25,7 +26,17 @@ public:
   virtual void DoState(PointerWrap& p) = 0;
   u32 GetCardId() const { return m_nintendo_card_id; }
 
+  // Writes the card out now and stops its flushing; for leaving without
+  // shutting the emulation down (the system closing the app while it can't
+  // run the GPU). The card isn't written again after it.
+  virtual void FlushForExit() {}
+  static void FlushAllForExit();
+
 protected:
   ExpansionInterface::Slot m_card_slot;
   u16 m_nintendo_card_id;
+
+private:
+  static void Register(MemoryCardBase* card);
+  static void Unregister(MemoryCardBase* card);
 };

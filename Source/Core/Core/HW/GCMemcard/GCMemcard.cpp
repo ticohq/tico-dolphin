@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include "Common/StringUtil.h"
 #include "Common/Swap.h"
 
+#include "Core/HW/GCMemcard/GCMemcardBase.h"
 #include "Core/HW/GCMemcard/GCMemcardUtils.h"
 
 static constexpr std::optional<u64> BytesToMegabits(u64 bytes)
@@ -1422,3 +1424,28 @@ GCMemcardErrorCode Directory::CheckForErrorsWithBat(const BlockAlloc& bat) const
   return error_code;
 }
 }  // namespace Memcard
+
+namespace
+{
+std::mutex s_live_cards_mutex;
+std::vector<MemoryCardBase*> s_live_cards;
+}  // namespace
+
+void MemoryCardBase::Register(MemoryCardBase* card)
+{
+  std::lock_guard lock(s_live_cards_mutex);
+  s_live_cards.push_back(card);
+}
+
+void MemoryCardBase::Unregister(MemoryCardBase* card)
+{
+  std::lock_guard lock(s_live_cards_mutex);
+  std::erase(s_live_cards, card);
+}
+
+void MemoryCardBase::FlushAllForExit()
+{
+  std::lock_guard lock(s_live_cards_mutex);
+  for (MemoryCardBase* card : s_live_cards)
+    card->FlushForExit();
+}

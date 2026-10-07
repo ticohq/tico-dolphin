@@ -35,6 +35,7 @@ public:
                                                         const std::string& game_id);
   void FlushToFile();
   void FlushThread();
+  void FlushForExit() override;
   s32 Read(u32 src_address, s32 length, u8* dest_address) override;
   s32 Write(u32 dest_address, s32 length, const u8* src_address) override;
   void ClearBlock(u32 address) override;
