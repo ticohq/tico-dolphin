@@ -6,6 +6,7 @@
 #ifdef USE_RETRO_ACHIEVEMENTS
 #include <array>
 #include <atomic>
+#include <thread>
 #include <chrono>
 #include <ctime>
 #include <functional>
@@ -189,6 +190,7 @@ public:
 
 private:
   AchievementManager() = default;
+  ~AchievementManager() { JoinIdleThread(); }
 
   struct FilereaderState
   {
@@ -299,6 +301,12 @@ private:
   Common::AsyncWorkThread m_queue;
   Common::AsyncWorkThread m_image_queue;
   mutable std::recursive_mutex m_lock;
+
+  // DoIdle's thread, kept rather than detached: libnx can't detach a thread
+  // (std::thread::detach throws, and without exceptions that ends the process).
+  std::thread m_idle_thread;
+  std::atomic_bool m_idle_running{false};
+  void JoinIdleThread();
   std::recursive_mutex m_filereader_lock;
 };  // class AchievementManager
 
