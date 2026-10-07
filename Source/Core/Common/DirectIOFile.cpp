@@ -19,6 +19,9 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#ifdef __SWITCH__
+#include <mutex>
+#endif
 #include <unistd.h>
 
 #ifdef ANDROID
@@ -243,6 +246,11 @@ static bool OverlappedTransfer(HANDLE handle, u64 offset, auto* data_ptr, u64 si
 }
 #endif
 
+#ifdef __SWITCH__
+// positional transfers move the file offset, so two at once would race
+static std::mutex s_positional_io_mutex;
+#endif
+
 bool DirectIOFile::OffsetRead(u64 offset, u8* out_ptr, u64 size)
 {
 #ifdef __LIBRETRO__
@@ -259,6 +267,8 @@ bool DirectIOFile::OffsetRead(u64 offset, u8* out_ptr, u64 size)
 #if defined(_WIN32)
   return OverlappedTransfer<ReadFile>(m_handle, offset, out_ptr, size);
 #elif defined(__SWITCH__)
+  // newlib has no pread: seek, read and seek back, one transfer at a time
+  const std::lock_guard positional_io_guard(s_positional_io_mutex);
   auto original = lseek(m_fd, 0, SEEK_CUR);
   if (original == -1)
     return false;
@@ -288,6 +298,8 @@ bool DirectIOFile::OffsetWrite(u64 offset, const u8* in_ptr, u64 size)
 #if defined(_WIN32)
   return OverlappedTransfer<WriteFile>(m_handle, offset, in_ptr, size);
 #elif defined(__SWITCH__)
+  // newlib has no pwrite: seek, write and seek back, one transfer at a time
+  const std::lock_guard positional_io_guard(s_positional_io_mutex);
   auto original = lseek(m_fd, 0, SEEK_CUR);
   if (original == -1)
     return false;

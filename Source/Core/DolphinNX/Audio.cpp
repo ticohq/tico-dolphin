@@ -88,7 +88,8 @@ void SwitchStream::AudioCallback(void* userdata, u8* stream, int len)
   if (!s_thread_pinned.exchange(true, std::memory_order_acq_rel))
   {
     Common::SetCurrentThreadName("Audio thread - switchnx");
-    Common::SetCurrentThreadAffinity(1);
+    // with the host and worker threads, away from the CPU (0) and GPU (1) threads
+    Common::SetCurrentThreadAffinity(2);
   }
 
   auto* self = static_cast<SwitchStream*>(userdata);
