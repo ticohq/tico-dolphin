@@ -1,0 +1,65 @@
+{
+  "id": "dolphin",
+  "name": "Dolphin",
+  "nro": "tico-dolphin.nro",
+  "launch": "\"{nro}\" \"{rom}\" \"{title}\"",
+  "settings": "config/modules/dolphin/settings.json",
+  "config_file": "dolphin.jsonc",
+  "is_libretro": false,
+  "bool_true_value": "enabled",
+  "bool_false_value": "disabled",
+  "profiles": "config/cores/profiles/dolphin",
+  "profile_key": "dolphin_mapping_profile",
+  "system_dir": "gc",
+  "list_label": "Dolphin (GC, WII)",
+  "systems": [
+    {
+      "slug": "gc",
+      "title": "Gamecube",
+      "short_title": "GC",
+      "extensions": [
+        ".iso",
+        ".gcm",
+        ".chd",
+        ".rvz",
+        ".wbfs",
+        ".wia",
+        ".m3u",
+        ".wad"
+      ],
+      "naming": "redump",
+      "games_file": "gc.json",
+      "retroachievements_id": 16,
+      "colors": {
+        "start": "6F7AE6",
+        "end": "A88FE6",
+        "start_dark": "4F57A8",
+        "end_dark": "7A63A8"
+      }
+    },
+    {
+      "slug": "wii",
+      "title": "Nintendo Wii",
+      "short_title": "Wii",
+      "extensions": [
+        ".iso",
+        ".gcm",
+        ".chd",
+        ".rvz",
+        ".wbfs",
+        ".wia",
+        ".m3u",
+        ".wad"
+      ],
+      "naming": "redump",
+      "games_file": "wii.json",
+      "retroachievements_id": 19,
+      "colors": {
+        "start": "8CE3F5",
+        "end": "4CBBD6",
+        "start_dark": "65A6B3",
+        "end_dark": "38879B"
+      }
+    }
+  ]
+}
