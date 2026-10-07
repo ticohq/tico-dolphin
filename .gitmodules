@@ -135,3 +135,7 @@
 	url = https://github.com/microsoft/wil.git
 	shallow = true
 	
+[submodule "Externals/uam/uam"]
+	path = Externals/uam/uam
+	url = https://github.com/PalindromicBreadLoaf/uam.git
+	shallow = true

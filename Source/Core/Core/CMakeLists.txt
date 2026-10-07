@@ -785,6 +785,10 @@ if(ENABLE_VULKAN)
   target_link_libraries(core PUBLIC videovulkan)
 endif()
 
+if(ENABLE_DEKO3D)
+  target_link_libraries(core PUBLIC videodeko3d)
+endif()
+
 if(APPLE AND NOT LIBRETRO AND NOT SWITCH_STANDALONE)
   target_link_libraries(core PUBLIC videometal)
 endif()

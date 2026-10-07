@@ -1,0 +1,231 @@
+// Copyright 2026 Dolphin Emulator Project
+// Copyright 2026 PalindromicBreadLoaf (palindromicbreadloaf@tuta.com)
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "VideoBackends/Deko3D/DKStreamBuffer.h"
+
+#include "Common/Align.h"
+#include "Common/Assert.h"
+#include "Common/Logging/Log.h"
+#include "Common/MsgHandler.h"
+
+#include "VideoBackends/Deko3D/DKCommandBufferManager.h"
+#include "VideoBackends/Deko3D/DKContext.h"
+#include "VideoBackends/Deko3D/DKMemoryTracker.h"
+
+namespace Deko3D
+{
+DKStreamBuffer::DKStreamBuffer(u32 size, std::string name) : m_size(size), m_name(std::move(name))
+{
+}
+
+DKStreamBuffer::~DKStreamBuffer() = default;
+
+std::unique_ptr<DKStreamBuffer> DKStreamBuffer::Create(u32 size, std::string name)
+{
+  std::unique_ptr<DKStreamBuffer> buffer(new DKStreamBuffer(size, std::move(name)));
+  if (!buffer->Allocate())
+    return nullptr;
+
+  return buffer;
+}
+
+bool DKStreamBuffer::Allocate()
+{
+  m_size = static_cast<u32>(Common::AlignUp(m_size, DK_MEMBLOCK_ALIGNMENT));
+
+  m_memblock = dk::MemBlockMaker{g_dk_context->GetDevice(), m_size}
+                   .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
+                   .create();
+  if (!m_memblock)
+  {
+    ERROR_LOG_FMT(VIDEO, "deko3d: failed to allocate the {} byte '{}' stream buffer", m_size,
+                  m_name);
+    return false;
+  }
+
+  MemoryTracker::RegisterMemBlock(m_memblock, fmt::format("stream buffer '{}'", m_name));
+
+  m_gpu_addr = m_memblock.getGpuAddr();
+  m_host_pointer = static_cast<u8*>(m_memblock.getCpuAddr());
+  m_current_offset = 0;
+  m_current_gpu_position = 0;
+  m_tracked_fences.clear();
+  return true;
+}
+
+bool DKStreamBuffer::ReserveMemory(u32 num_bytes, u32 alignment)
+{
+  const u32 required_bytes = num_bytes + alignment;
+
+  // Check for sane allocations
+  if (required_bytes > m_size)
+  {
+    PanicAlertFmt("Attempting to allocate {} bytes from a {} byte stream buffer", num_bytes,
+                  m_size);
+
+    return false;
+  }
+
+  // Is the GPU behind or up to date with our current offset?
+  UpdateCurrentFencePosition();
+  if (m_current_offset >= m_current_gpu_position)
+  {
+    const u32 remaining_bytes = m_size - m_current_offset;
+    if (required_bytes <= remaining_bytes)
+    {
+      // Place at the current position, after the GPU position.
+      m_current_offset = Common::AlignUp(m_current_offset, alignment);
+      m_last_allocation_size = num_bytes;
+      return true;
+    }
+
+    // Check for space at the start of the buffer
+    if (required_bytes < m_current_gpu_position)
+    {
+      // Reset offset to zero, since we're allocating behind the gpu now
+      m_current_offset = 0;
+      m_last_allocation_size = num_bytes;
+      return true;
+    }
+  }
+
+  // Is the GPU ahead of our current offset?
+  if (m_current_offset < m_current_gpu_position)
+  {
+    // We have from m_current_offset..m_current_gpu_position space to use.
+    const u32 remaining_bytes = m_current_gpu_position - m_current_offset;
+    if (required_bytes < remaining_bytes)
+    {
+      // Place at the current position, since this is still behind the GPU.
+      m_current_offset = Common::AlignUp(m_current_offset, alignment);
+      m_last_allocation_size = num_bytes;
+      return true;
+    }
+  }
+
+  // Can we find a fence to wait on that will give us enough memory?
+  if (WaitForClearSpace(required_bytes))
+  {
+    m_current_offset = Common::AlignUp(m_current_offset, alignment);
+    m_last_allocation_size = num_bytes;
+    return true;
+  }
+
+  // No memory is available, and as such we just have to wait.
+  return false;
+}
+
+void DKStreamBuffer::CommitMemory(u32 final_num_bytes)
+{
+  ASSERT((m_current_offset + final_num_bytes) <= m_size);
+  ASSERT(final_num_bytes <= m_last_allocation_size);
+
+  // No cache maintenance is needed here.
+  m_current_offset += final_num_bytes;
+}
+
+void DKStreamBuffer::UpdateCurrentFencePosition()
+{
+  // Don't create a tracking entry if the GPU is caught up with the buffer.
+  if (m_current_offset == m_current_gpu_position)
+    return;
+
+  // Has the offset changed since the last fence?
+  const u64 counter = g_dk_command_buffer_mgr->GetCurrentFenceCounter();
+  if (!m_tracked_fences.empty() && m_tracked_fences.back().first == counter)
+  {
+    // Still haven't executed a command buffer. Just update the offset.
+    m_tracked_fences.back().second = m_current_offset;
+    return;
+  }
+
+  // New buffer, so update the GPU position while we're at it.
+  UpdateGPUPosition();
+  m_tracked_fences.emplace_back(counter, m_current_offset);
+}
+
+void DKStreamBuffer::UpdateGPUPosition()
+{
+  auto start = m_tracked_fences.begin();
+  auto end = start;
+
+  const u64 completed_counter = g_dk_command_buffer_mgr->GetCompletedFenceCounter();
+  while (end != m_tracked_fences.end() && completed_counter >= end->first)
+  {
+    m_current_gpu_position = end->second;
+    ++end;
+  }
+
+  if (start != end)
+    m_tracked_fences.erase(start, end);
+}
+
+bool DKStreamBuffer::WaitForClearSpace(u32 num_bytes)
+{
+  u32 new_offset = 0;
+  u32 new_gpu_position = 0;
+
+  auto iter = m_tracked_fences.begin();
+  for (; iter != m_tracked_fences.end(); ++iter)
+  {
+    // Would this fence bring us in line with the GPU?
+    u32 gpu_position = iter->second;
+    if (m_current_offset == gpu_position)
+    {
+      new_offset = 0;
+      new_gpu_position = 0;
+      break;
+    }
+
+    // Assuming that we wait for this fence, are we allocating in front of the GPU?
+    if (m_current_offset > gpu_position)
+    {
+      // This would suggest the GPU has now followed us and wrapped around.
+      const u32 remaining_space_after_offset = m_size - m_current_offset;
+      if (remaining_space_after_offset >= num_bytes)
+      {
+        // Switch to allocating in front of the GPU using the remainder of the buffer.
+        new_offset = m_current_offset;
+        new_gpu_position = gpu_position;
+        break;
+      }
+
+      // We can wrap around to the start, behind the GPU, if there is enough space.
+      if (gpu_position > num_bytes)
+      {
+        new_offset = 0;
+        new_gpu_position = gpu_position;
+        break;
+      }
+    }
+    else
+    {
+      // We're currently allocating behind the GPU.
+      u32 available_space_inbetween = gpu_position - m_current_offset;
+      if (available_space_inbetween > num_bytes)
+      {
+        // Leave the offset as-is, but update the GPU position.
+        new_offset = m_current_offset;
+        new_gpu_position = gpu_position;
+        break;
+      }
+    }
+  }
+
+  // Did any fences satisfy this condition?
+  if (iter == m_tracked_fences.end() ||
+      iter->first == g_dk_command_buffer_mgr->GetCurrentFenceCounter())
+  {
+    return false;
+  }
+
+  // Wait until this fence is signaled. This will fire the callback, updating the GPU position.
+  g_dk_command_buffer_mgr->WaitForFenceCounter(iter->first);
+  m_tracked_fences.erase(m_tracked_fences.begin(),
+                         m_current_offset == iter->second ? m_tracked_fences.end() : ++iter);
+  m_current_offset = new_offset;
+  m_current_gpu_position = new_gpu_position;
+  return true;
+}
+}  // namespace Deko3D

@@ -15,3 +15,7 @@ endif()
 if(ENABLE_VULKAN)
   add_subdirectory(Vulkan)
 endif()
+
+if(ENABLE_DEKO3D)
+  add_subdirectory(Deko3D)
+endif()
