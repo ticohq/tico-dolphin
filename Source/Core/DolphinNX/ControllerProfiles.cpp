@@ -51,10 +51,12 @@ constexpr std::array<const char*, 4> kProfileDirs = {{
 const std::map<std::string, std::vector<std::string>, std::less<>> kMappableGroups = {
     {Target::GameCube, {"Buttons", "D-Pad", "Main Stick", "C-Stick", "Triggers"}},
     {Target::Wiimote,
-     {"Buttons", "D-Pad", "Shake", "IR", "IMUAccelerometer", "IMUGyroscope", "IMUIR"}},
+     {"Buttons", "D-Pad", "Shake", "Tilt", "Swing", "IR", "IMUAccelerometer", "IMUGyroscope",
+      "IMUIR"}},
     {Target::WiimoteSideways,
-     {"Buttons", "D-Pad", "Shake", "IR", "IMUAccelerometer", "IMUGyroscope", "IMUIR"}},
-    {Target::Nunchuk, {"Stick", "Buttons", "IMUAccelerometer"}},
+     {"Buttons", "D-Pad", "Shake", "Tilt", "Swing", "IR", "IMUAccelerometer", "IMUGyroscope",
+      "IMUIR"}},
+    {Target::Nunchuk, {"Stick", "Buttons", "Shake", "Tilt", "Swing", "IMUAccelerometer"}},
     {Target::Classic, {"Buttons", "Left Stick", "Right Stick", "Triggers", "D-Pad"}},
 };
 
