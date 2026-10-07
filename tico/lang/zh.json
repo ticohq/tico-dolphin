@@ -234,5 +234,9 @@
   "settings_dolphin_gc_bba": "宽带适配器（在线游戏）",
   "settings_dolphin_wiilink": "通过 WiiLink 使用 WiiConnect24",
   "settings_dolphin_bba_dns": "宽带适配器 DNS",
-  "settings_dolphin_correct_time_drift": "校正时间偏差（在线游戏）"
+  "settings_dolphin_correct_time_drift": "校正时间偏差（在线游戏）",
+  "emulator_mods": "模组",
+  "emulator_mods_disabled": "已禁用",
+  "emulator_mods_none": "此游戏没有 Riivolution 模组",
+  "emulator_mods_where": "请复制到 sdmc:/tico/mods/wii"
 }

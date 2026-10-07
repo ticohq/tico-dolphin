@@ -61,6 +61,7 @@
 #include "DolphinNX/Cheats.h"
 #include "DolphinNX/Discs.h"
 #include "DolphinNX/LibraryScreen.h"
+#include "DolphinNX/Riivolution.h"
 #include "DolphinNX/Saves.h"
 #include "DolphinNX/Input.h"
 #include "DolphinNX/TicoCore.h"
@@ -1468,6 +1469,11 @@ int main(int argc, char* argv[])
       LOG("FATAL: Failed to create boot parameters for: %s\n", rom_path.c_str());
       return 1;
     }
+    // Riivolution mods turned on in the Mods menu
+    const bool is_wii_disc =
+        boot_game_metadata && boot_game_metadata->platform == DiscIO::Platform::WiiDisc;
+    if (is_wii_disc)
+      DolphinNX::Riivolution::AddPatches(*boot);
     LOG("Boot parameters created OK\n");
 
     LOG("Input::Init...\n");
@@ -1536,6 +1542,9 @@ int main(int argc, char* argv[])
     SwitchFrontend::OverlayUI::SetPlayerCallbacks(std::move(players));
     SwitchFrontend::OverlayUI::SetCheatCallbacks(&DolphinNX::Cheats::List,
                                                  &DolphinNX::Cheats::Toggle);
+    if (is_wii_disc)
+      SwitchFrontend::OverlayUI::SetModCallbacks(&DolphinNX::Riivolution::List,
+                                                 &DolphinNX::Riivolution::Step);
     SwitchFrontend::OverlayUI::SetUndoStateCallback([] {
       SwitchFrontend::OverlayUI::UndoStateInfo info;
       info.can_undo_load = State::CanUndoLoadState();

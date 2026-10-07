@@ -234,5 +234,9 @@
   "settings_dolphin_gc_bba": "ブロードバンドアダプタ（オンラインプレイ）",
   "settings_dolphin_wiilink": "WiiLinkでWiiConnect24",
   "settings_dolphin_bba_dns": "ブロードバンドアダプタのDNS",
-  "settings_dolphin_correct_time_drift": "時間のずれを補正（オンラインプレイ）"
+  "settings_dolphin_correct_time_drift": "時間のずれを補正（オンラインプレイ）",
+  "emulator_mods": "Mod",
+  "emulator_mods_disabled": "無効",
+  "emulator_mods_none": "このゲームのRiivolution Modはありません",
+  "emulator_mods_where": "sdmc:/tico/mods/wii にコピーしてください"
 }

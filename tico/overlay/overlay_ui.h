@@ -146,6 +146,20 @@ void SetCheatCallbacks(CheatListFn list_callback, CheatToggleFn toggle_callback)
 // Re-reads the cheat list, e.g. after a cheat was added outside the menu.
 void RefreshCheatList();
 
+// The Mods menu (Riivolution on Wii): each option of the game's patches and its
+// choice. Left/Right or A step the choice; they apply on the next start.
+struct ModMenuEntry {
+    std::string name;
+    // the selected choice; empty for a heading or a note
+    std::string value;
+    // -1 for a heading or a note, which can't be changed
+    int source_index = -1;
+};
+using ModListFn = std::function<std::vector<ModMenuEntry>()>;
+// steps the choice by direction (+1/-1); true when it changed
+using ModStepFn = std::function<bool(int source_index, int direction)>;
+void SetModCallbacks(ModListFn list_callback, ModStepFn step_callback);
+
 // Lists the rewind points as seconds before now, nearest first.
 using RewindListFn = std::function<std::vector<int>()>;
 void SetRewindCallback(RewindListFn callback);
