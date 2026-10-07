@@ -9,12 +9,81 @@
 
 #include <curl/curl.h>
 
+#ifdef __SWITCH__
+#include <string>
+#include <vector>
+
+#include <mbedtls/base64.h>
+#include <switch.h>
+#endif
+
 #include "Common/Logging/Log.h"
 #include "Common/ScopeGuard.h"
 #include "Common/StringUtil.h"
 
 namespace Common
 {
+#ifdef __SWITCH__
+namespace
+{
+// The console's trusted CA certificates, as PEM, for curl to verify servers with.
+std::string LoadHorizonCABundle()
+{
+  std::string pem;
+  if (R_FAILED(sslInitialize(1)))
+  {
+    ERROR_LOG_FMT(COMMON, "Could not open the ssl service.");
+    return pem;
+  }
+  Common::ScopeGuard ssl_guard([] { sslExit(); });
+
+  u32 all = static_cast<u32>(SslCaCertificateId_All);
+  u32 size = 0;
+  if (R_FAILED(sslGetCertificateBufSize(&all, 1, &size)))
+    return pem;
+
+  std::vector<u8> buffer(size);
+  u32 count = 0;
+  if (R_FAILED(sslGetCertificates(buffer.data(), size, &all, 1, &count)))
+    return pem;
+
+  const auto* certificates = reinterpret_cast<const SslBuiltInCertificateInfo*>(buffer.data());
+  for (u32 i = 0; i < count; ++i)
+  {
+    const SslBuiltInCertificateInfo& certificate = certificates[i];
+    if (certificate.status != SslTrustedCertStatus_EnabledTrusted)
+      continue;
+
+    size_t length = 0;
+    mbedtls_base64_encode(nullptr, 0, &length, certificate.cert_data, certificate.cert_size);
+    std::string base64(length, '\0');
+    if (mbedtls_base64_encode(reinterpret_cast<u8*>(base64.data()), base64.size(), &length,
+                              certificate.cert_data, certificate.cert_size) != 0)
+    {
+      continue;
+    }
+    base64.resize(length);
+
+    pem += "-----BEGIN CERTIFICATE-----\n";
+    for (size_t offset = 0; offset < base64.size(); offset += 64)
+    {
+      pem += base64.substr(offset, 64);
+      pem += '\n';
+    }
+    pem += "-----END CERTIFICATE-----\n";
+  }
+
+  return pem;
+}
+
+const std::string& GetHorizonCABundle()
+{
+  static const std::string bundle = LoadHorizonCABundle();
+  return bundle;
+}
+}  // namespace
+#endif
+
 class HttpRequest::Impl final
 {
 public:
@@ -127,6 +196,12 @@ HttpRequest::Impl::Impl(std::chrono::milliseconds timeout_ms, ProgressCallback c
     return;
 
   curl_easy_setopt(m_curl.get(), CURLOPT_NOPROGRESS, m_callback == nullptr);
+
+#ifdef __SWITCH__
+  const std::string& ca_bundle = GetHorizonCABundle();
+  curl_blob ca_blob{const_cast<char*>(ca_bundle.data()), ca_bundle.size(), CURL_BLOB_NOCOPY};
+  curl_easy_setopt(m_curl.get(), CURLOPT_CAINFO_BLOB, &ca_blob);
+#endif
 
   if (m_callback)
   {

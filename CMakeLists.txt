@@ -845,8 +845,9 @@ dolphin_find_optional_system_library(MBEDTLS Externals/mbedtls 2.28)
 
 if(NOT SWITCH_STANDALONE)
   dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
-  dolphin_find_optional_system_library(CURL Externals/curl)
 endif()
+# On Switch the bundled curl, on the bundled mbedtls (see Externals/curl)
+dolphin_find_optional_system_library(CURL Externals/curl)
 
 if(NOT ANDROID AND NOT IOS)
   if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
