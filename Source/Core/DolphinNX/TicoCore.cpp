@@ -90,7 +90,7 @@ constexpr std::array<std::string_view, 29> kFixedBaseOptions = {{
     "dolphin_mods_enable",
 }};
 
-constexpr std::array<std::pair<std::string_view, std::string_view>, 79> kDefaultOptions = {{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 80> kDefaultOptions = {{
     {"display_mode", "Display"},
     {"display_size", "4:3"},
     {"integer_scale", "Auto"},
@@ -102,6 +102,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 79> kDefault
     {"dolphin_skip_gc_bios", "disabled"},
     {"dolphin_language", "auto"},
     {"dolphin_override_region_settings", "disabled"},
+    {"dolphin_emulate_skylander_portal", "disabled"},
     {"dolphin_fast_disc_speed", "disabled"},
     {"dolphin_main_mmu", "disabled"},
     {"dolphin_rush_presentation", "disabled"},
@@ -172,7 +173,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 79> kDefault
     {"dolphin_save_load_settings", "disabled"},
 }};
 
-static_assert(kDefaultOptions.size() == 79);
+static_assert(kDefaultOptions.size() == 80);
 
 // The console's primary DNS server, from its network settings.
 std::optional<std::string> ConsoleDnsServer()
@@ -1078,6 +1079,10 @@ private:
     Config::SetBase(Config::SYSCONF_LANGUAGE, static_cast<u32>(language));
     // the language (and Wii settings) chosen even when the disc is from another
     // region, as PC Dolphin's Allow Mismatched Region Settings: for translated games
+    // the Skylanders portal on the Wii's USB; figures go on it from the Portal screen
+    Config::SetBase(Config::MAIN_EMULATE_SKYLANDER_PORTAL,
+                    GetBool("dolphin_emulate_skylander_portal",
+                            Config::Get(Config::MAIN_EMULATE_SKYLANDER_PORTAL)));
     Config::SetBase(Config::MAIN_OVERRIDE_REGION_SETTINGS,
                     GetBool("dolphin_override_region_settings",
                             Config::Get(Config::MAIN_OVERRIDE_REGION_SETTINGS)));

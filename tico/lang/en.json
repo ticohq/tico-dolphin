@@ -251,5 +251,11 @@
   "emulator_mods_disabled": "Disabled",
   "emulator_mods_none": "No Riivolution mods for this game",
   "emulator_mods_where": "Copy them to sdmc:/tico/mods/wii",
-  "settings_dolphin_override_region_settings": "Allow mismatched region settings"
+  "settings_dolphin_override_region_settings": "Allow mismatched region settings",
+  "settings_dolphin_skylander_portal": "Emulate Skylanders portal",
+  "emulator_portal": "Portal",
+  "emulator_portal_slot": "Slot",
+  "emulator_portal_empty": "Empty",
+  "emulator_portal_none": "No figures found",
+  "emulator_portal_where": "Copy figure dumps to sdmc:/tico/skylanders"
 }

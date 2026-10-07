@@ -239,5 +239,11 @@
   "emulator_mods_disabled": "Desactivado",
   "emulator_mods_none": "No hay mods de Riivolution para este juego",
   "emulator_mods_where": "Cópialos en sdmc:/tico/mods/wii",
-  "settings_dolphin_override_region_settings": "Permitir ajustes de región distintos"
+  "settings_dolphin_override_region_settings": "Permitir ajustes de región distintos",
+  "settings_dolphin_skylander_portal": "Emular portal de Skylanders",
+  "emulator_portal": "Portal",
+  "emulator_portal_slot": "Ranura",
+  "emulator_portal_empty": "Vacía",
+  "emulator_portal_none": "No se encontraron figuras",
+  "emulator_portal_where": "Copia los volcados de figuras en sdmc:/tico/skylanders"
 }

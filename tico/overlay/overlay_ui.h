@@ -160,6 +160,10 @@ using ModListFn = std::function<std::vector<ModMenuEntry>()>;
 using ModStepFn = std::function<bool(int source_index, int direction)>;
 void SetModCallbacks(ModListFn list_callback, ModStepFn step_callback);
 
+// The Portal menu (Skylanders, Disney Infinity): the toy pad's slots and the
+// figure on each, in the same rows; a change takes effect at once.
+void SetPortalCallbacks(ModListFn list_callback, ModStepFn step_callback);
+
 // Lists the rewind points as seconds before now, nearest first.
 using RewindListFn = std::function<std::vector<int>()>;
 void SetRewindCallback(RewindListFn callback);

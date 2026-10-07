@@ -22,6 +22,7 @@ add_executable(dolphin-nx
   Discs.cpp
   Saves.cpp
   Riivolution.cpp
+  Portal.cpp
   Library.cpp
   LibraryScreen.cpp
   MbedTLSEntropy.cpp
