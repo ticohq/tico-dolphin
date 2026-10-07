@@ -1467,6 +1467,11 @@ int main(int argc, char* argv[])
         entries.push_back({disc.displayName, disc.romPath == current});
       return entries;
     });
+    // Settings > Players: what is connected to each port and what the game gets
+    SwitchFrontend::OverlayUI::PlayerCallbacks players;
+    players.ports = &DolphinNX::Input::DescribePorts;
+    players.note = &DolphinNX::Input::PortsNote;
+    SwitchFrontend::OverlayUI::SetPlayerCallbacks(std::move(players));
     SwitchFrontend::OverlayUI::SetCheatCallbacks(&DolphinNX::Cheats::List,
                                                  &DolphinNX::Cheats::Toggle);
     SwitchFrontend::OverlayUI::SetUndoStateCallback([] {
@@ -1711,6 +1716,16 @@ int main(int argc, char* argv[])
             DolphinNX::VulkanOverlay::SetVisible(false);
             break;
           }
+          case Action::ControllerOrder:
+            // the system's controller screen; auto profiles then follow what is
+            // connected (Input re-applies them when a port's controller changes)
+            if (!DolphinNX::Input::ShowControllerOrder())
+            {
+              OverlayUI::ShowToast(
+                  SwitchFrontend::OverlayTranslation::tr("emulator_controllers_failed"),
+                  OverlayUI::ToastCorner::TopRight);
+            }
+            break;
           case Action::AddCheat:
             // the Cheats menu's "Download Gecko codes" row
             if (!s_cheat_download_in_progress.exchange(true))
