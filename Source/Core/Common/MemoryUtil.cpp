@@ -12,9 +12,13 @@
 #include "Common/MsgHandler.h"
 
 #ifdef __SWITCH__
+#include <malloc.h>
 #include <map>
 #include <mutex>
 #include <switch.h>
+
+extern "C" char* fake_heap_start;
+extern "C" char* fake_heap_end;
 
 namespace
 {
@@ -554,5 +558,16 @@ void FreeExecutableMemory(void* ptr, size_t size)
 }
 #endif
 
+
+#ifdef __SWITCH__
+size_t MemUnallocated()
+{
+  const struct mallinfo info = mallinfo();
+  const size_t heap_size = static_cast<size_t>(fake_heap_end - fake_heap_start);
+  const size_t arena_size = static_cast<size_t>(info.arena);
+  const size_t untouched = heap_size > arena_size ? heap_size - arena_size : 0;
+  return untouched + static_cast<size_t>(info.fordblks);
+}
+#endif
 
 }  // namespace Common
