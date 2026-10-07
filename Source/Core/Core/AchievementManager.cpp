@@ -55,6 +55,12 @@ static const Common::HttpRequest::Headers USER_AGENT_HEADER = {
     {"User-Agent", Common::GetUserAgentStr()}};
 #endif  // ANDROID
 
+// Dolphin's OSD, or the frontend's own notifications where it has set a sink (SetMessageSink).
+static void ShowAchievementMessage(std::string message, u32 ms = OSD::Duration::SHORT,
+                                   u32 argb = OSD::Color::YELLOW,
+                                   const VideoCommon::CustomTextureData::ArraySlice::Level* icon =
+                                       nullptr);
+
 AchievementManager& AchievementManager::GetInstance()
 {
   static AchievementManager s_instance;
@@ -170,7 +176,7 @@ void AchievementManager::LoadGame(const DiscIO::Volume* volume)
     WARN_LOG_FMT(ACHIEVEMENTS, "Software format unsupported by AchievementManager.");
     if (rc_client_get_game_info(m_client))
     {
-      OSD::AddMessage("Unsupported media change; disabling achievements.", OSD::Duration::VERY_LONG,
+      ShowAchievementMessage("Unsupported media change; disabling achievements.", OSD::Duration::VERY_LONG,
                       OSD::Color::RED);
       CloseGame();
     }
@@ -261,6 +267,8 @@ std::string AchievementManager::CalculateHash(const std::string& file_path)
 {
   char hash_result[33] = "0";
   GetInstance().m_loading_volume = DiscIO::CreateVolume(file_path);
+  if (!GetInstance().m_loading_volume)
+    return {};
   rc_hash_filereader volume_reader{
       .open = &AchievementManager::FilereaderOpen,
       .seek = &AchievementManager::FilereaderSeek,
@@ -365,7 +373,7 @@ bool AchievementManager::CanPause()
   bool can_pause = rc_client_can_pause(m_client, &frames_to_next_pause);
   if (!can_pause)
   {
-    OSD::AddMessage(
+    ShowAchievementMessage(
         fmt::format("RetroAchievements Hardcore Mode:\n"
                     "Cannot pause until another {:.2f} seconds have passed.",
                     static_cast<float>(frames_to_next_pause) /
@@ -481,9 +489,9 @@ bool AchievementManager::ShouldCodeBeActivated(const T& code, std::string_view g
   if (IsApprovedCode(code, game_id, revision))
     return true;
 
-  OSD::AddMessage(fmt::format("Failed to verify code {} for game ID {}.", code.name, game_id),
+  ShowAchievementMessage(fmt::format("Failed to verify code {} for game ID {}.", code.name, game_id),
                   OSD::Duration::VERY_LONG, OSD::Color::RED);
-  OSD::AddMessage("Disable hardcore mode to enable this code.", OSD::Duration::VERY_LONG,
+  ShowAchievementMessage("Disable hardcore mode to enable this code.", OSD::Duration::VERY_LONG,
                   OSD::Color::RED);
 
   return false;
@@ -1014,19 +1022,19 @@ void AchievementManager::LoadGameCallback(int result, const char* error_message,
   if (result == RC_API_FAILURE)
   {
     WARN_LOG_FMT(ACHIEVEMENTS, "Load data request rejected for old Dolphin version.");
-    OSD::AddMessage("RetroAchievements no longer supports this version of Dolphin.",
+    ShowAchievementMessage("RetroAchievements no longer supports this version of Dolphin.",
                     OSD::Duration::VERY_LONG, OSD::Color::RED);
-    OSD::AddMessage("Please update Dolphin to a newer version.", OSD::Duration::VERY_LONG,
+    ShowAchievementMessage("Please update Dolphin to a newer version.", OSD::Duration::VERY_LONG,
                     OSD::Color::RED);
     return;
   }
   if (result == RC_LOGIN_REQUIRED || result == RC_INVALID_CREDENTIALS || result == RC_EXPIRED_TOKEN)
   {
     WARN_LOG_FMT(ACHIEVEMENTS, "Invalid/expired RetroAchievements API token.");
-    OSD::AddMessage(
+    ShowAchievementMessage(
         "You have been logged out from RetroAchievements due to invalid/expired credentials.",
         OSD::Duration::VERY_LONG, OSD::Color::RED);
-    OSD::AddMessage("Please close the game to log back in before continuing.",
+    ShowAchievementMessage("Please close the game to log back in before continuing.",
                     OSD::Duration::VERY_LONG, OSD::Color::RED);
     Config::SetBaseOrCurrent(Config::RA_API_TOKEN, "");
     instance.update_event.Trigger(UpdatedItems{.failed_login_code = result});
@@ -1039,7 +1047,7 @@ void AchievementManager::LoadGameCallback(int result, const char* error_message,
     if (!game)
     {
       ERROR_LOG_FMT(ACHIEVEMENTS, "Failed to retrieve game information from client.");
-      OSD::AddMessage("Failed to load achievements for this title.", OSD::Duration::VERY_LONG,
+      ShowAchievementMessage("Failed to load achievements for this title.", OSD::Duration::VERY_LONG,
                       OSD::Color::RED);
     }
     else
@@ -1051,7 +1059,7 @@ void AchievementManager::LoadGameCallback(int result, const char* error_message,
   else
   {
     WARN_LOG_FMT(ACHIEVEMENTS, "Failed to load data for current game.");
-    OSD::AddMessage("Achievements are not supported for this title.", OSD::Duration::VERY_LONG,
+    ShowAchievementMessage("Achievements are not supported for this title.", OSD::Duration::VERY_LONG,
                     OSD::Color::RED);
   }
 
@@ -1110,30 +1118,30 @@ void AchievementManager::DisplayWelcomeMessage()
   const u32 color =
       rc_client_get_hardcore_enabled(m_client) ? OSD::Color::YELLOW : OSD::Color::CYAN;
 
-  OSD::AddMessage("", OSD::Duration::VERY_LONG, OSD::Color::GREEN, &GetGameBadge());
+  ShowAchievementMessage("", OSD::Duration::VERY_LONG, OSD::Color::GREEN, &GetGameBadge());
   auto info = rc_client_get_game_info(m_client);
   if (!info)
   {
     ERROR_LOG_FMT(ACHIEVEMENTS, "Attempting to welcome player to game not running.");
     return;
   }
-  OSD::AddMessage(info->title, OSD::Duration::VERY_LONG, OSD::Color::GREEN);
+  ShowAchievementMessage(info->title, OSD::Duration::VERY_LONG, OSD::Color::GREEN);
   rc_client_user_game_summary_t summary;
   rc_client_get_user_game_summary(m_client, &summary);
-  OSD::AddMessage(fmt::format("You have {}/{} achievements worth {}/{} points",
+  ShowAchievementMessage(fmt::format("You have {}/{} achievements worth {}/{} points",
                               summary.num_unlocked_achievements, summary.num_core_achievements,
                               summary.points_unlocked, summary.points_core),
                   OSD::Duration::VERY_LONG, color);
   if (summary.num_unsupported_achievements > 0)
   {
-    OSD::AddMessage(
+    ShowAchievementMessage(
         fmt::format("{} achievements unsupported", summary.num_unsupported_achievements),
         OSD::Duration::VERY_LONG, OSD::Color::RED);
   }
-  OSD::AddMessage(
+  ShowAchievementMessage(
       fmt::format("Hardcore mode is {}", rc_client_get_hardcore_enabled(m_client) ? "ON" : "OFF"),
       OSD::Duration::VERY_LONG, color);
-  OSD::AddMessage(fmt::format("Leaderboard submissions are {}",
+  ShowAchievementMessage(fmt::format("Leaderboard submissions are {}",
                               rc_client_get_hardcore_enabled(m_client) ? "ON" : "OFF"),
                   OSD::Duration::VERY_LONG, color);
 }
@@ -1142,7 +1150,7 @@ void AchievementManager::HandleAchievementTriggeredEvent(const rc_client_event_t
 {
   auto& instance = AchievementManager::GetInstance();
 
-  OSD::AddMessage(fmt::format("Unlocked: {} ({})", client_event->achievement->title,
+  ShowAchievementMessage(fmt::format("Unlocked: {} ({})", client_event->achievement->title,
                               client_event->achievement->points),
                   OSD::Duration::VERY_LONG,
                   (rc_client_get_hardcore_enabled(instance.m_client)) ? OSD::Color::YELLOW :
@@ -1155,18 +1163,18 @@ void AchievementManager::HandleAchievementTriggeredEvent(const rc_client_event_t
   {
   case RC_CLIENT_RAINTEGRATION_ACHIEVEMENT_STATE_LOCAL:
     // Achievement only exists locally and has not been uploaded.
-    OSD::AddMessage("Local achievement; not submitted to site.", OSD::Duration::VERY_LONG,
+    ShowAchievementMessage("Local achievement; not submitted to site.", OSD::Duration::VERY_LONG,
                     OSD::Color::GREEN);
     break;
   case RC_CLIENT_RAINTEGRATION_ACHIEVEMENT_STATE_MODIFIED:
     // Achievement has been modified locally and differs from the one on the site.
-    OSD::AddMessage("Modified achievement; not submitted to site.", OSD::Duration::VERY_LONG,
+    ShowAchievementMessage("Modified achievement; not submitted to site.", OSD::Duration::VERY_LONG,
                     OSD::Color::GREEN);
     break;
   case RC_CLIENT_RAINTEGRATION_ACHIEVEMENT_STATE_INSECURE:
     // The player has done something that we consider cheating like modifying the RAM while playing.
     // Just indicate that the achievement was only unlocked locally, but don't clarify why.
-    OSD::AddMessage("Achievement not submitted to site.", OSD::Duration::VERY_LONG,
+    ShowAchievementMessage("Achievement not submitted to site.", OSD::Duration::VERY_LONG,
                     OSD::Color::GREEN);
     break;
   default:
@@ -1179,7 +1187,7 @@ void AchievementManager::HandleLeaderboardStartedEvent(const rc_client_event_t* 
 {
   if (Config::Get(Config::RA_LEADERBOARD_TRACKER_ENABLED))
   {
-    OSD::AddMessage(fmt::format("Attempting leaderboard: {} - {}", client_event->leaderboard->title,
+    ShowAchievementMessage(fmt::format("Attempting leaderboard: {} - {}", client_event->leaderboard->title,
                                 client_event->leaderboard->description),
                     OSD::Duration::VERY_LONG, OSD::Color::GREEN);
   }
@@ -1190,7 +1198,7 @@ void AchievementManager::HandleLeaderboardFailedEvent(const rc_client_event_t* c
 {
   if (Config::Get(Config::RA_LEADERBOARD_TRACKER_ENABLED))
   {
-    OSD::AddMessage(fmt::format("Failed leaderboard: {}", client_event->leaderboard->title),
+    ShowAchievementMessage(fmt::format("Failed leaderboard: {}", client_event->leaderboard->title),
                     OSD::Duration::VERY_LONG, OSD::Color::RED);
   }
   AchievementManager::GetInstance().FetchBoardInfo(client_event->leaderboard->id);
@@ -1201,7 +1209,7 @@ void AchievementManager::HandleLeaderboardSubmittedEvent(const rc_client_event_t
   auto& instance = AchievementManager::GetInstance();
   if (Config::Get(Config::RA_LEADERBOARD_TRACKER_ENABLED))
   {
-    OSD::AddMessage(fmt::format("Scored {} on leaderboard: {}",
+    ShowAchievementMessage(fmt::format("Scored {} on leaderboard: {}",
                                 client_event->leaderboard->tracker_value,
                                 client_event->leaderboard->title),
                     OSD::Duration::VERY_LONG, OSD::Color::YELLOW);
@@ -1268,7 +1276,7 @@ void AchievementManager::HandleAchievementProgressIndicatorShowEvent(
   const auto message_wait_time = std::chrono::milliseconds{OSD::Duration::SHORT};
   if (current_time - instance.m_last_progress_message < message_wait_time)
     return;
-  OSD::AddMessage(fmt::format("{} {}", client_event->achievement->title,
+  ShowAchievementMessage(fmt::format("{} {}", client_event->achievement->title,
                               client_event->achievement->measured_progress),
                   OSD::Duration::SHORT, OSD::Color::GREEN,
                   &instance.GetAchievementBadge(client_event->achievement->id, false));
@@ -1286,7 +1294,7 @@ void AchievementManager::HandleGameCompletedEvent(const rc_client_event_t* clien
     return;
   }
   bool hardcore = rc_client_get_hardcore_enabled(client);
-  OSD::AddMessage(fmt::format("Congratulations, {}! You have {} {}", user_info->display_name,
+  ShowAchievementMessage(fmt::format("Congratulations, {}! You have {} {}", user_info->display_name,
                               hardcore ? "mastered" : "completed", game_info->title),
                   OSD::Duration::VERY_LONG, hardcore ? OSD::Color::YELLOW : OSD::Color::CYAN,
                   &AchievementManager::GetInstance().GetGameBadge());
@@ -1587,5 +1595,26 @@ void AchievementManager::GameTitleEstimateHandler(char* buffer, u32 buffer_size,
   strncpy(buffer, instance.m_title_estimate.c_str(), static_cast<size_t>(buffer_size));
 }
 #endif  // RC_CLIENT_SUPPORTS_RAINTEGRATION
+
+void AchievementManager::SetMessageSink(MessageSink sink)
+{
+  std::lock_guard lg{m_message_sink_lock};
+  m_message_sink = std::move(sink);
+}
+
+static void ShowAchievementMessage(std::string message, u32 ms, u32 argb,
+                                   const VideoCommon::CustomTextureData::ArraySlice::Level* icon)
+{
+  AchievementManager& manager = AchievementManager::GetInstance();
+  {
+    std::lock_guard lg{manager.m_message_sink_lock};
+    if (manager.m_message_sink)
+    {
+      manager.m_message_sink(std::move(message), ms, icon);
+      return;
+    }
+  }
+  OSD::AddMessage(std::move(message), ms, argb, icon);
+}
 
 #endif  // USE_RETRO_ACHIEVEMENTS

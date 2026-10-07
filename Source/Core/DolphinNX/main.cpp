@@ -52,6 +52,7 @@
 #include "VideoCommon/Present.h"
 #include "VideoCommon/Resources/CustomResourceManager.h"
 
+#include "DolphinNX/Achievements.h"
 #include "DolphinNX/Audio.h"
 #include "DolphinNX/Cheats.h"
 #include "DolphinNX/Input.h"
@@ -1288,6 +1289,9 @@ int main(int argc, char* argv[])
     Common::ScopeGuard input_guard([] { DolphinNX::Input::Shutdown(); });
     LOG("Input initialized\n");
 
+    // RetroAchievements with tico's account, before the game loads
+    DolphinNX::Achievements::Start();
+
     LOG("BootManager::BootCore...\n");
     auto& system = Core::System::GetInstance();
     if (!BootManager::BootCore(system, std::move(boot), wsi))
@@ -1439,6 +1443,7 @@ int main(int argc, char* argv[])
 
         // cheats toggled in the menu reach the game
         DolphinNX::Cheats::ApplyIfChanged();
+        DolphinNX::Achievements::Update();
 
         const Action overlay_action = DolphinNX::VulkanOverlay::ConsumeAction();
         if (OverlayUI::IsSaveStateAction(overlay_action))
@@ -1617,6 +1622,7 @@ int main(int argc, char* argv[])
     system.GetCustomResourceManager().Shutdown();
     LOG("Fifo final shutdown...\n");
     system.GetFifo().Shutdown();
+    DolphinNX::Achievements::Shutdown();
     LOG("Core::Shutdown done\n");
 
     LOG("=== Dolphin NX shutdown complete ===\n");

@@ -17,6 +17,7 @@ add_executable(dolphin-nx
   ControllerProfiles.cpp
   NetPlayStubs.cpp
   TicoCore.cpp
+  Achievements.cpp
   Cheats.cpp
   Overlay/VulkanOverlay.cpp
   # tico's overlay and frontend pieces, shared with the other cores
