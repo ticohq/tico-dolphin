@@ -10,6 +10,8 @@
 #include <mutex>
 #include <vector>
 
+#include <switch.h>
+
 #include "Common/FileUtil.h"
 
 #include "Common/Logging/Log.h"
@@ -22,6 +24,8 @@ namespace Audio
 namespace
 {
 constexpr u32 kOutputRate = 48000;
+// as porpoise's audout thread, above the default 0x2C
+constexpr s32 kAudioThreadPriority = 0x26;
 
 std::mutex s_effect_mutex;
 std::vector<s16> s_effect;  // interleaved stereo at kOutputRate
@@ -188,6 +192,11 @@ void SwitchStream::AudioCallback(void* userdata, u8* stream, int len)
     Common::SetCurrentThreadName("Audio thread - switchnx");
     // with the host and worker threads, away from the CPU (0) and GPU (1) threads
     Common::SetCurrentThreadAffinity(2);
+    // above them: Horizon doesn't share a core between threads of the same
+    // priority, so a long burst there (deko3d's shader compiles) starved the
+    // output until it went silent
+    if (R_FAILED(svcSetThreadPriority(CUR_THREAD_HANDLE, kAudioThreadPriority)))
+      WARN_LOG_FMT(AUDIO, "Could not raise the audio thread's priority");
   }
 
   auto* self = static_cast<SwitchStream*>(userdata);
