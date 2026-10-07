@@ -1092,8 +1092,8 @@ private:
     Config::SetBase(Config::MAIN_SERIAL_PORT_1,
                     ParseSP1Device(GetString("dolphin_gc_sp1", "255"),
                                    Config::Get(Config::MAIN_SERIAL_PORT_1)));
-    if (GetBool("dolphin_enable_gamecube_mic", false))
-      Config::SetBase(Config::MAIN_SERIAL_PORT_1, ExpansionInterface::EXIDeviceType::Microphone);
+    // dolphin_enable_gamecube_mic is not applied: there is no microphone input on
+    // Switch yet (Dolphin's mic needs cubeb), and it belongs in Slot B, not SP1 (issue #15)
     // GameCube online play: Dolphin's built-in, socket-based Broadband Adapter
     if (GetBool("dolphin_gc_bba", false))
       Config::SetBase(Config::MAIN_SERIAL_PORT_1,

@@ -615,13 +615,6 @@
           "title": "settings_dolphin_gamecube",
           "options": [
             {
-              "key": "dolphin_enable_gamecube_mic",
-              "label": "settings_dolphin_gamecube_microphone",
-              "type": "bool",
-              "default": "disabled",
-              "restart": true
-            },
-            {
               "key": "dolphin_gc_bba",
               "label": "settings_dolphin_gc_bba",
               "type": "bool",
