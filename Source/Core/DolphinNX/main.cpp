@@ -556,7 +556,10 @@ static void UpdateWindowModeAndCrop()
 
 static bool IsGameCubeDisc(const std::optional<BootGameMetadata>& metadata)
 {
-  return metadata && metadata->platform == DiscIO::Platform::GameCubeDisc;
+  // Triforce (arcade) games are GameCube hardware too; Dolphin attaches the
+  // arcade baseboard itself (BootManager)
+  return metadata && (metadata->platform == DiscIO::Platform::GameCubeDisc ||
+                      metadata->platform == DiscIO::Platform::Triforce);
 }
 
 static constexpr bool kNxLogEnabled = true;

@@ -1576,6 +1576,44 @@
           ]
         },
         {
+          "title": "GameCube Controller - Triforce",
+          "options": [
+            {
+              "key": "@map:gc:Triforce:Coin",
+              "label": "Coin",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "gc"
+              }
+            },
+            {
+              "key": "@map:gc:Triforce:Test",
+              "label": "Test",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "gc"
+              }
+            },
+            {
+              "key": "@map:gc:Triforce:Service",
+              "label": "Service",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "gc"
+              }
+            }
+          ]
+        },
+        {
           "title": "Wii Remote - Buttons",
           "options": [
             {
