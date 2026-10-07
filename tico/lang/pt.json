@@ -245,5 +245,6 @@
   "emulator_portal_slot": "Espaço",
   "emulator_portal_empty": "Vazio",
   "emulator_portal_none": "Nenhuma figura encontrada",
-  "emulator_portal_where": "Copie os dumps das figuras para sdmc:/tico/skylanders"
+  "emulator_portal_where": "Copie os dumps das figuras para sdmc:/tico/skylanders",
+  "settings_dolphin_boost_mode": "Modo boost (CPU 1785 MHz, GPU 768 MHz)"
 }
