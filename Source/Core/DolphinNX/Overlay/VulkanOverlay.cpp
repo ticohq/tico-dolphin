@@ -29,6 +29,7 @@
 #include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/PerformanceMetrics.h"
 
+#include "DolphinNX/Achievements.h"
 #include "TicoLogger.h"
 #include "TicoOverlayHost.h"
 #include "overlay/imgui_overlay.h"
@@ -98,6 +99,7 @@ public:
   void SaveStateSlot(int) override {}
   void LoadStateSlot(int) override {}
   void SwapDisc(const std::string&) override {}
+  IOverlayRAHost* RA() override { return DolphinNX::Achievements::Host(); }
 
   ImTextureID CreateTextureRGBA(const unsigned char* rgba, int width, int height) override
   {
@@ -201,7 +203,8 @@ void DrawCallback(Vulkan::VKFramebuffer* fb, VkCommandBuffer cmd)
   const auto now = std::chrono::steady_clock::now();
   const float delta = std::chrono::duration<float>(now - s_last_frame).count();
   s_last_frame = now;
-  if (!visible && !OverlayUI::HasTransientContent())
+  DolphinNX::Achievements::UploadBadges(s_host);
+  if (!visible && !OverlayUI::HasTransientContent() && !DolphinNX::Achievements::HasNotifications())
     return;
 
   if (visible)

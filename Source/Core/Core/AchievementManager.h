@@ -114,6 +114,16 @@ public:
 
   static AchievementManager& GetInstance();
   void Init(void* hwnd);
+
+  // Where the messages that would go to Dolphin's OSD go instead, for a frontend with
+  // notifications of its own. Copy the icon (a badge's pixels) if it is kept: it is only
+  // valid during the call.
+  using MessageSink =
+      std::function<void(std::string message, u32 duration_ms,
+                         const VideoCommon::CustomTextureData::ArraySlice::Level* icon)>;
+  void SetMessageSink(MessageSink sink);
+  std::mutex m_message_sink_lock;
+  MessageSink m_message_sink;
   void Login(const std::string& password);
   bool HasAPIToken() const;
   void LoadGame(const DiscIO::Volume* volume);

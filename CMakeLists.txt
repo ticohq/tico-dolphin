@@ -557,7 +557,8 @@ if(SWITCH_STANDALONE)
   set(ENABLE_SDL OFF CACHE BOOL "" FORCE)  # Don't build bundled SDL — use portlibs SDL2
   # Vulkan enabled — NVK statically linked via MESA_NVK_DIR
   set(USE_DISCORD_PRESENCE OFF CACHE BOOL "" FORCE)
-  set(USE_RETRO_ACHIEVEMENTS OFF CACHE BOOL "" FORCE)
+  # RetroAchievements: on, over the bundled curl (DolphinNX/Achievements.cpp)
+  set(USE_RETRO_ACHIEVEMENTS ON CACHE BOOL "" FORCE)
   set(USE_UPNP OFF CACHE BOOL "" FORCE)
   set(USE_MGBA OFF CACHE BOOL "" FORCE)
   set(USE_SFML OFF CACHE BOOL "" FORCE)
