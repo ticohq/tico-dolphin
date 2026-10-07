@@ -1024,14 +1024,9 @@ std::vector<MenuRow> BuildRows() {
             undo_load.dimmed = !s_undo_state.can_undo_load;
             rows.push_back(undo_load);
 
-            const bool overwritten = !s_undo_state.overwritten_saved_at.empty();
-            char label[160];
-            std::snprintf(label, sizeof(label), "%s (%s)",
-                          TrOr("emulator_undo_save", "Load Overwritten State").c_str(),
-                          overwritten ? s_undo_state.overwritten_saved_at.c_str()
-                                      : TrOr("emulator_none", "None").c_str());
-            MenuRow undo_save{label};
-            undo_save.dimmed = !overwritten;
+            // when the overwritten state was saved is shown beside the list
+            MenuRow undo_save{TrOr("emulator_undo_save", "Undo Last Save")};
+            undo_save.dimmed = s_undo_state.overwritten_saved_at.empty();
             rows.push_back(undo_save);
         }
         break;
@@ -1597,7 +1592,6 @@ void RenderStates(ImDrawList* dl, ImVec2 display_size, float ease, const std::ve
     const float corner_radius = 16.0f * scale;
     const float row_radius = 12.0f * scale;
     const float pad = 14.0f * scale;
-    const float row_height = 64.0f * scale;
     const float label_size = ImGui::GetFontSize() * 0.85f;
 
     // between the title card and the helpers bar, like Settings
@@ -1619,8 +1613,11 @@ void RenderStates(ImDrawList* dl, ImVec2 display_size, float ease, const std::ve
                       corner_radius, ImDrawFlags_RoundCornersLeft);
     AddHit(panel_min, panel_max, HitKind::Panel);
 
-    // the slots, centred down the list
+    // the slots, centred down the list; Load State's undo rows make it
+    // longer, so its rows shrink to stay inside the panel
     const int count = static_cast<int>(rows.size());
+    const float row_height = std::min(
+        64.0f * scale, (panel_size.y - (2.0f * pad)) / static_cast<float>(std::max(count, 1)));
     const float list_h = static_cast<float>(count) * row_height;
     const float list_top = panel_min.y + std::max(pad, (panel_size.y - list_h) * 0.5f);
     for (int i = 0; i < count; ++i) {
@@ -1647,6 +1644,22 @@ void RenderStates(ImDrawList* dl, ImVec2 display_size, float ease, const std::ve
         preview_slot < 0
             ? kNoPreview
             : s_slot_preview[static_cast<std::size_t>(std::min(preview_slot, kOverlaySlotCount - 1))];
+    // the undo rows have no picture: what they do, and for Undo Last Save when
+    // the state it brings back was saved
+    std::string note;
+    std::string caption = preview.saved_at;
+    if (s_menu == MenuScreen::LoadStates && preview_slot < 0) {
+        if (s_selected == kUserSlotCount + 1) {
+            note = s_undo_state.can_undo_load
+                       ? TrOr("emulator_undo_load_hint", "Back to before the last Load State")
+                       : TrOr("emulator_undo_load_none", "No state loaded yet");
+        } else if (s_undo_state.overwritten_saved_at.empty()) {
+            note = TrOr("emulator_undo_save_none", "No state overwritten yet");
+        } else {
+            note = TrOr("emulator_undo_save_hint", "The state the last Save State overwrote");
+            caption = s_undo_state.overwritten_saved_at;
+        }
+    }
     const float aspect = preview.aspect > 0.1f ? preview.aspect : (4.0f / 3.0f);
     float pic_w = pane_right - pane_left;
     float pic_h = pic_w / aspect;
@@ -1663,21 +1676,22 @@ void RenderStates(ImDrawList* dl, ImVec2 display_size, float ease, const std::ve
                             IM_COL32(255, 255, 255, alpha), row_radius);
     } else {
         dl->AddRectFilled(pic_min, pic_max, Themed(28, 28, 28, 225, 229, 234, alpha), row_radius);
-        const std::string none = preview.saved_at.empty() ? TrOr("emulator_empty", "Empty")
-                                                          : TrOr("emulator_no_preview", "No preview");
+        const std::string none = !note.empty()               ? note
+                                 : preview.saved_at.empty() ? TrOr("emulator_empty", "Empty")
+                                                            : TrOr("emulator_no_preview", "No preview");
         const ImVec2 none_size = font->CalcTextSizeA(label_size, FLT_MAX, 0.0f, none.c_str());
         dl->AddText(font, label_size,
                     ImVec2(pic_min.x + ((pic_w - none_size.x) * 0.5f),
                            pic_min.y + ((pic_h - none_size.y) * 0.5f)),
                     Themed(150, 150, 150, 130, 130, 140, alpha), none.c_str());
     }
-    if (!preview.saved_at.empty()) {
+    if (!caption.empty()) {
         const float caption_size = ImGui::GetFontSize() * 0.7f;
-        const ImVec2 caption_text = font->CalcTextSizeA(caption_size, FLT_MAX, 0.0f, preview.saved_at.c_str());
+        const ImVec2 caption_text = font->CalcTextSizeA(caption_size, FLT_MAX, 0.0f, caption.c_str());
         dl->AddText(font, caption_size,
                     ImVec2(pane_left + ((pane_right - pane_left - caption_text.x) * 0.5f),
                            pic_max.y + ((caption_h - caption_text.y) * 0.5f) + pad * 0.5f),
-                    Themed(170, 170, 170, 90, 90, 100, alpha), preview.saved_at.c_str());
+                    Themed(170, 170, 170, 90, 90, 100, alpha), caption.c_str());
     }
 }
 
