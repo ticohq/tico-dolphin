@@ -60,6 +60,7 @@
 #include "DolphinNX/Audio.h"
 #include "DolphinNX/Cheats.h"
 #include "DolphinNX/Discs.h"
+#include "DolphinNX/LibraryScreen.h"
 #include "DolphinNX/Input.h"
 #include "DolphinNX/TicoCore.h"
 #include "DolphinNX/Overlay/VulkanOverlay.h"
@@ -113,6 +114,8 @@ static std::optional<std::string> GetLaunchRomPath(int argc, char* argv[])
 static std::string s_self_nro;
 static std::vector<std::string> s_launch_args;
 static bool s_relaunch = false;
+// Started from the game list (--from-library): Exit Game goes back to it.
+static bool s_from_library = false;
 
 static void LOG(const char* fmt, ...);
 
@@ -677,6 +680,15 @@ static void ConfigureNextLoadForTico()
   }
   if (!s_chainload_to_tico)
     return;
+
+  // a game chosen from the list goes back to the list
+  if (s_from_library && !s_self_nro.empty())
+  {
+    const std::string args = "\"" + s_self_nro + "\"";
+    envSetNextLoad(s_self_nro.c_str(), args.c_str());
+    LOG("Back to the game list\n");
+    return;
+  }
 
   const char* target_nro = "sdmc:/switch/tico/tico.nro";
 
@@ -1273,7 +1285,11 @@ int main(int argc, char* argv[])
   EnsureRootMesaCacheMatchesCoreVersion();
 
   for (int i = 0; i < argc; ++i)
+  {
     s_launch_args.emplace_back(argv[i] ? argv[i] : "");
+    if (s_launch_args.back() == "--from-library")
+      s_from_library = true;
+  }
   if (argc > 0 && argv[0])
     s_self_nro = argv[0];
   UsbStorage::Init();  // drives mount in the background
@@ -1282,8 +1298,20 @@ int main(int argc, char* argv[])
     const auto launch_rom_path = GetLaunchRomPath(argc, argv);
     if (!launch_rom_path)
     {
-      LOG("Standalone launch rejected: missing ROM path\n");
-      return 1;
+      // started without a game (from the homebrew menu): the game list, then
+      // this NRO again with the chosen game
+      const std::optional<std::string> chosen = DolphinNX::LibraryScreen::Run();
+      if (!chosen || s_self_nro.empty())
+      {
+        LOG("Game list closed without a game\n");
+        return 0;
+      }
+      // a game on a USB drive goes by the drive's id: its umsN: may change
+      const std::string args = "\"" + s_self_nro + "\" \"" + UsbStorage::ToToken(*chosen) +
+                               "\" --from-library";
+      envSetNextLoad(s_self_nro.c_str(), args.c_str());
+      LOG("Game list chose %s\n", chosen->c_str());
+      return 0;
     }
 
     // a game on a USB drive comes as usb://<volume>/<path>

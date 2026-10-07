@@ -44,6 +44,11 @@ void FreePicture(unsigned long long texture);
 // Reads the Cheats menu's list again on the next frame (e.g. after a download).
 void RequestCheatRefresh();
 
+// The overlay renderer over Dolphin's Vulkan presentation (see OverlayRenderer.cpp).
+bool RendererInit();
+void RendererShutdown();
+void RendererBeginFrame();
+
 // The action the menu returned since the last call, once.
 SwitchFrontend::OverlayUI::Action ConsumeAction();
 }  // namespace DolphinNX::VulkanOverlay

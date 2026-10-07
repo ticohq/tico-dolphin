@@ -20,7 +20,10 @@ add_executable(dolphin-nx
   Achievements.cpp
   Cheats.cpp
   Discs.cpp
+  Library.cpp
+  LibraryScreen.cpp
   MbedTLSEntropy.cpp
+  Overlay/OverlayRenderer.cpp
   Overlay/VulkanOverlay.cpp
   # tico's overlay and frontend pieces, shared with the other cores
   ${CMAKE_SOURCE_DIR}/tico/UsbStorage.cpp
