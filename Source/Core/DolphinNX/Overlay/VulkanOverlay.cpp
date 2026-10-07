@@ -437,11 +437,9 @@ Action ConsumeAction()
 
 // The renderer tico's overlay draws with: ImGui's Vulkan backend on the
 // swapchain's load render pass, set up from the first frame drawn.
-namespace SwitchFrontend::OverlayRenderer
+namespace DolphinNX::VulkanOverlay
 {
-using namespace DolphinNX::VulkanOverlay;
-
-bool Init()
+bool RendererInit()
 {
   if (s_device == VK_NULL_HANDLE || !Vulkan::g_vulkan_context)
     return false;
@@ -467,14 +465,14 @@ bool Init()
   sampler_info.maxLod = 1.0f;
   if (vkCreateSampler(s_device, &sampler_info, nullptr, &s_sampler) != VK_SUCCESS)
   {
-    SwitchFrontend::OverlayRenderer::Shutdown();
+    RendererShutdown();
     return false;
   }
 
   const VkInstance instance = Vulkan::g_vulkan_context->GetVulkanInstance();
   if (!ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_1, LoadVulkanFunction, instance))
   {
-    SwitchFrontend::OverlayRenderer::Shutdown();
+    RendererShutdown();
     return false;
   }
 
@@ -492,13 +490,13 @@ bool Init()
   init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
   if (!ImGui_ImplVulkan_Init(&init_info))
   {
-    SwitchFrontend::OverlayRenderer::Shutdown();
+    RendererShutdown();
     return false;
   }
   return true;
 }
 
-void Shutdown()
+void RendererShutdown()
 {
   if (ImGui::GetCurrentContext() && ImGui::GetIO().BackendRendererUserData)
   {
@@ -520,8 +518,8 @@ void Shutdown()
   }
 }
 
-void BeginFrame()
+void RendererBeginFrame()
 {
   ImGui_ImplVulkan_NewFrame();
 }
-}  // namespace SwitchFrontend::OverlayRenderer
+}  // namespace DolphinNX::VulkanOverlay
