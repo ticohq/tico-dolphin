@@ -241,6 +241,13 @@
               "type": "bool",
               "default": "enabled",
               "restart": true
+            },
+            {
+              "key": "dolphin_correct_time_drift",
+              "label": "settings_dolphin_correct_time_drift",
+              "type": "bool",
+              "default": "disabled",
+              "restart": true
             }
           ]
         },
@@ -620,6 +627,36 @@
               "type": "bool",
               "default": "disabled",
               "restart": true
+            },
+            {
+              "key": "dolphin_bba_dns",
+              "label": "settings_dolphin_bba_dns",
+              "type": "string",
+              "default": "3.18.217.27",
+              "restart": true,
+              "max_length": 64,
+              "choices": [
+                {
+                  "label": "Dolphin default (3.18.217.27)",
+                  "value": "3.18.217.27"
+                },
+                {
+                  "label": "Console's DNS",
+                  "value": "console"
+                },
+                {
+                  "label": "Google (8.8.8.8)",
+                  "value": "8.8.8.8"
+                },
+                {
+                  "label": "Cloudflare (1.1.1.1)",
+                  "value": "1.1.1.1"
+                }
+              ],
+              "depends_on": {
+                "key": "dolphin_gc_bba",
+                "value": "enabled"
+              }
             }
           ]
         },

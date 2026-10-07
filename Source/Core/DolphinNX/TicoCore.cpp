@@ -18,6 +18,9 @@
 #include <string_view>
 #include <utility>
 
+#include <arpa/inet.h>
+#include <switch.h>
+
 #include <picojson.h>
 
 #include "Common/FileUtil.h"
@@ -87,7 +90,7 @@ constexpr std::array<std::string_view, 29> kFixedBaseOptions = {{
     "dolphin_mods_enable",
 }};
 
-constexpr std::array<std::pair<std::string_view, std::string_view>, 76> kDefaultOptions = {{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 78> kDefaultOptions = {{
     {"display_mode", "Display"},
     {"display_size", "4:3"},
     {"integer_scale", "Auto"},
@@ -105,6 +108,8 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 76> kDefault
     {"dolphin_call_back_audio_method", "0"},
     {"dolphin_enable_gamecube_mic", "disabled"},
     {"dolphin_gc_bba", "disabled"},
+    {"dolphin_bba_dns", "3.18.217.27"},
+    {"dolphin_correct_time_drift", "disabled"},
     {"dolphin_wiilink", "disabled"},
     {"dolphin_hotkey_activate_microphone", "Disabled"},
     {"dolphin_widescreen", "enabled"},
@@ -166,7 +171,24 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 76> kDefault
     {"dolphin_save_load_settings", "disabled"},
 }};
 
-static_assert(kDefaultOptions.size() == 76);
+static_assert(kDefaultOptions.size() == 78);
+
+// The console's primary DNS server, from its network settings.
+std::optional<std::string> ConsoleDnsServer()
+{
+  if (R_FAILED(nifmInitialize(NifmServiceType_User)))
+    return std::nullopt;
+  u32 address = 0, netmask = 0, gateway = 0, primary_dns = 0, secondary_dns = 0;
+  const bool ok = R_SUCCEEDED(nifmGetCurrentIpConfigInfo(&address, &netmask, &gateway,
+                                                         &primary_dns, &secondary_dns)) &&
+                  primary_dns != 0;
+  nifmExit();
+  if (!ok)
+    return std::nullopt;
+  in_addr dns{};
+  dns.s_addr = primary_dns;
+  return std::string(inet_ntoa(dns));
+}
 
 std::string StripJsonComments(std::string_view input)
 {
@@ -1098,6 +1120,18 @@ private:
     if (GetBool("dolphin_gc_bba", false))
       Config::SetBase(Config::MAIN_SERIAL_PORT_1,
                       ExpansionInterface::EXIDeviceType::EthernetBuiltIn);
+    // where its DNS lookups go: an address or name, or the console's own DNS
+    {
+      std::string dns = GetString("dolphin_bba_dns", Config::Get(Config::MAIN_BBA_BUILTIN_DNS));
+      if (dns == "console")
+        dns = ConsoleDnsServer().value_or(Config::Get(Config::MAIN_BBA_BUILTIN_DNS));
+      if (!dns.empty())
+        Config::SetBase(Config::MAIN_BBA_BUILTIN_DNS, dns);
+    }
+    // lets the console run fast after a stutter to catch up, for online play
+    Config::SetBase(Config::MAIN_CORRECT_TIME_DRIFT,
+                    GetBool("dolphin_correct_time_drift",
+                            Config::Get(Config::MAIN_CORRECT_TIME_DRIFT)));
     Config::SetBase(Config::MAIN_WII_WIILINK_ENABLE, GetBool("dolphin_wiilink", false));
     Config::SetBase(Config::SYSCONF_WIDESCREEN,
                     GetBool("dolphin_widescreen", Config::Get(Config::SYSCONF_WIDESCREEN)));

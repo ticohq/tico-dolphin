@@ -2946,7 +2946,7 @@ Action Render(int display_w, int display_h) {
     }
     if (stepped) {
         const TicoConfig::OptionDef& option = *stepped;
-        if (option.type != TicoConfig::OptionType::Text) {
+        if (option.type != TicoConfig::OptionType::Text || option.choice_count > 0) {
             TicoConfig::StepOption(option, nav.right ? 1 : -1);
             OnOptionChanged(option);
             rows = BuildRows();

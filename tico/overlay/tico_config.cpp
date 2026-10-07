@@ -228,7 +228,9 @@ bool ParseOption(Catalogue& catalogue, const nlohmann::json& source, OptionDef& 
     option.max_length = source.value("max_length", 0);
     option.choices = nullptr;
     option.choice_count = 0;
-    if (option.type == OptionType::Choice) {
+    // a text option may list known values too: Left/Right pick one, A types another
+    if (option.type == OptionType::Choice ||
+        (option.type == OptionType::Text && source.contains("choices"))) {
         std::vector<OptionChoice> choices;
         for (const nlohmann::json& choice : source.value("choices", nlohmann::json::array())) {
             const std::string value =
@@ -237,7 +239,7 @@ bool ParseOption(Catalogue& catalogue, const nlohmann::json& source, OptionDef& 
             choices.push_back({catalogue.Keep(value), catalogue.Keep(ValueKey(label)),
                                catalogue.Keep(label)});
         }
-        if (choices.empty()) {
+        if (choices.empty() && option.type == OptionType::Choice) {
             return false;
         }
         catalogue.choice_lists.push_back(std::move(choices));
@@ -299,6 +301,16 @@ Catalogue& GetCatalogue() {
 }
 
 // Index of the choice whose stored value matches, or 0 when none does.
+// The choice that is exactly @p value, or -1 (a text option's typed value).
+int FindExactChoice(const OptionDef& option, std::string_view value) {
+    for (std::size_t i = 0; i < option.choice_count; ++i) {
+        if (value == option.choices[i].value) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
 std::size_t FindChoice(const OptionDef& option, std::string_view value) {
     const std::string lower = LowerCopy(value);
     for (std::size_t i = 0; i < option.choice_count; ++i) {
@@ -736,8 +748,14 @@ OptionValueLabel GetOptionValueLabel(const OptionDef& option) {
         return {choice.label_key, choice.fallback};
     }
     case OptionType::Text:
-    default:
-        return {nullptr, config.GetOptionValue(option)};
+    default: {
+        const std::string value = config.GetOptionValue(option);
+        const int choice = FindExactChoice(option, value);
+        if (choice >= 0) {
+            return {option.choices[choice].label_key, option.choices[choice].fallback};
+        }
+        return {nullptr, value};
+    }
     }
 }
 
@@ -764,7 +782,18 @@ void StepOption(const OptionDef& option, int direction) {
         SetOptionValue(option, option.choices[index].value);
         break;
     }
-    case OptionType::Text:
+    case OptionType::Text: {
+        // known values, from a typed one to the first (or last)
+        const int count = static_cast<int>(option.choice_count);
+        if (count == 0) {
+            break;
+        }
+        const int current = FindExactChoice(option, config.GetOptionValue(option));
+        const int index = current < 0 ? (direction > 0 ? 0 : count - 1)
+                                      : (current + (direction > 0 ? 1 : count - 1)) % count;
+        SetOptionValue(option, option.choices[index].value);
+        break;
+    }
     default:
         break;
     }

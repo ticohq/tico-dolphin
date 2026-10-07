@@ -232,5 +232,7 @@
   "settings_dolphin_pointer_yaw": "ポインター範囲（度）",
   "settings_dolphin_calibrate_on_recenter": "リセンター時にマウント角度を補正",
   "settings_dolphin_gc_bba": "ブロードバンドアダプタ（オンラインプレイ）",
-  "settings_dolphin_wiilink": "WiiLinkでWiiConnect24"
+  "settings_dolphin_wiilink": "WiiLinkでWiiConnect24",
+  "settings_dolphin_bba_dns": "ブロードバンドアダプタのDNS",
+  "settings_dolphin_correct_time_drift": "時間のずれを補正（オンラインプレイ）"
 }

@@ -1778,6 +1778,31 @@ int main(int argc, char* argv[])
             DolphinNX::VulkanOverlay::SetVisible(false);
             break;
           }
+          case Action::EditText:
+            // a text setting: the system keyboard, filled in with its value
+            if (const auto* option = OverlayUI::ConsumeTextEditOption())
+            {
+              SwkbdConfig keyboard;
+              if (R_SUCCEEDED(swkbdCreate(&keyboard, 0)))
+              {
+                const std::string current = SwitchFrontend::TicoConfig::GetOptionValue(*option);
+                const std::string title =
+                    SwitchFrontend::OverlayTranslation::tr(option->label_key);
+                swkbdConfigMakePresetDefault(&keyboard);
+                swkbdConfigSetInitialText(&keyboard, current.c_str());
+                swkbdConfigSetGuideText(&keyboard, title.c_str());
+                if (option->max_length > 0)
+                  swkbdConfigSetStringLenMax(&keyboard, static_cast<u32>(option->max_length));
+                char typed[512] = {};
+                if (R_SUCCEEDED(swkbdShow(&keyboard, typed, sizeof(typed))))
+                {
+                  SwitchFrontend::TicoConfig::SetOptionValue(*option, typed);
+                  OverlayUI::NotifyOptionEdited(*option);
+                }
+                swkbdClose(&keyboard);
+              }
+            }
+            break;
           case Action::ControllerOrder:
             // the system's controller screen; auto profiles then follow what is
             // connected (Input re-applies them when a port's controller changes)
