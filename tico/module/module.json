@@ -36,6 +36,18 @@
         "end": "A88FE6",
         "start_dark": "4F57A8",
         "end_dark": "7A63A8"
+      },
+      "menu": {
+        "title": "GameCube Menu",
+        "launch": "menu:/gc",
+        "requires_any": [
+          "sdmc:/tico/system/gc/User/GC/USA/IPL.bin",
+          "sdmc:/tico/system/gc/User/GC/EUR/IPL.bin",
+          "sdmc:/tico/system/gc/User/GC/JAP/IPL.bin",
+          "sdmc:/tico/system/gc/Sys/GC/USA/IPL.bin",
+          "sdmc:/tico/system/gc/Sys/GC/EUR/IPL.bin",
+          "sdmc:/tico/system/gc/Sys/GC/JAP/IPL.bin"
+        ]
       }
     },
     {
@@ -62,6 +74,13 @@
         "end": "4CBBD6",
         "start_dark": "65A6B3",
         "end_dark": "38879B"
+      },
+      "menu": {
+        "title": "Wii Menu",
+        "launch": "menu:/wii",
+        "requires_any": [
+          "sdmc:/tico/system/gc/User/Wii/title/00000001/00000002/content/title.tmd"
+        ]
       }
     },
     {
