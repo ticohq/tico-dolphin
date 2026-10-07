@@ -717,6 +717,13 @@
               ]
             },
             {
+              "key": "dolphin_override_region_settings",
+              "label": "settings_dolphin_override_region_settings",
+              "type": "bool",
+              "default": "disabled",
+              "restart": true
+            },
+            {
               "key": "dolphin_widescreen",
               "label": "settings_dolphin_widescreen_wii",
               "type": "bool",

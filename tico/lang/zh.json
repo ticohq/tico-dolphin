@@ -238,5 +238,6 @@
   "emulator_mods": "模组",
   "emulator_mods_disabled": "已禁用",
   "emulator_mods_none": "此游戏没有 Riivolution 模组",
-  "emulator_mods_where": "请复制到 sdmc:/tico/mods/wii"
+  "emulator_mods_where": "请复制到 sdmc:/tico/mods/wii",
+  "settings_dolphin_override_region_settings": "允许不匹配的区域设置"
 }
