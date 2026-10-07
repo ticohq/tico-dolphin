@@ -90,7 +90,7 @@ constexpr std::array<std::string_view, 29> kFixedBaseOptions = {{
     "dolphin_mods_enable",
 }};
 
-constexpr std::array<std::pair<std::string_view, std::string_view>, 81> kDefaultOptions = {{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 82> kDefaultOptions = {{
     {"display_mode", "Display"},
     {"display_size", "4:3"},
     {"integer_scale", "Auto"},
@@ -104,6 +104,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 81> kDefault
     {"dolphin_override_region_settings", "disabled"},
     {"dolphin_emulate_skylander_portal", "disabled"},
     {"dolphin_boost_mode", "enabled"},
+    {"dolphin_renderer", "Vulkan"},
     {"dolphin_fast_disc_speed", "disabled"},
     {"dolphin_main_mmu", "disabled"},
     {"dolphin_rush_presentation", "disabled"},
@@ -174,7 +175,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 81> kDefault
     {"dolphin_save_load_settings", "disabled"},
 }};
 
-static_assert(kDefaultOptions.size() == 81);
+static_assert(kDefaultOptions.size() == 82);
 
 // The console's primary DNS server, from its network settings.
 std::optional<std::string> ConsoleDnsServer()
@@ -1015,6 +1016,12 @@ private:
 
   void ApplyOverrides()
   {
+    // Video > Renderer: Vulkan (Mesa's NVK) or deko3d (the Switch GPU's own API)
+    {
+      const std::string renderer = GetString("dolphin_renderer", "Vulkan");
+      Config::SetBase(Config::MAIN_GFX_BACKEND,
+                      renderer == "Deko3D" ? std::string("Deko3D") : std::string("Vulkan"));
+    }
     Config::SetBase(Config::MAIN_SKIP_IPL,
                     GetBool("dolphin_skip_gc_bios", Config::Get(Config::MAIN_SKIP_IPL)));
     Config::SetBase(Config::MAIN_SYNC_ON_SKIP_IDLE,

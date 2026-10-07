@@ -443,6 +443,23 @@
           "title": "settings_dolphin_video",
           "options": [
             {
+              "key": "dolphin_renderer",
+              "label": "settings_dolphin_renderer",
+              "type": "enum",
+              "default": "Vulkan",
+              "restart": true,
+              "choices": [
+                {
+                  "label": "Vulkan",
+                  "value": "Vulkan"
+                },
+                {
+                  "label": "deko3d (experimental)",
+                  "value": "Deko3D"
+                }
+              ]
+            },
+            {
               "key": "dolphin_vsync",
               "label": "settings_dolphin_vsync",
               "type": "bool",

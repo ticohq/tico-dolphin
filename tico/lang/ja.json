@@ -246,5 +246,6 @@
   "emulator_portal_empty": "空き",
   "emulator_portal_none": "フィギュアが見つかりません",
   "emulator_portal_where": "フィギュアのダンプを sdmc:/tico/skylanders にコピーしてください",
-  "settings_dolphin_boost_mode": "ブーストモード（CPU 1785 MHz、GPU 768 MHz）"
+  "settings_dolphin_boost_mode": "ブーストモード（CPU 1785 MHz、GPU 768 MHz）",
+  "settings_dolphin_renderer": "レンダラー"
 }
