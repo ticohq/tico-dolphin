@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
+#include <ctime>
 #include <dirent.h>
 #include <string>
 #include <string_view>
@@ -37,6 +38,7 @@
 #include "Core/Config/SYSCONFSettings.h"
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/HW/ProcessorInterface.h"
 #include "Core/Host.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/State.h"
@@ -52,9 +54,12 @@
 
 #include "DolphinNX/Audio.h"
 #include "DolphinNX/Input.h"
-#include "DolphinNX/Overlay/Overlay.h"
 #include "DolphinNX/TicoCore.h"
 #include "DolphinNX/Overlay/VulkanOverlay.h"
+#include "UsbStorage.h"
+#include "overlay/overlay_ui.h"
+#include "overlay/tico_config.h"
+#include "overlay/translation_manager.h"
 
 extern "C"
 {
@@ -93,6 +98,37 @@ static std::optional<std::string> GetLaunchRomPath(int argc, char* argv[])
   }
 
   return std::nullopt;
+}
+
+// This NRO and the arguments it was started with: Restart starts it again.
+static std::string s_self_nro;
+static std::vector<std::string> s_launch_args;
+static bool s_relaunch = false;
+
+static std::string StateSlotPath(int slot)
+{
+  char suffix[8];
+  std::snprintf(suffix, sizeof(suffix), ".s%02d", slot);
+  return File::GetUserPath(D_STATESAVES_IDX) + SConfig::GetInstance().GetGameID() + suffix;
+}
+
+static std::string TrFormat(const char* key, int value)
+{
+  const std::string format = SwitchFrontend::OverlayTranslation::tr(key);
+  char text[256];
+  std::snprintf(text, sizeof(text), format.c_str(), value);
+  return text;
+}
+
+// The first boot's tip: which hotkeys change the Wii controller mode.
+static void ShowControllerModesTip()
+{
+  using SwitchFrontend::OverlayTranslation::tr;
+  DolphinNX::VulkanOverlay::ShowNotice(
+      tr("emulator_controller_modes") + ": " + tr("emulator_controller_help_line_1") + " " +
+          tr("emulator_controller_help_line_2"),
+      {tr("emulator_controller_help_line_full"), tr("emulator_controller_help_line_split"),
+       tr("emulator_controller_help_line_nso"), "OK"});
 }
 
 static void LOG(const char* fmt, ...);
@@ -502,6 +538,15 @@ static void RequestChainloadBackToTico()
 
 static void ConfigureNextLoadForTico()
 {
+  if (s_relaunch && !s_self_nro.empty())
+  {
+    std::string args;
+    for (const std::string& arg : s_launch_args)
+      args += (args.empty() ? "\"" : " \"") + arg + "\"";
+    envSetNextLoad(s_self_nro.c_str(), args.c_str());
+    LOG("Restarting with args: %s\n", args.c_str());
+    return;
+  }
   if (!s_chainload_to_tico)
     return;
 
@@ -528,6 +573,7 @@ static int ExitSwitchFrontend(int exit_code)
 {
   LOG("ExitSwitchFrontend(%d)\n", exit_code);
   ConfigureNextLoadForTico();
+  UsbStorage::Shutdown();  // flush and unmount before tico takes over again
   RestoreSwitchPerformance();
 
   romfsExit();
@@ -1098,6 +1144,12 @@ int main(int argc, char* argv[])
 
   EnsureRootMesaCacheMatchesCoreVersion();
 
+  for (int i = 0; i < argc; ++i)
+    s_launch_args.emplace_back(argv[i] ? argv[i] : "");
+  if (argc > 0 && argv[0])
+    s_self_nro = argv[0];
+  UsbStorage::Init();  // drives mount in the background
+
   const int exit_code = [&]() {
     const auto launch_rom_path = GetLaunchRomPath(argc, argv);
     if (!launch_rom_path)
@@ -1106,7 +1158,14 @@ int main(int argc, char* argv[])
       return 1;
     }
 
-    const std::string rom_path = *launch_rom_path;
+    // a game on a USB drive comes as usb://<volume>/<path>
+    const std::string rom_path = UsbStorage::Resolve(*launch_rom_path);
+    if (rom_path.empty())
+    {
+      LOG("Standalone launch rejected: the USB drive of %s is not connected\n",
+          launch_rom_path->c_str());
+      return 1;
+    }
     LOG("Launch ROM: %s\n", rom_path.c_str());
 
     const auto boot_game_metadata = DetectBootGameMetadata(rom_path);
@@ -1126,7 +1185,7 @@ int main(int argc, char* argv[])
     if (display_title.empty() && boot_game_metadata)
       display_title = boot_game_metadata->game_id;
     LOG("Overlay title: %s\n", display_title.empty() ? "(empty)" : display_title.c_str());
-    DolphinNX::OverlayUI::SetGameTitle(display_title);
+    SwitchFrontend::OverlayUI::SetGameTitle(display_title);
 
     setenv("HOME", "sdmc:/tico/system/gc", 1);
     SetDefaultEnvIfUnset("MESA_VK_WSI_PRESENT_MODE", "fifo");
@@ -1168,6 +1227,9 @@ int main(int argc, char* argv[])
 
     Common::ScopeGuard ui_guard([] { UICommon::Shutdown(); });
 
+    // tico's settings, and this game's own when it has them (Settings > This Game)
+    SwitchFrontend::TicoConfig::ReloadConfig();
+    SwitchFrontend::TicoConfig::SetGame(rom_path);
     LOG("TicoCore::ReloadConfig...\n");
     DolphinNX::TicoCore::ReloadConfig();
     const std::string loaded_config_path = DolphinNX::TicoCore::GetLoadedConfigPath();
@@ -1239,6 +1301,20 @@ int main(int argc, char* argv[])
     const auto present_hook = GetVideoEvents().after_present_event.Register(
         [](const PresentInfo&) { s_presented_frames.fetch_add(1, std::memory_order_relaxed); });
 
+    SwitchFrontend::OverlayUI::SetSlotOccupiedCallback(
+        [](int slot) { return File::Exists(StateSlotPath(slot)); });
+    SwitchFrontend::OverlayUI::SetSlotPreviewCallback([](int slot) {
+      SwitchFrontend::OverlayUI::SlotPreview preview;
+      struct stat st;
+      if (stat(StateSlotPath(slot).c_str(), &st) == 0)
+      {
+        char when[32];
+        if (std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M", std::localtime(&st.st_mtime)))
+          preview.saved_at = when;
+      }
+      return preview;
+    });
+
     bool overlay_ok = false;
     LOG("Overlay init deferred until the first present to avoid early Vulkan races\n");
 
@@ -1287,7 +1363,7 @@ int main(int argc, char* argv[])
                 static_cast<unsigned long long>(presented_frames));
             if (controller_modes_tip_pending)
             {
-              DolphinNX::VulkanOverlay::OpenControllerHelp(false);
+              ShowControllerModesTip();
               MarkControllerModesTipShown();
               controller_modes_tip_pending = false;
               LOG("Overlay: controller modes first-boot help opened\n");
@@ -1334,57 +1410,81 @@ int main(int argc, char* argv[])
           g_presenter->Present();
         }
 
-        if (const int action = DolphinNX::VulkanOverlay::ConsumeAction(); action != 0)
+        namespace OverlayUI = SwitchFrontend::OverlayUI;
+        using Action = OverlayUI::Action;
+        if (OverlayUI::ConsumeSettingsChanged())
         {
-          using A = DolphinNX::OverlayUI::Action;
-          const A overlay_action = static_cast<A>(action);
-          if (DolphinNX::OverlayUI::IsSaveStateAction(overlay_action))
-          {
-            const int slot = DolphinNX::OverlayUI::GetStateSlotForAction(overlay_action);
-            State::Save(system, slot);
-            LOG("Overlay: SaveState slot %d\n", slot);
-          }
-          else if (DolphinNX::OverlayUI::IsLoadStateAction(overlay_action))
-          {
-            const int slot = DolphinNX::OverlayUI::GetStateSlotForAction(overlay_action);
-            if (!s_state_load_in_progress.exchange(true, std::memory_order_acq_rel))
-            {
-              if (s_state_load_thread.joinable())
-                s_state_load_thread.join();
-              AudioCommon::SetSoundStreamRunning(system, false);
+          DolphinNX::TicoCore::ApplyLiveConfig(IsGameCubeDisc(boot_game_metadata));
+          DolphinNX::Input::RefreshLiveSettings();
+          LOG("Overlay: settings applied\n");
+        }
 
-              s_state_load_thread = std::thread([&system, slot]() {
-                Common::SetCurrentThreadName("StateLoad - switchnx");
-                Common::SetCurrentThreadAffinity(2);
-                State::Load(system, slot);
-                AudioCommon::SetSoundStreamRunning(system, true);
-                s_state_load_in_progress.store(false, std::memory_order_release);
-              });
-              LOG("Overlay: LoadState slot %d (worker spawned)\n", slot);
-            }
-            else
-            {
-              LOG("Overlay: LoadState slot %d ignored (load already in progress)\n", slot);
-            }
+        const Action overlay_action = DolphinNX::VulkanOverlay::ConsumeAction();
+        if (OverlayUI::IsSaveStateAction(overlay_action))
+        {
+          const int slot = OverlayUI::GetStateSlotForAction(overlay_action);
+          State::Save(system, slot);
+          OverlayUI::ShowToast(TrFormat("emulator_state_saved", slot));
+          DolphinNX::VulkanOverlay::SetVisible(false);
+          LOG("Overlay: SaveState slot %d\n", slot);
+        }
+        else if (OverlayUI::IsLoadStateAction(overlay_action))
+        {
+          const int slot = OverlayUI::GetStateSlotForAction(overlay_action);
+          if (!s_state_load_in_progress.exchange(true, std::memory_order_acq_rel))
+          {
+            if (s_state_load_thread.joinable())
+              s_state_load_thread.join();
+            AudioCommon::SetSoundStreamRunning(system, false);
+
+            s_state_load_thread = std::thread([&system, slot]() {
+              Common::SetCurrentThreadName("StateLoad - switchnx");
+              Common::SetCurrentThreadAffinity(2);
+              State::Load(system, slot);
+              AudioCommon::SetSoundStreamRunning(system, true);
+              s_state_load_in_progress.store(false, std::memory_order_release);
+            });
+            OverlayUI::ShowToast(slot == OverlayUI::kAutoStateSlot ?
+                                     SwitchFrontend::OverlayTranslation::tr("emulator_auto_loaded") :
+                                     TrFormat("emulator_state_loaded", slot));
+            LOG("Overlay: LoadState slot %d (worker spawned)\n", slot);
           }
           else
           {
-            switch (overlay_action)
-            {
-            case A::Exit:
-              LOG("Overlay: Exit requested\n");
-              RequestChainloadBackToTico();
-              break;
-            case A::Resume:
-            case A::None:
-            default:
-              break;
-            }
+            LOG("Overlay: LoadState slot %d ignored (load already in progress)\n", slot);
+          }
+          DolphinNX::VulkanOverlay::SetVisible(false);
+        }
+        else
+        {
+          switch (overlay_action)
+          {
+          case Action::Exit:
+            LOG("Overlay: Exit requested\n");
+            DolphinNX::VulkanOverlay::SetVisible(false);
+            RequestChainloadBackToTico();
+            break;
+          case Action::Restart:
+            // the NRO starts itself again with the same arguments
+            LOG("Overlay: Restart requested\n");
+            DolphinNX::VulkanOverlay::SetVisible(false);
+            s_relaunch = true;
+            s_running = false;
+            break;
+          case Action::Reset:
+            LOG("Overlay: Reset requested\n");
+            system.GetProcessorInterface().ResetButton_Tap();
+            DolphinNX::VulkanOverlay::SetVisible(false);
+            break;
+          case Action::NoticeChoice:
+            // the controller modes tip: any choice closes it
+            OverlayUI::ConsumeNoticeChoice();
+            DolphinNX::VulkanOverlay::SetVisible(false);
+            break;
+          default:
+            break;
           }
         }
-
-        if (DolphinNX::VulkanOverlay::ShouldExit())
-          RequestChainloadBackToTico();
 
         if (overlay_just_closed && overlay_paused_core)
         {

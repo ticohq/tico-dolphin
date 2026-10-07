@@ -17,6 +17,10 @@ void SetConfigValue(const std::string& key, const std::string& value);
 bool SaveConfig();
 
 void ApplyConfig(bool is_gamecube_disc);
+// After a change in the menu: reads the settings again and applies them, but
+// options the game only reads at boot ("restart" in settings.json) keep the
+// values it started with.
+void ApplyLiveConfig(bool is_gamecube_disc);
 
 std::string GetLoadedConfigPath();
 std::size_t GetLoadedOptionCount();

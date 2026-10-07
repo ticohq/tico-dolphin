@@ -186,7 +186,8 @@
               "key": "dolphin_main_mmu",
               "label": "settings_dolphin_enable_mmu",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_precision_frame_timing",
@@ -198,13 +199,15 @@
               "key": "dolphin_sync_on_skip_idle",
               "label": "settings_dolphin_sync_on_skip_idle",
               "type": "bool",
-              "default": "enabled"
+              "default": "enabled",
+              "restart": true
             },
             {
               "key": "dolphin_fast_disc_speed",
               "label": "settings_dolphin_speed_up_disc_transfer",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             }
           ]
         },
@@ -215,25 +218,29 @@
               "key": "dolphin_skip_gc_bios",
               "label": "settings_dolphin_skip_gamecube_bios",
               "type": "bool",
-              "default": "enabled"
+              "default": "enabled",
+              "restart": true
             },
             {
               "key": "dolphin_cheats_enabled",
               "label": "settings_dolphin_enable_cheats",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_allow_sd_writes",
               "label": "settings_dolphin_allow_sd_writes",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_session_save_data_writable",
               "label": "settings_dolphin_save_data_writable",
               "type": "bool",
-              "default": "enabled"
+              "default": "enabled",
+              "restart": true
             }
           ]
         },
@@ -244,13 +251,15 @@
               "key": "dolphin_sync_gpu",
               "label": "settings_dolphin_sync_gpu",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_sync_gpu_max_distance",
               "label": "settings_dolphin_sync_gpu_max_distance",
               "type": "enum",
               "default": "200000",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_sync_gpu",
                 "value": "enabled"
@@ -279,6 +288,7 @@
               "label": "settings_dolphin_sync_gpu_min_distance",
               "type": "enum",
               "default": "-200000",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_sync_gpu",
                 "value": "enabled"
@@ -307,6 +317,7 @@
               "label": "settings_dolphin_sync_gpu_overclock",
               "type": "enum",
               "default": "1.0",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_sync_gpu",
                 "value": "enabled"
@@ -481,7 +492,8 @@
               "key": "dolphin_dpl2_decoder",
               "label": "settings_dolphin_dpl2_decoder",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             }
           ]
         },
@@ -493,6 +505,7 @@
               "label": "settings_dolphin_audio_latency",
               "type": "enum",
               "default": "20",
+              "restart": true,
               "choices": [
                 {
                   "label": "10 ms",
@@ -521,6 +534,7 @@
               "label": "settings_dolphin_audio_buffer_size",
               "type": "enum",
               "default": "80",
+              "restart": true,
               "choices": [
                 {
                   "label": "40",
@@ -604,7 +618,8 @@
               "key": "dolphin_enable_gamecube_mic",
               "label": "settings_dolphin_gamecube_microphone",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             }
           ]
         },
@@ -616,6 +631,7 @@
               "label": "settings_dolphin_system_language",
               "type": "enum",
               "default": "1",
+              "restart": true,
               "choices": [
                 {
                   "label": "Japanese",
@@ -663,25 +679,29 @@
               "key": "dolphin_widescreen",
               "label": "settings_dolphin_widescreen_wii",
               "type": "bool",
-              "default": "enabled"
+              "default": "enabled",
+              "restart": true
             },
             {
               "key": "dolphin_progressive_scan",
               "label": "settings_dolphin_progressive_scan",
               "type": "bool",
-              "default": "enabled"
+              "default": "enabled",
+              "restart": true
             },
             {
               "key": "dolphin_pal60",
               "label": "settings_dolphin_pal60_mode",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_sensor_bar_position",
               "label": "settings_dolphin_sensor_bar_position",
               "type": "enum",
               "default": "0",
+              "restart": true,
               "choices": [
                 {
                   "label": "Bottom",
@@ -697,19 +717,22 @@
               "key": "dolphin_enable_rumble",
               "label": "settings_dolphin_controller_rumble",
               "type": "bool",
-              "default": "enabled"
+              "default": "enabled",
+              "restart": true
             },
             {
               "key": "dolphin_wiimote_continuous_scanning",
               "label": "settings_dolphin_wiimote_continuous_scanning",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_wiispeak_enable",
               "label": "settings_dolphin_wii_speak",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_wiispeak_muted",
@@ -725,7 +748,8 @@
               "key": "dolphin_wii_logi_microphone_enable",
               "label": "settings_dolphin_logitech_usb_microphone",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             }
           ]
         }
@@ -742,6 +766,7 @@
               "label": "settings_dolphin_gc_port1",
               "type": "enum",
               "default": "standard",
+              "restart": true,
               "choices": [
                 {
                   "label": "None",
@@ -758,6 +783,7 @@
               "label": "settings_dolphin_gc_port1_profile",
               "type": "enum",
               "default": "auto",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_gc_port1_type",
                 "value": "standard"
@@ -775,6 +801,7 @@
               "label": "settings_dolphin_gc_port2",
               "type": "enum",
               "default": "standard",
+              "restart": true,
               "choices": [
                 {
                   "label": "None",
@@ -791,6 +818,7 @@
               "label": "settings_dolphin_gc_port2_profile",
               "type": "enum",
               "default": "auto",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_gc_port2_type",
                 "value": "standard"
@@ -808,6 +836,7 @@
               "label": "settings_dolphin_gc_port3",
               "type": "enum",
               "default": "standard",
+              "restart": true,
               "choices": [
                 {
                   "label": "None",
@@ -824,6 +853,7 @@
               "label": "settings_dolphin_gc_port3_profile",
               "type": "enum",
               "default": "auto",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_gc_port3_type",
                 "value": "standard"
@@ -841,6 +871,7 @@
               "label": "settings_dolphin_gc_port4",
               "type": "enum",
               "default": "standard",
+              "restart": true,
               "choices": [
                 {
                   "label": "None",
@@ -857,6 +888,7 @@
               "label": "settings_dolphin_gc_port4_profile",
               "type": "enum",
               "default": "auto",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_gc_port4_type",
                 "value": "standard"
@@ -879,6 +911,7 @@
               "label": "settings_dolphin_wiimote1",
               "type": "enum",
               "default": "emulated",
+              "restart": true,
               "choices": [
                 {
                   "label": "None",
@@ -895,6 +928,7 @@
               "label": "settings_dolphin_wiimote1_mode",
               "type": "enum",
               "default": "nunchuk",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_wiimote1_source",
                 "value": "emulated"
@@ -923,6 +957,7 @@
               "label": "settings_dolphin_wiimote1_profile",
               "type": "enum",
               "default": "auto",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_wiimote1_source",
                 "value": "emulated"
@@ -940,6 +975,7 @@
               "label": "settings_dolphin_wiimote2",
               "type": "enum",
               "default": "emulated",
+              "restart": true,
               "choices": [
                 {
                   "label": "None",
@@ -956,6 +992,7 @@
               "label": "settings_dolphin_wiimote2_mode",
               "type": "enum",
               "default": "nunchuk",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_wiimote2_source",
                 "value": "emulated"
@@ -984,6 +1021,7 @@
               "label": "settings_dolphin_wiimote2_profile",
               "type": "enum",
               "default": "auto",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_wiimote2_source",
                 "value": "emulated"
@@ -1001,6 +1039,7 @@
               "label": "settings_dolphin_wiimote3",
               "type": "enum",
               "default": "emulated",
+              "restart": true,
               "choices": [
                 {
                   "label": "None",
@@ -1017,6 +1056,7 @@
               "label": "settings_dolphin_wiimote3_mode",
               "type": "enum",
               "default": "nunchuk",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_wiimote3_source",
                 "value": "emulated"
@@ -1045,6 +1085,7 @@
               "label": "settings_dolphin_wiimote3_profile",
               "type": "enum",
               "default": "auto",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_wiimote3_source",
                 "value": "emulated"
@@ -1062,6 +1103,7 @@
               "label": "settings_dolphin_wiimote4",
               "type": "enum",
               "default": "emulated",
+              "restart": true,
               "choices": [
                 {
                   "label": "None",
@@ -1078,6 +1120,7 @@
               "label": "settings_dolphin_wiimote4_mode",
               "type": "enum",
               "default": "nunchuk",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_wiimote4_source",
                 "value": "emulated"
@@ -1106,6 +1149,7 @@
               "label": "settings_dolphin_wiimote4_profile",
               "type": "enum",
               "default": "auto",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_wiimote4_source",
                 "value": "emulated"
@@ -2711,13 +2755,15 @@
               "key": "dolphin_wait_for_shaders",
               "label": "settings_dolphin_wait_for_shaders",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_shader_cache",
               "label": "settings_dolphin_shader_cache",
               "type": "bool",
-              "default": "enabled"
+              "default": "enabled",
+              "restart": true
             },
             {
               "key": "dolphin_anti_aliasing",
@@ -2803,7 +2849,8 @@
               "key": "dolphin_backend_multithreading",
               "label": "settings_dolphin_backend_multithreading",
               "type": "bool",
-              "default": "enabled"
+              "default": "enabled",
+              "restart": true
             },
             {
               "key": "dolphin_cpu_cull",
@@ -2868,13 +2915,15 @@
               "key": "dolphin_load_custom_textures",
               "label": "settings_dolphin_load_custom_textures",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_cache_custom_textures",
               "label": "settings_dolphin_prefetch_custom_textures",
               "type": "bool",
               "default": "disabled",
+              "restart": true,
               "depends_on": {
                 "key": "dolphin_load_custom_textures",
                 "value": "enabled"
@@ -2932,7 +2981,8 @@
               "key": "dolphin_enhance_hdr_output",
               "label": "settings_dolphin_hdr_output",
               "type": "bool",
-              "default": "disabled"
+              "default": "disabled",
+              "restart": true
             },
             {
               "key": "dolphin_mipmap_detection",

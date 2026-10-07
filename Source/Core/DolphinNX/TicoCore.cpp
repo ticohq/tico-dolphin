@@ -4,6 +4,8 @@
 
 #include "DolphinNX/TicoCore.h"
 
+#include "overlay/tico_config.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -701,6 +703,27 @@ public:
     ApplyRawLocationOverrides();
   }
 
+  void ApplyLiveConfig(bool is_gamecube_disc)
+  {
+    // what the game started with: options it only reads at boot keep it
+    const OptionMap boot = m_options;
+    ReloadConfig();
+    for (const auto& category : SwitchFrontend::TicoConfig::GetCategories())
+    {
+      for (std::size_t i = 0; i < category.option_count; ++i)
+      {
+        const auto& option = category.options[i];
+        if (!option.needs_restart)
+          continue;
+        if (const auto it = boot.find(std::string_view(option.key)); it != boot.end())
+          m_options[option.key] = it->second;
+        else
+          m_options.erase(std::string(option.key));
+      }
+    }
+    ApplyConfig(is_gamecube_disc);
+  }
+
 private:
   void EnsureLoaded()
   {
@@ -734,6 +757,21 @@ private:
       m_loaded_path = path;
       m_save_path = IsWritablePath(path) ? path : std::string(kDefaultWritableConfigPath);
       break;
+    }
+
+    // The overlay keeps tico's settings: the core's file, and over it this
+    // game's own when it has them (Settings > This Game).
+    for (const auto& category : SwitchFrontend::TicoConfig::GetCategories())
+    {
+      for (std::size_t i = 0; i < category.option_count; ++i)
+      {
+        const std::string_view key = category.options[i].key;
+        if (IsFixedBaseOption(key))
+          continue;
+        std::string value = SwitchFrontend::TicoConfig::GetConfigValue(key);
+        if (!value.empty())
+          m_options[std::string(key)] = std::move(value);
+      }
     }
 
     m_loaded = true;
@@ -1371,6 +1409,11 @@ bool SaveConfig()
 void ApplyConfig(bool is_gamecube_disc)
 {
   GetManager().ApplyConfig(is_gamecube_disc);
+}
+
+void ApplyLiveConfig(bool is_gamecube_disc)
+{
+  GetManager().ApplyLiveConfig(is_gamecube_disc);
 }
 
 std::string GetLoadedConfigPath()
