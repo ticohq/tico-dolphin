@@ -61,10 +61,15 @@ cmake --build "${BUILD_DIR}" --target dolphin-nx -j"$(nproc)"
 echo ""
 echo "=== Packaging NRO ==="
 
-rm -rf "${ROMFS_DIR}/fonts" "${ROMFS_DIR}/lang" "${ROMFS_DIR}/Sys" "${ROMFS_DIR}/config"
-mkdir -p "${ROMFS_DIR}"
-cp -R "${SCRIPT_DIR}/Source/Core/DolphinNX/Assets/fonts" "${ROMFS_DIR}/"
-cp -R "${SCRIPT_DIR}/Source/Core/DolphinNX/Assets/lang" "${ROMFS_DIR}/"
+rm -rf "${ROMFS_DIR}/fonts" "${ROMFS_DIR}/lang" "${ROMFS_DIR}/assets" "${ROMFS_DIR}/module" \
+  "${ROMFS_DIR}/Sys" "${ROMFS_DIR}/config"
+mkdir -p "${ROMFS_DIR}/module"
+# tico's overlay: its fonts, strings and artwork, and the settings it lists
+# (the same settings.json tico reads from the installed module)
+cp -R "${SCRIPT_DIR}/tico/fonts" "${ROMFS_DIR}/"
+cp -R "${SCRIPT_DIR}/tico/lang" "${ROMFS_DIR}/"
+cp -R "${SCRIPT_DIR}/tico/assets" "${ROMFS_DIR}/"
+cp "${SCRIPT_DIR}/tico/module/settings.json" "${ROMFS_DIR}/module/"
 # Dolphin's Sys tree, seeded to sdmc:/tico/system/gc/Sys on first run (see main.cpp).
 cp -R "${SCRIPT_DIR}/Data/Sys" "${ROMFS_DIR}/"
 

@@ -41,7 +41,7 @@
 #include "InputCommon/GCPadStatus.h"
 #include "InputCommon/InputConfig.h"
 #include "DolphinNX/ControllerProfiles.h"
-#include "DolphinNX/Overlay/Overlay.h"
+#include "overlay/overlay_ui.h"
 #include "DolphinNX/Overlay/VulkanOverlay.h"
 #include "DolphinNX/TicoCore.h"
 
@@ -227,20 +227,20 @@ static const char* GetWiiControllerModeName(WiiControllerMode mode)
   return "Unknown";
 }
 
-static DolphinNX::OverlayUI::ToastCorner GetToastCornerForPlayer(unsigned player)
+static SwitchFrontend::OverlayUI::ToastCorner GetToastCornerForPlayer(unsigned player)
 {
   switch (player)
   {
   case 0:
-    return DolphinNX::OverlayUI::ToastCorner::TopLeft;
+    return SwitchFrontend::OverlayUI::ToastCorner::TopLeft;
   case 1:
-    return DolphinNX::OverlayUI::ToastCorner::TopRight;
+    return SwitchFrontend::OverlayUI::ToastCorner::TopRight;
   case 2:
-    return DolphinNX::OverlayUI::ToastCorner::BottomLeft;
+    return SwitchFrontend::OverlayUI::ToastCorner::BottomLeft;
   case 3:
-    return DolphinNX::OverlayUI::ToastCorner::BottomRight;
+    return SwitchFrontend::OverlayUI::ToastCorner::BottomRight;
   default:
-    return DolphinNX::OverlayUI::ToastCorner::TopLeft;
+    return SwitchFrontend::OverlayUI::ToastCorner::TopLeft;
   }
 }
 
@@ -368,6 +368,19 @@ static void ApplyCalibrateMountOnRecenter(WiimoteEmu::Wiimote* wiimote)
       TicoCore::GetConfigValue("dolphin_calibrate_on_recenter", "disabled") == "enabled");
 }
 
+// Pointer range: how many degrees of physical rotation sweep the whole screen.
+// Smaller = more sensitive. 70 matches the hardcoded __SWITCH__ default.
+static void ApplyPointerYaw(WiimoteEmu::Wiimote* wiimote)
+{
+  const std::string yaw_str = TicoCore::GetConfigValue("dolphin_pointer_yaw", "70");
+  const double yaw = std::clamp(std::atof(yaw_str.c_str()), 10.0, 180.0);
+  if (auto* imu_ir = static_cast<ControllerEmu::IMUCursor*>(
+          wiimote->GetWiimoteGroup(WiimoteEmu::WiimoteGroup::IMUPoint)))
+  {
+    imu_ir->SetTotalYawDegrees(yaw);
+  }
+}
+
 // Applies the port's profile to the Wii Remote and, when one is attached, to the
 // selected extension. The remote's own groups come from the "wiimote" table, or
 // "wiimote_sideways" when held horizontally -- turning the remote puts different
@@ -383,18 +396,7 @@ static void ApplyWiimoteProfile(unsigned player, WiimoteEmu::Wiimote* wiimote,
                             sideways ? ControllerProfiles::Target::WiimoteSideways :
                                        ControllerProfiles::Target::Wiimote);
 
-  // Pointer range: how many degrees of physical rotation sweep the whole screen.
-  // Smaller = more sensitive. 70 matches the hardcoded __SWITCH__ default.
-  {
-    const std::string yaw_str = TicoCore::GetConfigValue("dolphin_pointer_yaw", "70");
-    const double yaw = std::clamp(std::atof(yaw_str.c_str()), 10.0, 180.0);
-    if (auto* imu_ir = static_cast<ControllerEmu::IMUCursor*>(
-            wiimote->GetWiimoteGroup(WiimoteEmu::WiimoteGroup::IMUPoint)))
-    {
-      imu_ir->SetTotalYawDegrees(yaw);
-    }
-  }
-
+  ApplyPointerYaw(wiimote);
   ApplyCalibrateMountOnRecenter(wiimote);
 
   const char* extension_target = nullptr;
@@ -487,7 +489,7 @@ static bool ApplyWiiControllerMode(unsigned player, WiiControllerMode mode, bool
                GetWiiControllerModeName(mode));
   if (show_toast)
   {
-    DolphinNX::OverlayUI::ShowToast(std::string("P") + std::to_string(player + 1) + " - " +
+    SwitchFrontend::OverlayUI::ShowToast(std::string("P") + std::to_string(player + 1) + " - " +
                                         GetWiiControllerModeName(mode),
                                     GetToastCornerForPlayer(player));
   }
@@ -1688,9 +1690,9 @@ void Update()
   }
 }
 
-void RefreshCalibrateMountOnRecenter()
+void RefreshLiveSettings()
 {
-  // Wii Remotes not created yet pick the setting up when their profile is applied.
+  // Wii Remotes not created yet pick the settings up when their profile is applied.
   if (Wiimote::GetConfig()->ControllersNeedToBeCreated())
     return;
 
@@ -1698,6 +1700,7 @@ void RefreshCalibrateMountOnRecenter()
   {
     if (auto* wiimote = static_cast<WiimoteEmu::Wiimote*>(Wiimote::GetConfig()->GetController(i)))
     {
+      ApplyPointerYaw(wiimote);
       ApplyCalibrateMountOnRecenter(wiimote);
     }
   }

@@ -4,13 +4,14 @@
 
 #include "DolphinNX/Overlay/VulkanOverlay.h"
 
-#include <array>
 #include <atomic>
-#include <cstdarg>
-#include <cstdio>
-#include <cstring>
+#include <chrono>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <imgui.h>
@@ -19,48 +20,31 @@
 #include <stb_image.h>
 
 #include "Common/CommonTypes.h"
-#include "VideoBackends/Vulkan/CommandBufferManager.h"
+#include "Core/System.h"
 #include "VideoBackends/Vulkan/VKGfx.h"
 #include "VideoBackends/Vulkan/VKSwapChain.h"
 #include "VideoBackends/Vulkan/VKTexture.h"
 #include "VideoBackends/Vulkan/VulkanContext.h"
 #include "VideoBackends/Vulkan/VulkanLoader.h"
+#include "VideoCommon/FramebufferManager.h"
+#include "VideoCommon/PerformanceMetrics.h"
 
-#include "DolphinNX/Overlay/Overlay.h"
+#include "TicoLogger.h"
+#include "TicoOverlayHost.h"
+#include "overlay/imgui_overlay.h"
+#include "overlay/overlay_renderer.h"
 
 namespace DolphinNX::VulkanOverlay
 {
 namespace
 {
-constexpr const char* TAG = "[OverlayVK]";
+using SwitchFrontend::OverlayUI::Action;
+namespace ImGuiOverlay = SwitchFrontend::ImGuiOverlay;
+namespace OverlayUI = SwitchFrontend::OverlayUI;
 
-std::atomic_bool s_initialized = false;
-std::atomic_bool s_visible = false;
-std::atomic_bool s_exit_requested = false;
-std::atomic_int s_pending_action = 0;
-std::atomic_uint s_pending_nav_mask = 0;
-bool s_psm_initialized = false;
-bool s_social_data_loaded = false;
-
-VkDescriptorPool s_descriptor_pool = VK_NULL_HANDLE;
-VkRenderPass s_render_pass = VK_NULL_HANDLE;
-VkDevice s_device = VK_NULL_HANDLE;
-VkSampler s_avatar_sampler = VK_NULL_HANDLE;
-VkDescriptorSet s_avatar_descriptor_set = VK_NULL_HANDLE;
-std::unique_ptr<Vulkan::VKTexture> s_avatar_texture;
-
-bool s_was_combo_down = false;
-
-struct NavPrev
-{
-  bool up;
-  bool down;
-  bool left;
-  bool right;
-  bool a;
-  bool b;
-};
-NavPrev s_nav_prev{};
+// held directions repeat after this many polls, then every few
+constexpr int kNavInitialDelay = 18;
+constexpr int kNavRepeat = 5;
 
 enum NavBits : unsigned int
 {
@@ -72,451 +56,379 @@ enum NavBits : unsigned int
   NavBit_Cancel = 1u << 5,
 };
 
-struct AvatarImage
+// --- shared between the main loop and the drawing thread ---
+std::atomic_bool s_registered = false;
+std::atomic_bool s_visible = false;
+std::atomic_int s_pending_action = 0;
+std::atomic_uint s_pending_nav = 0;
+std::atomic_bool s_touch_down = false;
+std::atomic<float> s_touch_x = 0.0f;
+std::atomic<float> s_touch_y = 0.0f;
+std::mutex s_notice_mutex;
+std::optional<std::pair<std::string, std::vector<std::string>>> s_pending_notice;
+
+// --- main loop only ---
+bool s_was_combo_down = false;
+u64 s_nav_held_prev = 0;
+int s_nav_repeat = 0;
+bool s_accept_prev = false;
+bool s_cancel_prev = false;
+
+// --- drawing thread only (or the main loop while the core is paused) ---
+bool s_ready = false;
+bool s_failed = false;
+bool s_shown = false;
+std::chrono::steady_clock::time_point s_last_frame;
+VkDevice s_device = VK_NULL_HANDLE;
+VkRenderPass s_render_pass = VK_NULL_HANDLE;
+u32 s_image_count = 2;
+VkDescriptorPool s_descriptor_pool = VK_NULL_HANDLE;
+VkSampler s_sampler = VK_NULL_HANDLE;
+std::map<ImTextureID, std::unique_ptr<Vulkan::VKTexture>> s_textures;
+
+// The overlay's textures (avatar, selection border, icons) as Vulkan
+// textures ImGui can sample. Called while drawing, where Dolphin records.
+class Host final : public IOverlayHost
 {
-  std::vector<unsigned char> pixels;
-  int width = 0;
-  int height = 0;
+public:
+  std::string GetGamePath() override { return {}; }
+  bool IsGameLoaded() override { return true; }
+  bool StateSlotExists(int) override { return false; }
+  void SaveStateSlot(int) override {}
+  void LoadStateSlot(int) override {}
+  void SwapDisc(const std::string&) override {}
 
-  bool IsValid() const { return !pixels.empty() && width > 0 && height > 0; }
-};
-
-constexpr std::array<const char*, 2> kCustomAvatarPaths = {{
-    "sdmc:/tiicu/assets/avatar.jpg",
-    "sdmc:/tico/assets/avatar.jpg",
-}};
-
-AvatarImage s_avatar_image;
-std::string s_nickname = "Player 1";
-
-FILE* s_log = nullptr;
-void LOG(const char* fmt, ...)
-{
-  // if (!s_log)
-  //   s_log = std::fopen("sdmc:/dolphin-nx-overlay.log", "w");
-  if (!s_log)
-    return;
-  va_list args;
-  va_start(args, fmt);
-  std::vfprintf(s_log, fmt, args);
-  va_end(args);
-  std::fflush(s_log);
-}
-
-bool FileExists(const char* path)
-{
-  if (FILE* fp = std::fopen(path, "rb"))
+  ImTextureID CreateTextureRGBA(const unsigned char* rgba, int width, int height) override
   {
-    std::fclose(fp);
-    return true;
-  }
-  return false;
-}
-
-const char* GetCustomAvatarPath()
-{
-  for (const char* path : kCustomAvatarPaths)
-  {
-    if (FileExists(path))
-      return path;
-  }
-  return nullptr;
-}
-
-AvatarImage DecodeAvatarFromFile(const char* path)
-{
-  AvatarImage avatar;
-  int channels = 0;
-  if (unsigned char* data = stbi_load(path, &avatar.width, &avatar.height, &channels, 4))
-  {
-    const size_t byte_count =
-        static_cast<size_t>(avatar.width) * static_cast<size_t>(avatar.height) * 4;
-    avatar.pixels.assign(data, data + byte_count);
-    stbi_image_free(data);
-  }
-  return avatar;
-}
-
-AvatarImage DecodeAvatarFromMemory(const void* data, size_t size)
-{
-  AvatarImage avatar;
-  int channels = 0;
-  if (unsigned char* rgba = stbi_load_from_memory(static_cast<const stbi_uc*>(data),
-                                                  static_cast<int>(size), &avatar.width,
-                                                  &avatar.height, &channels, 4))
-  {
-    const size_t byte_count =
-        static_cast<size_t>(avatar.width) * static_cast<size_t>(avatar.height) * 4;
-    avatar.pixels.assign(rgba, rgba + byte_count);
-    stbi_image_free(rgba);
-  }
-  return avatar;
-}
-
-AvatarImage LoadAvatarFromAccount()
-{
-  AvatarImage avatar;
-
-  Result rc = accountInitialize(AccountServiceType_Application);
-  if (R_FAILED(rc))
-    return avatar;
-
-  AccountUid uid = {};
-  bool found = false;
-
-  if (R_SUCCEEDED(accountGetPreselectedUser(&uid)) && accountUidIsValid(&uid))
-    found = true;
-  if (!found && R_SUCCEEDED(accountGetLastOpenedUser(&uid)) && accountUidIsValid(&uid))
-    found = true;
-  if (!found)
-  {
-    s32 user_count = 0;
-    if (R_SUCCEEDED(accountGetUserCount(&user_count)) && user_count > 0)
-    {
-      AccountUid uids[ACC_USER_LIST_SIZE];
-      s32 actual_total = 0;
-      if (R_SUCCEEDED(accountListAllUsers(uids, ACC_USER_LIST_SIZE, &actual_total)) &&
-          actual_total > 0)
-      {
-        uid = uids[0];
-        found = true;
-      }
-    }
+    if (!rgba || width <= 0 || height <= 0 || s_sampler == VK_NULL_HANDLE)
+      return 0;
+    const TextureConfig config(static_cast<u32>(width), static_cast<u32>(height), 1, 1, 1,
+                               AbstractTextureFormat::RGBA8, 0, AbstractTextureType::Texture_2D);
+    auto texture = Vulkan::VKTexture::Create(config, "TicoOverlayTexture");
+    if (!texture)
+      return 0;
+    const std::size_t size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
+    texture->Load(0, static_cast<u32>(width), static_cast<u32>(height), static_cast<u32>(width),
+                  rgba, size, 0);
+    const VkDescriptorSet set =
+        ImGui_ImplVulkan_AddTexture(s_sampler, texture->GetView(), texture->GetLayout());
+    const ImTextureID id = reinterpret_cast<ImTextureID>(set);
+    s_textures[id] = std::move(texture);
+    return id;
   }
 
-  if (found)
+  void DestroyTexture(ImTextureID texture) override
   {
-    AccountProfile profile;
-    if (R_SUCCEEDED(accountGetProfile(&profile, uid)))
-    {
-      u32 image_size = 0;
-      if (R_SUCCEEDED(accountProfileGetImageSize(&profile, &image_size)) && image_size > 0)
-      {
-        std::vector<unsigned char> jpeg_buffer(image_size);
-        u32 actual_size = 0;
-        if (R_SUCCEEDED(accountProfileLoadImage(&profile, jpeg_buffer.data(), image_size,
-                                                &actual_size)))
-        {
-          avatar = DecodeAvatarFromMemory(jpeg_buffer.data(), actual_size);
-        }
-      }
-      accountProfileClose(&profile);
-    }
-  }
-
-  accountExit();
-  return avatar;
-}
-
-std::string LoadNickname()
-{
-  if (GetCustomAvatarPath() != nullptr)
-    return "Player 1";
-
-  Result rc = accountInitialize(AccountServiceType_Application);
-  if (R_FAILED(rc))
-    return "Player 1";
-
-  std::string nickname;
-  AccountUid uid = {};
-  bool found = false;
-
-  if (R_SUCCEEDED(accountGetPreselectedUser(&uid)) && accountUidIsValid(&uid))
-    found = true;
-  if (!found && R_SUCCEEDED(accountGetLastOpenedUser(&uid)) && accountUidIsValid(&uid))
-    found = true;
-  if (!found)
-  {
-    s32 user_count = 0;
-    if (R_SUCCEEDED(accountGetUserCount(&user_count)) && user_count > 0)
-    {
-      AccountUid uids[ACC_USER_LIST_SIZE];
-      s32 actual_total = 0;
-      if (R_SUCCEEDED(accountListAllUsers(uids, ACC_USER_LIST_SIZE, &actual_total)) &&
-          actual_total > 0)
-      {
-        uid = uids[0];
-        found = true;
-      }
-    }
-  }
-
-  if (found)
-  {
-    AccountProfile profile;
-    AccountProfileBase profile_base;
-    if (R_SUCCEEDED(accountGetProfile(&profile, uid)))
-    {
-      if (R_SUCCEEDED(accountProfileGet(&profile, nullptr, &profile_base)))
-        nickname = std::string(profile_base.nickname);
-      accountProfileClose(&profile);
-    }
-  }
-
-  accountExit();
-  return nickname.empty() ? "Player 1" : nickname;
-}
-
-void LoadSocialAreaData()
-{
-  s_social_data_loaded = true;
-  s_nickname = LoadNickname();
-  OverlayUI::SetNickname(s_nickname);
-  OverlayUI::SetAvatarTextureId(0);
-
-  if (const char* custom_avatar = GetCustomAvatarPath())
-  {
-    s_avatar_image = DecodeAvatarFromFile(custom_avatar);
-    if (s_avatar_image.IsValid())
-    {
-      LOG("%s loaded custom avatar from %s (%dx%d)\n", TAG, custom_avatar, s_avatar_image.width,
-          s_avatar_image.height);
+    const auto it = s_textures.find(texture);
+    if (it == s_textures.end())
       return;
-    }
-    LOG("%s failed to decode custom avatar at %s\n", TAG, custom_avatar);
+    ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(texture));
+    s_textures.erase(it);
   }
+};
+Host s_host;
 
-  s_avatar_image = LoadAvatarFromAccount();
-  if (s_avatar_image.IsValid())
-  {
-    LOG("%s loaded account avatar (%dx%d)\n", TAG, s_avatar_image.width, s_avatar_image.height);
-  }
-  else
-  {
-    LOG("%s no avatar available, using placeholder social area\n", TAG);
-  }
-}
-
-bool CreateAvatarSampler()
+PFN_vkVoidFunction LoadVulkanFunction(const char* name, void* user_data)
 {
-  if (s_avatar_sampler != VK_NULL_HANDLE)
-    return true;
-
-  VkSamplerCreateInfo info{};
-  info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  info.magFilter = VK_FILTER_LINEAR;
-  info.minFilter = VK_FILTER_LINEAR;
-  info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-  info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  info.maxLod = 1.0f;
-
-  const VkResult rc = vkCreateSampler(s_device, &info, nullptr, &s_avatar_sampler);
-  if (rc != VK_SUCCESS)
-  {
-    LOG("%s vkCreateSampler for avatar failed: %d\n", TAG, static_cast<int>(rc));
-    return false;
-  }
-  return true;
-}
-
-void UploadAvatarTextureIfNeeded()
-{
-  if (s_avatar_descriptor_set != VK_NULL_HANDLE || !s_avatar_image.IsValid())
-    return;
-
-  if (!CreateAvatarSampler())
-    return;
-
-  const TextureConfig config(static_cast<u32>(s_avatar_image.width),
-                             static_cast<u32>(s_avatar_image.height), 1, 1, 1,
-                             AbstractTextureFormat::RGBA8, 0, AbstractTextureType::Texture_2D);
-  auto texture = Vulkan::VKTexture::Create(config, "DolphinNXOverlayAvatar");
-  if (!texture)
-  {
-    LOG("%s failed to create Vulkan texture for avatar\n", TAG);
-    s_avatar_image = {};
-    return;
-  }
-
-  texture->Load(0, static_cast<u32>(s_avatar_image.width), static_cast<u32>(s_avatar_image.height),
-                static_cast<u32>(s_avatar_image.width), s_avatar_image.pixels.data(),
-                s_avatar_image.pixels.size(), 0);
-
-  s_avatar_descriptor_set =
-      ImGui_ImplVulkan_AddTexture(s_avatar_sampler, texture->GetView(), texture->GetLayout());
-  s_avatar_texture = std::move(texture);
-  OverlayUI::SetAvatarTextureId(reinterpret_cast<unsigned long long>(s_avatar_descriptor_set));
-  LOG("%s uploaded social avatar to Vulkan (%dx%d)\n", TAG, s_avatar_image.width,
-      s_avatar_image.height);
-  s_avatar_image = {};
-}
-
-void DestroyAvatarResources()
-{
-  OverlayUI::SetAvatarTextureId(0);
-  if (s_avatar_descriptor_set != VK_NULL_HANDLE)
-  {
-    ImGui_ImplVulkan_RemoveTexture(s_avatar_descriptor_set);
-    s_avatar_descriptor_set = VK_NULL_HANDLE;
-  }
-  s_avatar_texture.reset();
-  if (s_avatar_sampler != VK_NULL_HANDLE)
-  {
-    vkDestroySampler(s_device, s_avatar_sampler, nullptr);
-    s_avatar_sampler = VK_NULL_HANDLE;
-  }
-  s_avatar_image = {};
-}
-
-PFN_vkVoidFunction VulkanLoaderCallback(const char* name, void* user_data)
-{
-  VkInstance instance = static_cast<VkInstance>(user_data);
   if (!::vkGetInstanceProcAddr)
     return nullptr;
-  return ::vkGetInstanceProcAddr(instance, name);
+  return ::vkGetInstanceProcAddr(static_cast<VkInstance>(user_data), name);
+}
+
+void PublishHudStats()
+{
+  OverlayUI::HudStats stats;
+  stats.fps = static_cast<float>(Core::System::GetInstance().GetPerfMetrics().GetFPS());
+  if (g_framebuffer_manager)
+  {
+    stats.rendered_width = static_cast<int>(g_framebuffer_manager->GetEFBWidth());
+    stats.rendered_height = static_cast<int>(g_framebuffer_manager->GetEFBHeight());
+  }
+  OverlayUI::SetHudStats(stats);
+}
+
+void Hide()
+{
+  s_visible.store(false);
+  s_pending_nav.store(0);
+  ImGuiOverlay::SetVisible(false);
+  s_shown = false;
 }
 
 void DrawCallback(Vulkan::VKFramebuffer* fb, VkCommandBuffer cmd)
 {
-  if (!s_initialized.load() || (!s_visible.load() && !OverlayUI::HasTransientContent()))
+  if (!s_registered.load() || s_failed)
     return;
 
-  const u32 fb_w = fb->GetWidth();
-  const u32 fb_h = fb->GetHeight();
-
-  ImGui_ImplVulkan_NewFrame();
-
-  ImGuiIO& io = ImGui::GetIO();
-  io.DisplaySize = ImVec2(static_cast<float>(fb_w), static_cast<float>(fb_h));
-  io.DeltaTime = 1.0f / 60.0f;
-
-  UploadAvatarTextureIfNeeded();
-
-  const unsigned int nav_mask = s_pending_nav_mask.exchange(0);
-  if (nav_mask != 0)
+  if (!s_ready)
   {
-    LOG("%s nav delivered to render (mask=0x%x)\n", TAG, nav_mask);
-  }
-  OverlayUI::FeedNav({
-      .up = (nav_mask & NavBit_Up) != 0,
-      .down = (nav_mask & NavBit_Down) != 0,
-      .left = (nav_mask & NavBit_Left) != 0,
-      .right = (nav_mask & NavBit_Right) != 0,
-      .accept = (nav_mask & NavBit_Accept) != 0,
-      .cancel = (nav_mask & NavBit_Cancel) != 0,
-  });
-
-  ImGui::NewFrame();
-  const OverlayUI::Action action =
-      OverlayUI::Render(static_cast<int>(fb_w), static_cast<int>(fb_h));
-  ImGui::Render();
-
-  if (action != OverlayUI::Action::None)
-  {
-    s_pending_action.store(static_cast<int>(action));
-    if (action == OverlayUI::Action::Exit)
-      s_exit_requested.store(true);
-    if (action == OverlayUI::Action::Resume || action == OverlayUI::Action::Exit)
+    if (!ImGuiOverlay::Init(&s_host))
     {
-      s_visible.store(false);
-      s_pending_nav_mask.store(0);
-      OverlayUI::SetVisible(false);
+      LOG_ERROR("OVERLAY", "the overlay could not start; the game runs without a menu");
+      s_failed = true;
+      return;
+    }
+    OverlayUI::ReloadSettings();
+    s_last_frame = std::chrono::steady_clock::now();
+    s_ready = true;
+  }
+
+  {
+    std::lock_guard lock(s_notice_mutex);
+    if (s_pending_notice)
+    {
+      s_visible.store(true);
+      ImGuiOverlay::SetVisible(true);
+      s_shown = true;
+      OverlayUI::ShowNotice(std::move(s_pending_notice->first),
+                            std::move(s_pending_notice->second));
+      s_pending_notice.reset();
     }
   }
+
+  const bool visible = s_visible.load();
+  if (visible != s_shown)
+  {
+    ImGuiOverlay::SetVisible(visible);
+    s_shown = visible;
+  }
+
+  PublishHudStats();
+  const auto now = std::chrono::steady_clock::now();
+  const float delta = std::chrono::duration<float>(now - s_last_frame).count();
+  s_last_frame = now;
+  if (!visible && !OverlayUI::HasTransientContent())
+    return;
+
+  if (visible)
+  {
+    const unsigned int nav = s_pending_nav.exchange(0);
+    ImGuiOverlay::FeedNav({
+        .up = (nav & NavBit_Up) != 0,
+        .down = (nav & NavBit_Down) != 0,
+        .left = (nav & NavBit_Left) != 0,
+        .right = (nav & NavBit_Right) != 0,
+        .accept = (nav & NavBit_Accept) != 0,
+        .cancel = (nav & NavBit_Cancel) != 0,
+    });
+    ImGuiOverlay::FeedTouch({s_touch_down.load(), s_touch_x.load(), s_touch_y.load()});
+  }
+
+  const u32 width = fb->GetWidth();
+  const u32 height = fb->GetHeight();
+  ImDrawData* draw_data = ImGuiOverlay::BuildFrame(static_cast<float>(width),
+                                                   static_cast<float>(height),
+                                                   delta > 0.0f && delta < 0.25f ? delta : 1.0f / 60.0f);
+
+  const Action action = ImGuiOverlay::ConsumeAction();
+  if (action != Action::None)
+  {
+    s_pending_action.store(static_cast<int>(action));
+    if (action == Action::Resume)
+      Hide();
+  }
+
+  if (!draw_data)
+    return;
 
   VkRenderPassBeginInfo rp_info{};
   rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
   rp_info.renderPass = fb->GetLoadRenderPass();
   rp_info.framebuffer = fb->GetFB();
-  rp_info.renderArea.offset = {0, 0};
-  rp_info.renderArea.extent = {fb_w, fb_h};
-  rp_info.clearValueCount = 0;
-  rp_info.pClearValues = nullptr;
-
+  rp_info.renderArea.extent = {width, height};
   vkCmdBeginRenderPass(cmd, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
-  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+  ImGui_ImplVulkan_RenderDrawData(draw_data, cmd);
   vkCmdEndRenderPass(cmd);
-}
-
-bool CreateDescriptorPool(VkDevice device)
-{
-  VkDescriptorPoolSize pool_size{};
-  pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  pool_size.descriptorCount = 64;
-
-  VkDescriptorPoolCreateInfo info{};
-  info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-  info.maxSets = 64;
-  info.poolSizeCount = 1;
-  info.pPoolSizes = &pool_size;
-
-  const VkResult rc = vkCreateDescriptorPool(device, &info, nullptr, &s_descriptor_pool);
-  if (rc != VK_SUCCESS)
-  {
-    LOG("%s vkCreateDescriptorPool failed: %d\n", TAG, static_cast<int>(rc));
-    return false;
-  }
-  return true;
 }
 }  // namespace
 
 bool Init()
 {
-  if (s_initialized.load())
+  if (s_registered.load())
     return true;
-
-  LOG("%s Init begin\n", TAG);
 
   auto* gfx = Vulkan::VKGfx::GetInstance();
   if (!gfx || !gfx->GetSwapChain() || !Vulkan::g_vulkan_context)
-  {
-    LOG("%s Vulkan backend not ready\n", TAG);
     return false;
-  }
-
   auto* swap_chain = gfx->GetSwapChain();
-  auto* fb0 = swap_chain->GetCurrentFramebuffer();
-  if (!fb0)
-  {
-    LOG("%s swapchain has no current framebuffer yet\n", TAG);
+  auto* framebuffer = swap_chain->GetCurrentFramebuffer();
+  if (!framebuffer)
     return false;
-  }
 
   s_device = Vulkan::g_vulkan_context->GetDevice();
-  s_render_pass = fb0->GetLoadRenderPass();
-
+  s_render_pass = framebuffer->GetLoadRenderPass();
+  s_image_count = static_cast<u32>(swap_chain->GetSwapChainImageCount());
   s_visible.store(false);
-  s_exit_requested.store(false);
   s_pending_action.store(0);
-  s_pending_nav_mask.store(0);
+  s_pending_nav.store(0);
+  hidInitializeTouchScreen();
 
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
-  ImGuiIO& io = ImGui::GetIO();
-  io.IniFilename = nullptr;
-  io.LogFilename = nullptr;
-  io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+  Vulkan::VKGfx::SetOverlayCallback(&DrawCallback);
+  s_registered.store(true);
+  return true;
+}
 
-  if (ImFont* font = io.Fonts->AddFontFromFileTTF("romfs:/fonts/font.ttf", 32.0f))
+void Shutdown()
+{
+  if (!s_registered.load())
+    return;
+
+  if (s_device && ::vkDeviceWaitIdle)
+    ::vkDeviceWaitIdle(s_device);
+  Vulkan::VKGfx::SetOverlayCallback(nullptr);
+  s_registered.store(false);
+  if (s_ready)
+    ImGuiOverlay::Shutdown();
+  s_ready = false;
+  s_failed = false;
+  s_shown = false;
+  s_visible.store(false);
+  s_pending_action.store(0);
+  s_pending_nav.store(0);
+}
+
+void Update(PadState* pad)
+{
+  if (!s_registered.load() || !pad)
+    return;
+
+  const u64 held = padGetButtons(pad);
+  const bool combo_down =
+      (held & HidNpadButton_Plus) != 0 && (held & HidNpadButton_Minus) != 0;
+  if (combo_down && !s_was_combo_down)
   {
-    io.FontDefault = font;
-    LOG("%s loaded tico font from romfs:/fonts/font.ttf\n", TAG);
+    const bool open = !s_visible.load();
+    s_visible.store(open);
+    s_pending_nav.store(0);
+  }
+  s_was_combo_down = combo_down;
+
+  if (!s_visible.load())
+  {
+    s_nav_held_prev = 0;
+    s_accept_prev = (held & HidNpadButton_A) != 0;
+    s_cancel_prev = (held & HidNpadButton_B) != 0;
+    s_touch_down.store(false);
+    return;
+  }
+
+  // directions fire on press, then repeat while held
+  u64 directions = held & (HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft |
+                           HidNpadButton_AnyRight);
+  u64 fire = directions & ~s_nav_held_prev;
+  if (directions != 0 && directions == s_nav_held_prev)
+  {
+    if (--s_nav_repeat <= 0)
+    {
+      fire |= directions;
+      s_nav_repeat = kNavRepeat;
+    }
+  }
+  else if (fire != 0)
+  {
+    s_nav_repeat = kNavInitialDelay;
+  }
+  s_nav_held_prev = directions;
+
+  const bool accept = (held & HidNpadButton_A) != 0;
+  const bool cancel = (held & HidNpadButton_B) != 0;
+  unsigned int nav = 0;
+  if (fire & HidNpadButton_AnyUp)
+    nav |= NavBit_Up;
+  if (fire & HidNpadButton_AnyDown)
+    nav |= NavBit_Down;
+  if (fire & HidNpadButton_AnyLeft)
+    nav |= NavBit_Left;
+  if (fire & HidNpadButton_AnyRight)
+    nav |= NavBit_Right;
+  if (accept && !s_accept_prev)
+    nav |= NavBit_Accept;
+  if (cancel && !s_cancel_prev)
+    nav |= NavBit_Cancel;
+  s_accept_prev = accept;
+  s_cancel_prev = cancel;
+  if (nav != 0)
+    s_pending_nav.fetch_or(nav);
+
+  HidTouchScreenState touch{};
+  if (hidGetTouchScreenStates(&touch, 1) && touch.count > 0)
+  {
+    s_touch_x.store(static_cast<float>(touch.touches[0].x));
+    s_touch_y.store(static_cast<float>(touch.touches[0].y));
+    s_touch_down.store(true);
   }
   else
   {
-    LOG("%s failed to load romfs:/fonts/font.ttf, using default ImGui font\n", TAG);
+    s_touch_down.store(false);
   }
+}
 
-  ImGui::StyleColorsDark();
+bool IsVisible()
+{
+  return s_visible.load();
+}
 
-  if (!CreateDescriptorPool(s_device))
+void SetVisible(bool visible)
+{
+  s_visible.store(visible);
+  s_pending_nav.store(0);
+}
+
+void ShowNotice(std::string message, std::vector<std::string> choices)
+{
+  std::lock_guard lock(s_notice_mutex);
+  s_pending_notice.emplace(std::move(message), std::move(choices));
+  s_visible.store(true);
+}
+
+Action ConsumeAction()
+{
+  return static_cast<Action>(s_pending_action.exchange(0));
+}
+}  // namespace DolphinNX::VulkanOverlay
+
+// The renderer tico's overlay draws with: ImGui's Vulkan backend on the
+// swapchain's load render pass, set up from the first frame drawn.
+namespace SwitchFrontend::OverlayRenderer
+{
+using namespace DolphinNX::VulkanOverlay;
+
+bool Init()
+{
+  if (s_device == VK_NULL_HANDLE || !Vulkan::g_vulkan_context)
     return false;
 
-  if (!s_psm_initialized && R_SUCCEEDED(psmInitialize()))
-    s_psm_initialized = true;
-  OverlayUI::SetNickname(std::string{});
+  VkDescriptorPoolSize pool_size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 128};
+  VkDescriptorPoolCreateInfo pool_info{};
+  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  pool_info.maxSets = 128;
+  pool_info.poolSizeCount = 1;
+  pool_info.pPoolSizes = &pool_size;
+  if (vkCreateDescriptorPool(s_device, &pool_info, nullptr, &s_descriptor_pool) != VK_SUCCESS)
+    return false;
 
-  VkInstance instance = Vulkan::g_vulkan_context->GetVulkanInstance();
-  if (!ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_1, VulkanLoaderCallback, instance))
+  VkSamplerCreateInfo sampler_info{};
+  sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+  sampler_info.magFilter = VK_FILTER_LINEAR;
+  sampler_info.minFilter = VK_FILTER_LINEAR;
+  sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+  sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+  sampler_info.maxLod = 1.0f;
+  if (vkCreateSampler(s_device, &sampler_info, nullptr, &s_sampler) != VK_SUCCESS)
   {
-    LOG("%s ImGui_ImplVulkan_LoadFunctions failed\n", TAG);
+    SwitchFrontend::OverlayRenderer::Shutdown();
     return false;
   }
 
-  const u32 image_count = static_cast<u32>(swap_chain->GetSwapChainImageCount());
+  const VkInstance instance = Vulkan::g_vulkan_context->GetVulkanInstance();
+  if (!ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_1, LoadVulkanFunction, instance))
+  {
+    SwitchFrontend::OverlayRenderer::Shutdown();
+    return false;
+  }
 
   ImGui_ImplVulkan_InitInfo init_info{};
   init_info.ApiVersion = VK_API_VERSION_1_1;
@@ -527,157 +439,41 @@ bool Init()
   init_info.Queue = Vulkan::g_vulkan_context->GetGraphicsQueue();
   init_info.DescriptorPool = s_descriptor_pool;
   init_info.RenderPass = s_render_pass;
-  init_info.MinImageCount = image_count >= 2 ? image_count : 2;
-  init_info.ImageCount = image_count;
+  init_info.MinImageCount = s_image_count >= 2 ? s_image_count : 2;
+  init_info.ImageCount = s_image_count >= 2 ? s_image_count : 2;
   init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-  init_info.PipelineCache = VK_NULL_HANDLE;
-  init_info.Subpass = 0;
-
   if (!ImGui_ImplVulkan_Init(&init_info))
   {
-    LOG("%s ImGui_ImplVulkan_Init failed\n", TAG);
+    SwitchFrontend::OverlayRenderer::Shutdown();
     return false;
   }
-
-  Vulkan::VKGfx::SetOverlayCallback(&DrawCallback);
-
-  s_initialized.store(true);
-  LOG("%s Init complete (swap_images=%u, rp=%p)\n", TAG, image_count, (void*)s_render_pass);
   return true;
-}
-
-void Update(PadState* pad)
-{
-  if (!s_initialized.load() || !pad)
-    return;
-
-  const u64 held = padGetButtons(pad);
-  const bool plus = (held & HidNpadButton_Plus) != 0;
-  const bool minus = (held & HidNpadButton_Minus) != 0;
-  const bool combo_down = plus && minus;
-
-  if (combo_down && !s_was_combo_down)
-  {
-    const bool new_visible = !s_visible.load();
-    s_visible.store(new_visible);
-    if (!new_visible)
-      s_pending_nav_mask.store(0);
-    else if (!s_social_data_loaded)
-      LoadSocialAreaData();
-    LOG("%s toggle combo detected (held=0x%llx, visible=%d)\n", TAG,
-        static_cast<unsigned long long>(held), new_visible);
-  }
-  s_was_combo_down = combo_down;
-  const bool visible = s_visible.load();
-  OverlayUI::SetVisible(visible);
-
-  const bool up = (held & (HidNpadButton_Up | HidNpadButton_StickLUp)) != 0;
-  const bool down = (held & (HidNpadButton_Down | HidNpadButton_StickLDown)) != 0;
-  const bool left = (held & (HidNpadButton_Left | HidNpadButton_StickLLeft)) != 0;
-  const bool right = (held & (HidNpadButton_Right | HidNpadButton_StickLRight)) != 0;
-  const bool a = (held & HidNpadButton_A) != 0;
-  const bool b = (held & HidNpadButton_B) != 0;
-
-  OverlayUI::NavInput nav{
-      .up = up && !s_nav_prev.up,
-      .down = down && !s_nav_prev.down,
-      .left = left && !s_nav_prev.left,
-      .right = right && !s_nav_prev.right,
-      .accept = a && !s_nav_prev.a,
-      .cancel = b && !s_nav_prev.b,
-  };
-  unsigned int nav_mask = 0;
-  if (nav.up)
-    nav_mask |= NavBit_Up;
-  if (nav.down)
-    nav_mask |= NavBit_Down;
-  if (nav.left)
-    nav_mask |= NavBit_Left;
-  if (nav.right)
-    nav_mask |= NavBit_Right;
-  if (nav.accept)
-    nav_mask |= NavBit_Accept;
-  if (nav.cancel)
-    nav_mask |= NavBit_Cancel;
-  if (visible && (nav.up || nav.down || nav.left || nav.right || nav.accept || nav.cancel))
-  {
-    LOG("%s nav edge (up=%d down=%d left=%d right=%d accept=%d cancel=%d)\n", TAG, nav.up,
-        nav.down, nav.left, nav.right, nav.accept, nav.cancel);
-    s_pending_nav_mask.fetch_or(nav_mask);
-  }
-
-  s_nav_prev = {up, down, left, right, a, b};
-}
-
-bool IsVisible()
-{
-  return s_visible.load();
-}
-
-bool ShouldExit()
-{
-  return s_exit_requested.load();
-}
-
-void OpenControllerHelp(bool return_to_quick_menu)
-{
-  if (!s_initialized.load())
-    return;
-
-  s_visible.store(true);
-  s_pending_nav_mask.store(0);
-  if (!s_social_data_loaded)
-    LoadSocialAreaData();
-  OverlayUI::OpenControllerHelp(return_to_quick_menu);
-}
-
-int ConsumeAction()
-{
-  return s_pending_action.exchange(0);
 }
 
 void Shutdown()
 {
-  if (!s_initialized.load())
-    return;
-
-  if (s_device && ::vkDeviceWaitIdle)
-    ::vkDeviceWaitIdle(s_device);
-
-  Vulkan::VKGfx::SetOverlayCallback(nullptr);
-  DestroyAvatarResources();
-  ImGui_ImplVulkan_Shutdown();
-  ImGui::DestroyContext();
-
+  if (ImGui::GetCurrentContext() && ImGui::GetIO().BackendRendererUserData)
+  {
+    for (auto& [id, texture] : s_textures)
+      ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
+    s_textures.clear();
+    ImGui_ImplVulkan_Shutdown();
+  }
+  s_textures.clear();
+  if (s_sampler != VK_NULL_HANDLE)
+  {
+    vkDestroySampler(s_device, s_sampler, nullptr);
+    s_sampler = VK_NULL_HANDLE;
+  }
   if (s_descriptor_pool != VK_NULL_HANDLE)
   {
-    ::vkDestroyDescriptorPool(s_device, s_descriptor_pool, nullptr);
+    vkDestroyDescriptorPool(s_device, s_descriptor_pool, nullptr);
     s_descriptor_pool = VK_NULL_HANDLE;
-  }
-
-  OverlayUI::SetVisible(false);
-  OverlayUI::SetNickname(std::string{});
-  OverlayUI::ShowToast(std::string{});
-  s_render_pass = VK_NULL_HANDLE;
-  s_device = VK_NULL_HANDLE;
-  s_visible.store(false);
-  s_exit_requested.store(false);
-  s_pending_action.store(0);
-  s_pending_nav_mask.store(0);
-  s_initialized.store(false);
-  s_social_data_loaded = false;
-
-  if (s_psm_initialized)
-  {
-    psmExit();
-    s_psm_initialized = false;
-  }
-
-  if (s_log)
-  {
-    std::fclose(s_log);
-    s_log = nullptr;
   }
 }
 
-}  // namespace DolphinNX::VulkanOverlay
+void BeginFrame()
+{
+  ImGui_ImplVulkan_NewFrame();
+}
+}  // namespace SwitchFrontend::OverlayRenderer

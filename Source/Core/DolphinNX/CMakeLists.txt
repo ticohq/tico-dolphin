@@ -17,9 +17,14 @@ add_executable(dolphin-nx
   ControllerProfiles.cpp
   NetPlayStubs.cpp
   TicoCore.cpp
-  Overlay/Overlay.cpp
-  Overlay/TranslationManager.cpp
   Overlay/VulkanOverlay.cpp
+  # tico's overlay and frontend pieces, shared with the other cores
+  ${CMAKE_SOURCE_DIR}/tico/UsbStorage.cpp
+  ${CMAKE_SOURCE_DIR}/tico/overlay/imgui_overlay.cpp
+  ${CMAKE_SOURCE_DIR}/tico/overlay/overlay_ui.cpp
+  ${CMAKE_SOURCE_DIR}/tico/overlay/ra_alerts.cpp
+  ${CMAKE_SOURCE_DIR}/tico/overlay/tico_config.cpp
+  ${CMAKE_SOURCE_DIR}/tico/overlay/translation_manager.cpp
 )
 
 target_compile_definitions(dolphin-nx PRIVATE
@@ -45,6 +50,8 @@ target_compile_options(dolphin-nx PRIVATE
 # Include paths
 target_include_directories(dolphin-nx PRIVATE
   "${CMAKE_SOURCE_DIR}/Source/Core"
+  "${CMAKE_SOURCE_DIR}/tico"
+  "${CMAKE_SOURCE_DIR}/tico/deps/usbhsfs/include"
   "${CMAKE_SOURCE_DIR}/Externals/picojson"
   "${CMAKE_SOURCE_DIR}/Externals/Vulkan-Headers/include"
   "${CMAKE_SOURCE_DIR}/Externals/VulkanMemoryAllocator/include"
@@ -110,6 +117,13 @@ foreach(dep drm_nouveau elf expat zstd z)
     target_link_libraries(dolphin-nx PRIVATE ${DOLPHIN_NX_VULKAN_DEP_${dep}})
   endif()
 endforeach()
+
+# libusbhsfs (FAT/exFAT) that also reads NTFS, read-only, through usbntfs;
+# linked by path so portlibs' FAT-only copy is not picked up instead.
+target_link_libraries(dolphin-nx PRIVATE
+  ${CMAKE_SOURCE_DIR}/tico/deps/usbhsfs/lib/libusbhsfs.a
+  ${CMAKE_SOURCE_DIR}/tico/deps/usbhsfs/lib/libusbntfs.a
+)
 
 # libnx + SDL2 (from devkitPro portlibs, NOT bundled) — full paths to avoid search issues
 target_link_libraries(dolphin-nx PRIVATE
