@@ -23,6 +23,8 @@
 
 #include <switch.h>
 
+#include <fmt/format.h>
+
 #include "Common/CommonPaths.h"
 #include "Common/FileUtil.h"
 #include "Common/IniFile.h"
@@ -32,6 +34,7 @@
 #include "Common/Thread.h"
 #include "Common/Version.h"
 #include "Core/Boot/Boot.h"
+#include "Core/CommonTitles.h"
 #include "Core/BootManager.h"
 #include "Core/Config/AchievementSettings.h"
 #include "Core/Config/GraphicsSettings.h"
@@ -553,6 +556,44 @@ static void UpdateWindowModeAndCrop()
         "rc=0x%x)\n",
         static_cast<unsigned>(dim_rc), static_cast<unsigned>(crop_rc));
   }
+}
+
+// tico's menu entries start the console's own menu instead of a game. tico only
+// lists one while what it needs is there (module.json's "menu"): the Wii Menu
+// installed in the NAND, or a GameCube IPL.
+enum class ConsoleMenu
+{
+  None,
+  Wii,
+  GameCube,
+};
+
+static ConsoleMenu ConsoleMenuFor(std::string_view rom_path)
+{
+  if (rom_path == "menu:/wii")
+    return ConsoleMenu::Wii;
+  if (rom_path == "menu:/gc")
+    return ConsoleMenu::GameCube;
+  return ConsoleMenu::None;
+}
+
+// The region of the first GameCube IPL found, where Dolphin looks for it
+// (GetBootROMPath: the user's GC folder, then Sys).
+static std::optional<DiscIO::Region> GameCubeIplRegion()
+{
+  constexpr std::pair<const char*, DiscIO::Region> kRegions[] = {
+      {USA_DIR, DiscIO::Region::NTSC_U},
+      {EUR_DIR, DiscIO::Region::PAL},
+      {JAP_DIR, DiscIO::Region::NTSC_J}};
+  for (const char* root : {"sdmc:/tico/system/gc/User/GC", "sdmc:/tico/system/gc/Sys/GC"})
+  {
+    for (const auto& [dir, region] : kRegions)
+    {
+      if (File::Exists(fmt::format("{}/{}/{}", root, dir, GC_IPL)))
+        return region;
+    }
+  }
+  return std::nullopt;
 }
 
 static bool IsGameCubeDisc(const std::optional<BootGameMetadata>& metadata)
@@ -1368,7 +1409,16 @@ int main(int argc, char* argv[])
     }
     LOG("Launch ROM: %s\n", rom_path.c_str());
 
-    const auto boot_game_metadata = DetectBootGameMetadata(rom_path);
+    const ConsoleMenu console_menu = ConsoleMenuFor(rom_path);
+    const auto boot_game_metadata = [&]() -> std::optional<BootGameMetadata> {
+      if (console_menu == ConsoleMenu::None)
+        return DetectBootGameMetadata(rom_path);
+      // the menu is set up as its console is, without a game
+      BootGameMetadata menu;
+      menu.platform = console_menu == ConsoleMenu::Wii ? DiscIO::Platform::WiiWAD :
+                                                         DiscIO::Platform::GameCubeDisc;
+      return menu;
+    }();
     if (boot_game_metadata)
     {
       LOG("Detected game: id=%s rev=%u region=%d platform=%d\n",
@@ -1381,7 +1431,9 @@ int main(int argc, char* argv[])
       LOG("Could not detect game metadata before boot\n");
     }
 
-    std::string display_title = DeriveDisplayTitleFromRomPath(rom_path);
+    std::string display_title = console_menu == ConsoleMenu::Wii      ? "Wii Menu" :
+                                console_menu == ConsoleMenu::GameCube ? "GameCube Menu" :
+                                                                        DeriveDisplayTitleFromRomPath(rom_path);
     if (display_title.empty() && boot_game_metadata)
       display_title = boot_game_metadata->game_id;
     LOG("Overlay title: %s\n", display_title.empty() ? "(empty)" : display_title.c_str());
@@ -1472,8 +1524,27 @@ int main(int argc, char* argv[])
     LOG("Backend info populated\n");
 
     LOG("GenerateFromFile: %s\n", rom_path.c_str());
-    auto boot = BootParameters::GenerateFromFile(
-        rom_path, BootSessionData(std::nullopt, DeleteSavestateAfterBoot::No));
+    std::unique_ptr<BootParameters> boot;
+    if (console_menu == ConsoleMenu::Wii)
+    {
+      boot = std::make_unique<BootParameters>(
+          BootParameters::NANDTitle{Titles::SYSTEM_MENU},
+          BootSessionData(std::nullopt, DeleteSavestateAfterBoot::No));
+    }
+    else if (console_menu == ConsoleMenu::GameCube)
+    {
+      if (const std::optional<DiscIO::Region> region = GameCubeIplRegion())
+      {
+        boot = std::make_unique<BootParameters>(
+            BootParameters::IPL(*region),
+            BootSessionData(std::nullopt, DeleteSavestateAfterBoot::No));
+      }
+    }
+    else
+    {
+      boot = BootParameters::GenerateFromFile(
+          rom_path, BootSessionData(std::nullopt, DeleteSavestateAfterBoot::No));
+    }
 
     if (!boot)
     {
