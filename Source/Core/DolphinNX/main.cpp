@@ -497,8 +497,65 @@ static bool SetSwitchClockRate(bool cpu, u32 hz)
   return true;
 }
 
+// A clock manager (sys-clk, or Horizon-OC's hoc-clk) puts its own clocks back
+// when it sees others: hoc-clk resets any clock it didn't set to stock on its
+// next tick. Both take an override (command 8: module, Hz) that they keep
+// applying, docked or not, until it is cleared with 0.
+static Service s_clock_manager;
+static bool s_clock_manager_open = false;
+
+static bool SetClockManagerOverride(u32 module, u32 hz)
+{
+  const struct
+  {
+    u32 module;
+    u32 hz;
+  } args = {module, hz};
+  return R_SUCCEEDED(serviceDispatchIn(&s_clock_manager, 8, args));
+}
+
+// Atmosphère's sm answers whether a service is registered (AtmosphereHasService)
+static bool HasService(const char* name)
+{
+  const SmServiceName service_name = smEncodeName(name);
+  u8 has = 0;
+  // sm speaks TIPC from 12.0.0
+  const Result rc =
+      hosversionAtLeast(12, 0, 0) ?
+          tipcDispatchInOut(smGetServiceSessionTipc(), 65100, service_name, has) :
+          serviceDispatchInOut(smGetServiceSession(), 65100, service_name, has);
+  return R_SUCCEEDED(rc) && has != 0;
+}
+
+static bool OverrideClocksWithClockManager()
+{
+  for (const char* name : {"hoc:clk", "sysclk"})
+  {
+    // GetService waits for a service that isn't there, so ask first
+    if (!HasService(name))
+      continue;
+    if (R_FAILED(smGetService(&s_clock_manager, name)))
+      continue;
+    s_clock_manager_open = true;
+    // modules: 0 CPU, 1 GPU
+    if (SetClockManagerOverride(0, kSwitchCpuClockHz) &&
+        SetClockManagerOverride(1, kSwitchGpuClockHz))
+    {
+      LOG("Clocks via %s override: cpu=%u gpu=%u\n", name, kSwitchCpuClockHz, kSwitchGpuClockHz);
+      return true;
+    }
+    LOG("%s refused the clock override\n", name);
+    serviceClose(&s_clock_manager);
+    s_clock_manager_open = false;
+  }
+  return false;
+}
+
 static void ConfigureSwitchPerformance()
 {
+  if (OverrideClocksWithClockManager())
+    return;
+
   if (GetSwitchClockRate(true, &s_switch_original_cpu_hz))
     s_switch_clock_restore_cpu = true;
   if (GetSwitchClockRate(false, &s_switch_original_gpu_hz))
@@ -514,6 +571,16 @@ static void ConfigureSwitchPerformance()
 
 static void RestoreSwitchPerformance()
 {
+  if (s_clock_manager_open)
+  {
+    SetClockManagerOverride(0, 0);
+    SetClockManagerOverride(1, 0);
+    serviceClose(&s_clock_manager);
+    s_clock_manager_open = false;
+    LOG("Clock manager override cleared\n");
+    return;
+  }
+
   if (s_switch_clock_restore_gpu)
   {
     const bool restored = SetSwitchClockRate(false, s_switch_original_gpu_hz);
@@ -527,6 +594,29 @@ static void RestoreSwitchPerformance()
   }
 
   ShutdownSwitchClockService();
+}
+
+// Without a clock manager the clocks are set here, and Horizon puts the stock
+// ones back when the console is docked or undocked: set them again (issue #2).
+static void KeepSwitchClocks()
+{
+  if (s_clock_manager_open || !s_switch_clock_service_initialized)
+    return;
+  static u64 s_last_check = 0;
+  const u64 now = armGetSystemTick();
+  if (now - s_last_check < armNsToTicks(1000000000ull))
+    return;
+  s_last_check = now;
+
+  u32 cpu_hz = 0;
+  u32 gpu_hz = 0;
+  if ((GetSwitchClockRate(true, &cpu_hz) && cpu_hz != kSwitchCpuClockHz) ||
+      (GetSwitchClockRate(false, &gpu_hz) && gpu_hz != kSwitchGpuClockHz))
+  {
+    LOG("Clocks were reset (cpu=%u gpu=%u): setting them again\n", cpu_hz, gpu_hz);
+    SetSwitchClockRate(true, kSwitchCpuClockHz);
+    SetSwitchClockRate(false, kSwitchGpuClockHz);
+  }
 }
 
 static void UpdateWindowModeAndCrop()
@@ -1680,6 +1770,7 @@ int main(int argc, char* argv[])
       }
 
       UpdateWindowModeAndCrop();
+      KeepSwitchClocks();
       DolphinNX::Input::Update();
 
       if (!overlay_ok)
