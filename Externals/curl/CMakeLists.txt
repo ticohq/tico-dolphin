@@ -21,8 +21,8 @@ set(BROTLI_FOUND FALSE) # TODO: Same as above
 set(USE_LIBIDN2 OFF)
 set(USE_NGHTTP2 OFF)
 
-if(UNIX)
-  # We use mbedtls on Unix(-like) systems and Android.
+if(UNIX OR SWITCH_STANDALONE)
+  # We use mbedtls on Unix(-like) systems, Android and the Switch.
   set(CURL_USE_OPENSSL OFF)
 
   # This is set if the dolphin_find_optional_system_library call from the main CMakeLists.txt
@@ -48,9 +48,30 @@ if(ANDROID)
   set(CURL_CA_PATH "/system/etc/security/cacerts" CACHE STRING "")
 endif()
 
+if(SWITCH_STANDALONE)
+  # HttpRequest hands curl the console's own CA certificates (from the ssl service).
+  set(CURL_CA_BUNDLE "none" CACHE STRING "")
+  set(CURL_CA_PATH "none" CACHE STRING "")
+
+  # newlib has no socketpair and no threads for the resolver to use.
+  set(HAVE_SOCKETPAIR 0)
+  set(CURL_DISABLE_SOCKETPAIR ON)
+  set(ENABLE_THREADED_RESOLVER OFF)
+
+  # Declared by newlib's libgen.h but not implemented; curl has its own.
+  set(HAVE_BASENAME 0)
+
+  # libnx's BSD sockets have these, but curl's link checks cannot link libnx
+  # under the Generic system name.
+  foreach(symbol RECV SEND SOCKET SELECT POLL GETADDRINFO FREEADDRINFO GETHOSTNAME INET_NTOP
+          INET_PTON)
+    set(HAVE_${symbol} 1)
+  endforeach()
+endif()
+
 add_subdirectory(curl)
 
-if(UNIX AND NOT MBEDTLS_FOUND)
+if((UNIX OR SWITCH_STANDALONE) AND NOT MBEDTLS_FOUND)
   # HACK: Manually link with the mbedtls libraries.
   target_link_libraries(libcurl_static PRIVATE
     MbedTLS::mbedtls
