@@ -83,6 +83,10 @@ bool ReadProtectMemory(void* ptr, size_t size);
 bool WriteProtectMemory(void* ptr, size_t size, bool executable = false);
 bool UnWriteProtectMemory(void* ptr, size_t size, bool allowExecute = false);
 size_t MemPhysical();
+#ifdef __SWITCH__
+// Heap memory not handed out yet: never-used heap plus malloc's free blocks.
+size_t MemUnallocated();
+#endif
 void FreeExecutableMemory(void* ptr, size_t size);
 
 }  // namespace Common
