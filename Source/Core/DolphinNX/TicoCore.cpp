@@ -90,7 +90,7 @@ constexpr std::array<std::string_view, 29> kFixedBaseOptions = {{
     "dolphin_mods_enable",
 }};
 
-constexpr std::array<std::pair<std::string_view, std::string_view>, 80> kDefaultOptions = {{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 81> kDefaultOptions = {{
     {"display_mode", "Display"},
     {"display_size", "4:3"},
     {"integer_scale", "Auto"},
@@ -103,6 +103,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 80> kDefault
     {"dolphin_language", "auto"},
     {"dolphin_override_region_settings", "disabled"},
     {"dolphin_emulate_skylander_portal", "disabled"},
+    {"dolphin_boost_mode", "enabled"},
     {"dolphin_fast_disc_speed", "disabled"},
     {"dolphin_main_mmu", "disabled"},
     {"dolphin_rush_presentation", "disabled"},
@@ -173,7 +174,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 80> kDefault
     {"dolphin_save_load_settings", "disabled"},
 }};
 
-static_assert(kDefaultOptions.size() == 80);
+static_assert(kDefaultOptions.size() == 81);
 
 // The console's primary DNS server, from its network settings.
 std::optional<std::string> ConsoleDnsServer()

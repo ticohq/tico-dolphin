@@ -215,6 +215,13 @@
           "title": "settings_dolphin_behavior",
           "options": [
             {
+              "key": "dolphin_boost_mode",
+              "label": "settings_dolphin_boost_mode",
+              "type": "bool",
+              "default": "enabled",
+              "restart": true
+            },
+            {
               "key": "dolphin_skip_gc_bios",
               "label": "settings_dolphin_skip_gamecube_bios",
               "type": "bool",

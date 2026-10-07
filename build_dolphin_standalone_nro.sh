@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build_nx_standalone"
 ROMFS_DIR="${BUILD_DIR}/romfs"
 MESA_NVK_DIR="${MESA_NVK_DIR:-/nvk-build}"
-TICO_NRO_VERSION="${TICO_NRO_VERSION:-0.0.8}"
+TICO_NRO_VERSION="${TICO_NRO_VERSION:-3.0.0}"
 TICO_NX_DIR="${TICO_NX_DIR:-${SCRIPT_DIR}/../../../tico-nx}"
 
 echo "=== Dolphin NX Standalone Build (no libretro) ==="

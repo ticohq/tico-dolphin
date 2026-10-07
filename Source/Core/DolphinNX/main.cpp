@@ -1473,7 +1473,6 @@ int main(int argc, char* argv[])
   // disc's pieces, streamed audio) come from memory instead of the card
   wine_nx_sd_cache_install();
 
-  ConfigureSwitchPerformance();
   socketInitializeDefault();
   romfsInit();
 
@@ -1615,6 +1614,11 @@ int main(int argc, char* argv[])
     LOG("TicoCore::ApplyConfig...\n");
     DolphinNX::TicoCore::ApplyConfig(IsGameCubeDisc(boot_game_metadata));
     LOG("Config applied\n");
+    // Boost mode: the CPU at 1785 MHz and the GPU at 768 MHz while the game runs
+    if (DolphinNX::TicoCore::GetConfigValue("dolphin_boost_mode", "enabled") == "enabled")
+      ConfigureSwitchPerformance();
+    else
+      LOG("Boost mode off: the clocks stay as they are\n");
     if (!EnsureActiveWiiNandRoot())
       LOG("WARNING: failed to prepare Wii NAND root before boot\n");
     if (!IsGameCubeDisc(boot_game_metadata))
