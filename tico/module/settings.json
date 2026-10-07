@@ -1708,6 +1708,137 @@
           ]
         },
         {
+          "title": "Wii Remote - Tilt",
+          "options": [
+            {
+              "key": "@map:wiimote:Tilt:Forward",
+              "label": "Forward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Tilt:Backward",
+              "label": "Backward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Tilt:Left",
+              "label": "Left",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Tilt:Right",
+              "label": "Right",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Tilt:Modifier",
+              "label": "Modifier",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            }
+          ]
+        },
+        {
+          "title": "Wii Remote - Swing",
+          "options": [
+            {
+              "key": "@map:wiimote:Swing:Up",
+              "label": "Up",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Swing:Down",
+              "label": "Down",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Swing:Left",
+              "label": "Left",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Swing:Right",
+              "label": "Right",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Swing:Forward",
+              "label": "Forward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            },
+            {
+              "key": "@map:wiimote:Swing:Backward",
+              "label": "Backward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote"
+              }
+            }
+          ]
+        },
+        {
           "title": "Wii Remote - IR",
           "options": [
             {
@@ -2084,6 +2215,137 @@
           ]
         },
         {
+          "title": "Wii Remote (Sideways) - Tilt",
+          "options": [
+            {
+              "key": "@map:wiimote_sideways:Tilt:Forward",
+              "label": "Forward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Tilt:Backward",
+              "label": "Backward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Tilt:Left",
+              "label": "Left",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Tilt:Right",
+              "label": "Right",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Tilt:Modifier",
+              "label": "Modifier",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            }
+          ]
+        },
+        {
+          "title": "Wii Remote (Sideways) - Swing",
+          "options": [
+            {
+              "key": "@map:wiimote_sideways:Swing:Up",
+              "label": "Up",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Swing:Down",
+              "label": "Down",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Swing:Left",
+              "label": "Left",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Swing:Right",
+              "label": "Right",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Swing:Forward",
+              "label": "Forward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            },
+            {
+              "key": "@map:wiimote_sideways:Swing:Backward",
+              "label": "Backward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "wiimote_sideways"
+              }
+            }
+          ]
+        },
+        {
           "title": "Wii Remote (Sideways) - IR",
           "options": [
             {
@@ -2426,6 +2688,175 @@
             },
             {
               "key": "@map:nunchuk:IMUAccelerometer:Backward",
+              "label": "Backward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            }
+          ]
+        },
+        {
+          "title": "Nunchuk - Shake",
+          "options": [
+            {
+              "key": "@map:nunchuk:Shake:X",
+              "label": "X",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Shake:Y",
+              "label": "Y",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Shake:Z",
+              "label": "Z",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            }
+          ]
+        },
+        {
+          "title": "Nunchuk - Tilt",
+          "options": [
+            {
+              "key": "@map:nunchuk:Tilt:Forward",
+              "label": "Forward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Tilt:Backward",
+              "label": "Backward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Tilt:Left",
+              "label": "Left",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Tilt:Right",
+              "label": "Right",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Tilt:Modifier",
+              "label": "Modifier",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            }
+          ]
+        },
+        {
+          "title": "Nunchuk - Swing",
+          "options": [
+            {
+              "key": "@map:nunchuk:Swing:Up",
+              "label": "Up",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Swing:Down",
+              "label": "Down",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Swing:Left",
+              "label": "Left",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Swing:Right",
+              "label": "Right",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Swing:Forward",
+              "label": "Forward",
+              "type": "enum",
+              "choices_ref": "switch_inputs",
+              "capture": true,
+              "depends_on": {
+                "key": "dolphin_mapping_target",
+                "value": "nunchuk"
+              }
+            },
+            {
+              "key": "@map:nunchuk:Swing:Backward",
               "label": "Backward",
               "type": "enum",
               "choices_ref": "switch_inputs",
