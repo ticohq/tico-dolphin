@@ -43,7 +43,7 @@
 #include "DolphinNX/ControllerProfiles.h"
 #include "overlay/overlay_ui.h"
 #include "overlay/translation_manager.h"
-#include "DolphinNX/Overlay/VulkanOverlay.h"
+#include "DolphinNX/Overlay/GameOverlay.h"
 #include "DolphinNX/TicoCore.h"
 
 namespace DolphinNX
@@ -206,7 +206,7 @@ static void LoadControllerConfig()
 
 static bool ShouldBlockGameplayInput()
 {
-  return DolphinNX::VulkanOverlay::IsVisible();
+  return DolphinNX::GameOverlay::IsVisible();
 }
 
 static const char* GetWiiControllerModeName(WiiControllerMode mode)

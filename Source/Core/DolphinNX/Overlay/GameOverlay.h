@@ -11,13 +11,14 @@
 
 #include "overlay/overlay_ui.h"
 
-// tico's overlay (tico/overlay) drawn over Dolphin's Vulkan presentation.
+// tico's overlay (tico/overlay) drawn over Dolphin's presentation, through AbstractGfx
+// so it works on any backend (Vulkan, deko3d).
 //
 // The menu is built and drawn wherever Dolphin presents: the GPU thread while
 // the game runs, the main thread while it is paused for the menu. Everything
 // the main loop does goes through here, so the two never touch the overlay at
 // once.
-namespace DolphinNX::VulkanOverlay
+namespace DolphinNX::GameOverlay
 {
 // Once the swapchain presents: draws the overlay from the next present on.
 bool Init();
@@ -44,11 +45,11 @@ void FreePicture(unsigned long long texture);
 // Reads the Cheats menu's list again on the next frame (e.g. after a download).
 void RequestCheatRefresh();
 
-// The overlay renderer over Dolphin's Vulkan presentation (see OverlayRenderer.cpp).
+// The overlay renderer over Dolphin's presentation (see OverlayRenderer.cpp).
 bool RendererInit();
 void RendererShutdown();
 void RendererBeginFrame();
 
 // The action the menu returned since the last call, once.
 SwitchFrontend::OverlayUI::Action ConsumeAction();
-}  // namespace DolphinNX::VulkanOverlay
+}  // namespace DolphinNX::GameOverlay

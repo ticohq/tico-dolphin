@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include "Common/Flag.h"
 #include "Common/MathUtil.h"
 
@@ -200,3 +202,11 @@ private:
 }  // namespace VideoCommon
 
 extern std::unique_ptr<VideoCommon::Presenter> g_presenter;
+
+namespace VideoCommon
+{
+// A frontend's own UI, drawn over every presented frame with the backbuffer bound,
+// through g_gfx (so it works on any backend). Called on the video thread.
+using HostOverlayCallback = std::function<void(u32 width, u32 height)>;
+void SetHostOverlayCallback(HostOverlayCallback callback);
+}  // namespace VideoCommon

@@ -2,7 +2,7 @@
 // Copyright 2026 Dan | ticoverse.com
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "DolphinNX/Overlay/VulkanOverlay.h"
+#include "DolphinNX/Overlay/GameOverlay.h"
 
 #include <atomic>
 #include <chrono>
@@ -14,19 +14,26 @@
 #include <utility>
 #include <vector>
 
+#include <cstdint>
+
 #include <imgui.h>
-#include <imgui_impl_vulkan.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 #include "Common/CommonTypes.h"
 #include "Core/System.h"
-#include "VideoBackends/Vulkan/VKGfx.h"
-#include "VideoBackends/Vulkan/VKSwapChain.h"
-#include "VideoBackends/Vulkan/VKTexture.h"
-#include "VideoBackends/Vulkan/VulkanContext.h"
-#include "VideoBackends/Vulkan/VulkanLoader.h"
+#include "VideoCommon/AbstractGfx.h"
+#include "VideoCommon/AbstractPipeline.h"
+#include "VideoCommon/AbstractShader.h"
+#include "VideoCommon/AbstractStagingTexture.h"
+#include "VideoCommon/AbstractTexture.h"
 #include "VideoCommon/FramebufferManager.h"
+#include "VideoCommon/FramebufferShaderGen.h"
+#include "VideoCommon/NativeVertexFormat.h"
+#include "VideoCommon/Present.h"
+#include "VideoCommon/RenderState.h"
+#include "VideoCommon/TextureConfig.h"
+#include "VideoCommon/VertexManagerBase.h"
 #include "VideoCommon/PerformanceMetrics.h"
 
 #include "DolphinNX/Achievements.h"
@@ -35,7 +42,7 @@
 #include "overlay/imgui_overlay.h"
 #include "overlay/overlay_renderer.h"
 
-namespace DolphinNX::VulkanOverlay
+namespace DolphinNX::GameOverlay
 {
 namespace
 {
@@ -82,14 +89,34 @@ bool s_ready = false;
 bool s_failed = false;
 bool s_shown = false;
 std::chrono::steady_clock::time_point s_last_frame;
-VkDevice s_device = VK_NULL_HANDLE;
-VkRenderPass s_render_pass = VK_NULL_HANDLE;
-u32 s_image_count = 2;
-VkDescriptorPool s_descriptor_pool = VK_NULL_HANDLE;
-VkSampler s_sampler = VK_NULL_HANDLE;
-std::map<ImTextureID, std::unique_ptr<Vulkan::VKTexture>> s_textures;
+// The overlay's renderer, on Dolphin's AbstractGfx so it draws on any backend
+// (Vulkan, deko3d), as Dolphin's own on-screen UI does.
+std::unique_ptr<NativeVertexFormat> s_vertex_format;
+std::unique_ptr<AbstractPipeline> s_pipeline;
+// the overlay's pictures (avatar, icons, covers) and ImGui's font atlas
+std::map<ImTextureID, std::unique_ptr<AbstractTexture>> s_textures;
 
-// The overlay's textures (avatar, selection border, icons) as Vulkan
+ImTextureID ToTextureID(const AbstractTexture* texture)
+{
+  return static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(texture));
+}
+
+const AbstractTexture* FromTextureID(ImTextureID id)
+{
+  return reinterpret_cast<const AbstractTexture*>(static_cast<std::uintptr_t>(id));
+}
+
+std::unique_ptr<AbstractTexture> CreateTexture(u32 width, u32 height, const u8* rgba)
+{
+  const TextureConfig config(width, height, 1, 1, 1, AbstractTextureFormat::RGBA8, 0,
+                             AbstractTextureType::Texture_2DArray);
+  auto texture = g_gfx->CreateTexture(config, "TicoOverlayTexture");
+  if (texture && rgba)
+    texture->Load(0, width, height, width, rgba, static_cast<size_t>(width) * height * 4);
+  return texture;
+}
+
+// The overlay's textures (avatar, selection border, icons) as AbstractGfx
 // textures ImGui can sample. Called while drawing, where Dolphin records.
 class Host final : public IOverlayHost
 {
@@ -104,39 +131,118 @@ public:
 
   ImTextureID CreateTextureRGBA(const unsigned char* rgba, int width, int height) override
   {
-    if (!rgba || width <= 0 || height <= 0 || s_sampler == VK_NULL_HANDLE)
+    if (!rgba || width <= 0 || height <= 0 || !g_gfx || !s_pipeline)
       return 0;
-    const TextureConfig config(static_cast<u32>(width), static_cast<u32>(height), 1, 1, 1,
-                               AbstractTextureFormat::RGBA8, 0, AbstractTextureType::Texture_2D);
-    auto texture = Vulkan::VKTexture::Create(config, "TicoOverlayTexture");
+    auto texture = CreateTexture(static_cast<u32>(width), static_cast<u32>(height), rgba);
     if (!texture)
       return 0;
-    const std::size_t size = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
-    texture->Load(0, static_cast<u32>(width), static_cast<u32>(height), static_cast<u32>(width),
-                  rgba, size, 0);
-    const VkDescriptorSet set =
-        ImGui_ImplVulkan_AddTexture(s_sampler, texture->GetView(), texture->GetLayout());
-    const ImTextureID id = reinterpret_cast<ImTextureID>(set);
+    const ImTextureID id = ToTextureID(texture.get());
     s_textures[id] = std::move(texture);
     return id;
   }
 
-  void DestroyTexture(ImTextureID texture) override
-  {
-    const auto it = s_textures.find(texture);
-    if (it == s_textures.end())
-      return;
-    ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(texture));
-    s_textures.erase(it);
-  }
+  void DestroyTexture(ImTextureID texture) override { s_textures.erase(texture); }
 };
 Host s_host;
 
-PFN_vkVoidFunction LoadVulkanFunction(const char* name, void* user_data)
+// ImGui 1.92 leaves its font atlas to the renderer: create, update, destroy.
+void UpdateImGuiTexture(ImTextureData* tex)
 {
-  if (!::vkGetInstanceProcAddr)
-    return nullptr;
-  return ::vkGetInstanceProcAddr(static_cast<VkInstance>(user_data), name);
+  if (tex->Status == ImTextureStatus_WantCreate)
+  {
+    auto texture = CreateTexture(static_cast<u32>(tex->Width), static_cast<u32>(tex->Height),
+                                 static_cast<const u8*>(tex->GetPixels()));
+    if (!texture)
+      return;
+    const ImTextureID id = ToTextureID(texture.get());
+    s_textures[id] = std::move(texture);
+    tex->SetTexID(id);
+    tex->SetStatus(ImTextureStatus_OK);
+  }
+  else if (tex->Status == ImTextureStatus_WantUpdates)
+  {
+    auto* texture = const_cast<AbstractTexture*>(FromTextureID(tex->GetTexID()));
+    if (!texture)
+      return;
+    for (const ImTextureRect& r : tex->Updates)
+    {
+      const TextureConfig config(r.w, r.h, 1, 1, 1, AbstractTextureFormat::RGBA8, 0,
+                                 AbstractTextureType::Texture_2DArray);
+      auto stage = g_gfx->CreateStagingTexture(StagingTextureType::Upload, config);
+      if (!stage)
+        continue;
+      for (int y = 0; y < r.h; ++y)
+      {
+        stage->WriteTexels({0, y, r.w, y + 1}, tex->GetPixelsAt(r.x, r.y + y),
+                           r.w * tex->BytesPerPixel);
+      }
+      stage->CopyToTexture({0, 0, r.w, r.h}, texture, {r.x, r.y, r.x + r.w, r.y + r.h}, 0, 0);
+    }
+    tex->SetStatus(ImTextureStatus_OK);
+  }
+  else if (tex->Status == ImTextureStatus_WantDestroy && tex->UnusedFrames > 0)
+  {
+    s_textures.erase(tex->GetTexID());
+    tex->SetTexID(ImTextureID_Invalid);
+    tex->SetStatus(ImTextureStatus_Destroyed);
+  }
+}
+
+// Draws the overlay's ImGui frame on the bound backbuffer, as OnScreenUI::DrawImGui.
+void RenderDrawData(ImDrawData* draw_data, u32 width, u32 height)
+{
+  if (draw_data->Textures)
+  {
+    for (ImTextureData* tex : *draw_data->Textures)
+    {
+      if (tex->Status != ImTextureStatus_OK)
+        UpdateImGuiTexture(tex);
+    }
+  }
+
+  g_gfx->SetViewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f,
+                     1.0f);
+  struct ImGuiUbo
+  {
+    float u_rcp_viewport_size_mul2[2];
+    float padding[2];
+  };
+  const ImGuiUbo ubo = {{1.0f / width * 2.0f, 1.0f / height * 2.0f}, {}};
+  g_gfx->SetPipeline(s_pipeline.get());
+  g_gfx->SetSamplerState(0, RenderState::GetLinearSamplerState());
+  g_vertex_manager->UploadUtilityUniforms(&ubo, sizeof(ubo));
+
+  for (int i = 0; i < draw_data->CmdListsCount; ++i)
+  {
+    const ImDrawList* list = draw_data->CmdLists[i];
+    if (list->VtxBuffer.empty() || list->IdxBuffer.empty())
+      continue;
+    u32 base_vertex = 0;
+    u32 base_index = 0;
+    g_vertex_manager->UploadUtilityVertices(list->VtxBuffer.Data, sizeof(ImDrawVert),
+                                            list->VtxBuffer.Size, list->IdxBuffer.Data,
+                                            list->IdxBuffer.Size, &base_vertex, &base_index);
+    for (const ImDrawCmd& cmd : list->CmdBuffer)
+    {
+      if (cmd.UserCallback)
+      {
+        cmd.UserCallback(list, &cmd);
+        continue;
+      }
+      g_gfx->SetScissorRect(g_gfx->ConvertFramebufferRectangle(
+          MathUtil::Rectangle<int>(static_cast<int>(cmd.ClipRect.x),
+                                   static_cast<int>(cmd.ClipRect.y),
+                                   static_cast<int>(cmd.ClipRect.z),
+                                   static_cast<int>(cmd.ClipRect.w)),
+          g_gfx->GetCurrentFramebuffer()));
+      g_gfx->SetTexture(0, FromTextureID(cmd.GetTexID()));
+      g_gfx->DrawIndexed(base_index + cmd.IdxOffset, cmd.ElemCount, base_vertex + cmd.VtxOffset);
+    }
+  }
+
+  g_gfx->SetScissorRect(g_gfx->ConvertFramebufferRectangle(
+      MathUtil::Rectangle<int>(0, 0, static_cast<int>(width), static_cast<int>(height)),
+      g_gfx->GetCurrentFramebuffer()));
 }
 
 void PublishHudStats()
@@ -159,7 +265,7 @@ void Hide()
   s_shown = false;
 }
 
-void DrawCallback(Vulkan::VKFramebuffer* fb, VkCommandBuffer cmd)
+void DrawOverlay(u32 width, u32 height)
 {
   if (!s_registered.load() || s_failed)
     return;
@@ -230,8 +336,6 @@ void DrawCallback(Vulkan::VKFramebuffer* fb, VkCommandBuffer cmd)
     ImGuiOverlay::FeedTouch({s_touch_down.load(), s_touch_x.load(), s_touch_y.load()});
   }
 
-  const u32 width = fb->GetWidth();
-  const u32 height = fb->GetHeight();
   ImDrawData* draw_data = ImGuiOverlay::BuildFrame(static_cast<float>(width),
                                                    static_cast<float>(height),
                                                    delta > 0.0f && delta < 0.25f ? delta : 1.0f / 60.0f);
@@ -244,17 +348,9 @@ void DrawCallback(Vulkan::VKFramebuffer* fb, VkCommandBuffer cmd)
       Hide();
   }
 
-  if (!draw_data)
+  if (!draw_data || !s_pipeline)
     return;
-
-  VkRenderPassBeginInfo rp_info{};
-  rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  rp_info.renderPass = fb->GetLoadRenderPass();
-  rp_info.framebuffer = fb->GetFB();
-  rp_info.renderArea.extent = {width, height};
-  vkCmdBeginRenderPass(cmd, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
-  ImGui_ImplVulkan_RenderDrawData(draw_data, cmd);
-  vkCmdEndRenderPass(cmd);
+  RenderDrawData(draw_data, width, height);
 }
 }  // namespace
 
@@ -263,23 +359,19 @@ bool Init()
   if (s_registered.load())
     return true;
 
-  auto* gfx = Vulkan::VKGfx::GetInstance();
-  if (!gfx || !gfx->GetSwapChain() || !Vulkan::g_vulkan_context)
+  // once Dolphin presents: its backbuffer's format is what the pipeline draws to
+  if (!g_gfx || !g_presenter || !g_vertex_manager ||
+      g_presenter->GetBackbufferFormat() == AbstractTextureFormat::Undefined)
+  {
     return false;
-  auto* swap_chain = gfx->GetSwapChain();
-  auto* framebuffer = swap_chain->GetCurrentFramebuffer();
-  if (!framebuffer)
-    return false;
+  }
 
-  s_device = Vulkan::g_vulkan_context->GetDevice();
-  s_render_pass = framebuffer->GetLoadRenderPass();
-  s_image_count = static_cast<u32>(swap_chain->GetSwapChainImageCount());
   s_visible.store(false);
   s_pending_action.store(0);
   s_pending_nav.store(0);
   hidInitializeTouchScreen();
 
-  Vulkan::VKGfx::SetOverlayCallback(&DrawCallback);
+  VideoCommon::SetHostOverlayCallback(&DrawOverlay);
   s_registered.store(true);
   return true;
 }
@@ -289,9 +381,9 @@ void Shutdown()
   if (!s_registered.load())
     return;
 
-  if (s_device && ::vkDeviceWaitIdle)
-    ::vkDeviceWaitIdle(s_device);
-  Vulkan::VKGfx::SetOverlayCallback(nullptr);
+  VideoCommon::SetHostOverlayCallback(nullptr);
+  if (g_gfx)
+    g_gfx->WaitForGPUIdle();
   s_registered.store(false);
   if (s_ready)
     ImGuiOverlay::Shutdown();
@@ -433,93 +525,95 @@ Action ConsumeAction()
 {
   return static_cast<Action>(s_pending_action.exchange(0));
 }
-}  // namespace DolphinNX::VulkanOverlay
+}  // namespace DolphinNX::GameOverlay
 
-// The renderer tico's overlay draws with: ImGui's Vulkan backend on the
-// swapchain's load render pass, set up from the first frame drawn.
-namespace DolphinNX::VulkanOverlay
+// The renderer tico's overlay draws with: Dolphin's AbstractGfx, with the ImGui
+// shaders Dolphin's own on-screen UI uses, on whatever backend presents.
+namespace DolphinNX::GameOverlay
 {
 bool RendererInit()
 {
-  if (s_device == VK_NULL_HANDLE || !Vulkan::g_vulkan_context)
+  if (!g_gfx || !g_presenter)
     return false;
 
-  VkDescriptorPoolSize pool_size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 128};
-  VkDescriptorPoolCreateInfo pool_info{};
-  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-  pool_info.maxSets = 128;
-  pool_info.poolSizeCount = 1;
-  pool_info.pPoolSizes = &pool_size;
-  if (vkCreateDescriptorPool(s_device, &pool_info, nullptr, &s_descriptor_pool) != VK_SUCCESS)
-    return false;
+  PortableVertexDeclaration vdecl = {};
+  vdecl.position = {ComponentFormat::Float, 2, offsetof(ImDrawVert, pos), true, false};
+  vdecl.texcoords[0] = {ComponentFormat::Float, 2, offsetof(ImDrawVert, uv), true, false};
+  vdecl.colors[0] = {ComponentFormat::UByte, 4, offsetof(ImDrawVert, col), true, false};
+  vdecl.stride = sizeof(ImDrawVert);
+  s_vertex_format = g_gfx->CreateNativeVertexFormat(vdecl);
 
-  VkSamplerCreateInfo sampler_info{};
-  sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  sampler_info.magFilter = VK_FILTER_LINEAR;
-  sampler_info.minFilter = VK_FILTER_LINEAR;
-  sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-  sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-  sampler_info.maxLod = 1.0f;
-  if (vkCreateSampler(s_device, &sampler_info, nullptr, &s_sampler) != VK_SUCCESS)
+  const bool linear_space_output =
+      g_presenter->GetBackbufferFormat() == AbstractTextureFormat::RGBA16F;
+  const auto vertex_shader = g_gfx->CreateShaderFromSource(
+      ShaderStage::Vertex, FramebufferShaderGen::GenerateImGuiVertexShader(), nullptr,
+      "Tico overlay vertex shader");
+  const auto pixel_shader = g_gfx->CreateShaderFromSource(
+      ShaderStage::Pixel, FramebufferShaderGen::GenerateImGuiPixelShader(linear_space_output),
+      nullptr, "Tico overlay pixel shader");
+  if (!s_vertex_format || !vertex_shader || !pixel_shader)
   {
     RendererShutdown();
     return false;
   }
 
-  const VkInstance instance = Vulkan::g_vulkan_context->GetVulkanInstance();
-  if (!ImGui_ImplVulkan_LoadFunctions(VK_API_VERSION_1_1, LoadVulkanFunction, instance))
+  AbstractPipelineConfig config = {};
+  config.vertex_format = s_vertex_format.get();
+  config.vertex_shader = vertex_shader.get();
+  config.pixel_shader = pixel_shader.get();
+  config.rasterization_state = RenderState::GetNoCullRasterizationState(PrimitiveType::Triangles);
+  config.depth_state = RenderState::GetNoDepthTestingDepthState();
+  config.blending_state = RenderState::GetNoBlendingBlendState();
+  config.blending_state.blend_enable = true;
+  config.blending_state.src_factor = SrcBlendFactor::SrcAlpha;
+  config.blending_state.dst_factor = DstBlendFactor::InvSrcAlpha;
+  config.blending_state.src_factor_alpha = SrcBlendFactor::Zero;
+  config.blending_state.dst_factor_alpha = DstBlendFactor::One;
+  config.framebuffer_state.color_texture_format = g_presenter->GetBackbufferFormat();
+  config.framebuffer_state.depth_texture_format = AbstractTextureFormat::Undefined;
+  config.framebuffer_state.samples = 1;
+  config.framebuffer_state.per_sample_shading = false;
+  config.usage = AbstractPipelineUsage::Utility;
+  s_pipeline = g_gfx->CreatePipeline(config);
+  if (!s_pipeline)
   {
     RendererShutdown();
     return false;
   }
 
-  ImGui_ImplVulkan_InitInfo init_info{};
-  init_info.ApiVersion = VK_API_VERSION_1_1;
-  init_info.Instance = instance;
-  init_info.PhysicalDevice = Vulkan::g_vulkan_context->GetPhysicalDevice();
-  init_info.Device = s_device;
-  init_info.QueueFamily = Vulkan::g_vulkan_context->GetGraphicsQueueFamilyIndex();
-  init_info.Queue = Vulkan::g_vulkan_context->GetGraphicsQueue();
-  init_info.DescriptorPool = s_descriptor_pool;
-  init_info.RenderPass = s_render_pass;
-  init_info.MinImageCount = s_image_count >= 2 ? s_image_count : 2;
-  init_info.ImageCount = s_image_count >= 2 ? s_image_count : 2;
-  init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-  if (!ImGui_ImplVulkan_Init(&init_info))
-  {
-    RendererShutdown();
-    return false;
-  }
+  ImGuiIO& io = ImGui::GetIO();
+  io.BackendRendererName = "tico_dolphin_gfx";
+  io.BackendRendererUserData = &s_pipeline;
+  // the font atlas comes to RenderDrawData; draws use their vertex offsets
+  io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures | ImGuiBackendFlags_RendererHasVtxOffset;
   return true;
 }
 
 void RendererShutdown()
 {
-  if (ImGui::GetCurrentContext() && ImGui::GetIO().BackendRendererUserData)
+  if (ImGui::GetCurrentContext())
   {
-    for (auto& [id, texture] : s_textures)
-      ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
-    s_textures.clear();
-    ImGui_ImplVulkan_Shutdown();
+    // the atlas textures ImGui still holds go with the renderer
+    for (ImTextureData* tex : ImGui::GetPlatformIO().Textures)
+    {
+      if (tex->RefCount == 1)
+      {
+        tex->SetTexID(ImTextureID_Invalid);
+        tex->SetStatus(ImTextureStatus_Destroyed);
+      }
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    io.BackendRendererName = nullptr;
+    io.BackendRendererUserData = nullptr;
+    io.BackendFlags &=
+        ~(ImGuiBackendFlags_RendererHasTextures | ImGuiBackendFlags_RendererHasVtxOffset);
   }
   s_textures.clear();
-  if (s_sampler != VK_NULL_HANDLE)
-  {
-    vkDestroySampler(s_device, s_sampler, nullptr);
-    s_sampler = VK_NULL_HANDLE;
-  }
-  if (s_descriptor_pool != VK_NULL_HANDLE)
-  {
-    vkDestroyDescriptorPool(s_device, s_descriptor_pool, nullptr);
-    s_descriptor_pool = VK_NULL_HANDLE;
-  }
+  s_pipeline.reset();
+  s_vertex_format.reset();
 }
 
 void RendererBeginFrame()
 {
-  ImGui_ImplVulkan_NewFrame();
 }
-}  // namespace DolphinNX::VulkanOverlay
+}  // namespace DolphinNX::GameOverlay

@@ -27,7 +27,7 @@ add_executable(dolphin-nx
   LibraryScreen.cpp
   MbedTLSEntropy.cpp
   Overlay/OverlayRenderer.cpp
-  Overlay/VulkanOverlay.cpp
+  Overlay/GameOverlay.cpp
   # tico's overlay and frontend pieces, shared with the other cores
   ${CMAKE_SOURCE_DIR}/tico/UsbStorage.cpp
   # the SD card read cache, from wine-nx

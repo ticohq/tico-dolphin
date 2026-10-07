@@ -3,6 +3,8 @@
 
 #include "VideoCommon/Present.h"
 
+#include <mutex>
+
 #include "Common/ChunkFile.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Config/MainSettings.h"
@@ -32,6 +34,16 @@ std::unique_ptr<VideoCommon::Presenter> g_presenter;
 
 namespace VideoCommon
 {
+// The frontend's UI drawn over each frame (SetHostOverlayCallback)
+static std::mutex s_host_overlay_mutex;
+static HostOverlayCallback s_host_overlay;
+
+void SetHostOverlayCallback(HostOverlayCallback callback)
+{
+  std::lock_guard lock(s_host_overlay_mutex);
+  s_host_overlay = std::move(callback);
+}
+
 #ifdef __LIBRETRO__
 bool g_is_duplicate_frame{false};
 #endif
@@ -1034,6 +1046,13 @@ void Presenter::Present(PresentInfo* present_info)
     m_onscreen_ui->Finalize();
     if (backbuffer_bound)
       m_onscreen_ui->DrawImGui();
+  }
+
+  if (backbuffer_bound)
+  {
+    std::lock_guard lock(s_host_overlay_mutex);
+    if (s_host_overlay)
+      s_host_overlay(m_backbuffer_width, m_backbuffer_height);
   }
 
   // Present to the window system.
