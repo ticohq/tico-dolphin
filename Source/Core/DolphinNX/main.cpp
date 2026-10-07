@@ -896,13 +896,14 @@ static int ExitSwitchFrontend(int exit_code)
 }
 
 // ---------------------------------------------------------------------------
-// GC Sys installer
+// System files
 //
-// Dolphin needs its "Sys" tree (GameSettings, Shaders, Resources, GC/Wii config,
-// ...) at sdmc:/tico/system/gc/Sys before File::SetSysDirectory. It is shipped in
-// this NRO's RomFS (romfs:/Sys, from Data/Sys) and copied to the SD on first run.
-// A version marker based on the NRO package version keeps normal launches from
-// re-walking RomFS.
+// Dolphin's "Sys" tree (GameSettings, Shaders, GC/Wii data, ...) is read straight
+// from this NRO's RomFS (romfs:/Sys, from Data/Sys), as porpoise does, so an
+// update brings its own and nothing is copied. The files players provide (the
+// GameCube BIOS, DSP ROMs, fonts) live in User/GC, where Dolphin looks first;
+// sdmc:/tico/system/gc/Sys, where earlier versions kept the copy, stays a place
+// to drop them, and they are moved over on every start.
 // ---------------------------------------------------------------------------
 static constexpr const char* kGcSysSource = "romfs:/Sys";
 static constexpr const char* kGcSysDest = "sdmc:/tico/system/gc/Sys";
@@ -913,7 +914,8 @@ static constexpr const char* kGcSysMarker = "sdmc:/tico/system/gc/.sys_version";
 #endif
 static constexpr const char* kGcSysVersion = TICO_NRO_VERSION;
 
-static constexpr const char* kGcSysSentinel = "sdmc:/tico/system/gc/Sys/ApprovedInis.json";
+static constexpr const char* kSysFromRomfsMarker =
+    "sdmc:/tico/config/.migrations/dolphin_sys_from_romfs";
 static constexpr const char* kRootMesaDir = "sdmc:/.mesa";
 static constexpr const char* kRootMesaVersionMarker =
     "sdmc:/tico/config/.migrations/root_mesa_core_version";
@@ -936,6 +938,29 @@ static bool PathIsFile(const char* p)
 {
   struct stat st{};
   return stat(p, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+static bool FilesAreEqual(const std::string& a, const std::string& b)
+{
+  FILE* fa = fopen(a.c_str(), "rb");
+  FILE* fb = fopen(b.c_str(), "rb");
+  bool equal = fa && fb;
+  std::vector<char> buf_a(64 * 1024);
+  std::vector<char> buf_b(64 * 1024);
+  while (equal)
+  {
+    const size_t na = fread(buf_a.data(), 1, buf_a.size(), fa);
+    const size_t nb = fread(buf_b.data(), 1, buf_b.size(), fb);
+    if (na != nb || std::memcmp(buf_a.data(), buf_b.data(), na) != 0)
+      equal = false;
+    if (na == 0)
+      break;
+  }
+  if (fa)
+    fclose(fa);
+  if (fb)
+    fclose(fb);
+  return equal;
 }
 
 static void EnsureDir(const std::string& p)
@@ -1011,46 +1036,6 @@ static void DrawGcSysProgress(GcSysInstallProgress& progress, bool force = false
   consoleUpdate(nullptr);
 }
 
-static bool CountTreeRecursive(const std::string& src, GcSysInstallProgress& progress)
-{
-  DIR* d = opendir(src.c_str());
-  if (!d)
-    return false;
-
-  bool ok = true;
-  while (struct dirent* e = readdir(d))
-  {
-    if (!std::strcmp(e->d_name, ".") || !std::strcmp(e->d_name, ".."))
-      continue;
-
-    const std::string s = src + "/" + e->d_name;
-    struct stat st{};
-    if (stat(s.c_str(), &st) != 0)
-    {
-      ok = false;
-      break;
-    }
-
-    if (S_ISDIR(st.st_mode))
-    {
-      if (!CountTreeRecursive(s, progress))
-      {
-        ok = false;
-        break;
-      }
-    }
-    else if (S_ISREG(st.st_mode))
-    {
-      ++progress.total_files;
-      if (st.st_size > 0)
-        progress.total_bytes += static_cast<u64>(st.st_size);
-    }
-  }
-
-  closedir(d);
-  return ok;
-}
-
 static bool DeleteDirectoryRecursivelyIfExists(const char* path)
 {
   if (!PathIsDir(path))
@@ -1069,30 +1054,9 @@ static bool DeleteDirectoryRecursivelyIfExists(const char* path)
   return !PathIsDir(path);
 }
 
-static bool ShouldPreserveExistingGcSysFile(const std::string& path)
-{
-  if (!PathIsFile(path.c_str()))
-    return false;
-
-  std::string_view relative_path(path);
-  if (!relative_path.starts_with(kGcSysDest))
-    return false;
-
-  relative_path.remove_prefix(std::strlen(kGcSysDest));
-  while (!relative_path.empty() && relative_path.front() == '/')
-    relative_path.remove_prefix(1);
-
-  return relative_path == "GC/dsp_coef.bin" || relative_path == "GC/dsp_rom.bin" ||
-         relative_path == "GC/font_japanese.bin" || relative_path == "GC/font_western.bin" ||
-         relative_path == "GBA/gba_bios.bin" || relative_path.ends_with("/IPL.bin");
-}
-
 static bool CopyOneFile(const std::string& src, const std::string& dst, size_t file_size,
-                        GcSysInstallProgress* progress, bool preserve_existing_gc_sys_files)
+                        GcSysInstallProgress* progress)
 {
-  if (preserve_existing_gc_sys_files && ShouldPreserveExistingGcSysFile(dst))
-    return true;
-
   FILE* in = fopen(src.c_str(), "rb");
   if (!in)
     return false;
@@ -1140,56 +1104,6 @@ static bool CopyOneFile(const std::string& src, const std::string& dst, size_t f
   return ok;
 }
 
-static bool CopyTreeRecursive(const std::string& src, const std::string& dst,
-                              GcSysInstallProgress* progress,
-                              bool preserve_existing_gc_sys_files = false)
-{
-  EnsureDir(dst);
-  DIR* d = opendir(src.c_str());
-  if (!d)
-    return false;
-  bool ok = true;
-  while (struct dirent* e = readdir(d))
-  {
-    if (!std::strcmp(e->d_name, ".") || !std::strcmp(e->d_name, ".."))
-      continue;
-    const std::string s = src + "/" + e->d_name;
-    const std::string t = dst + "/" + e->d_name;
-    struct stat st{};
-    if (stat(s.c_str(), &st) != 0)
-    {
-      ok = false;
-      break;
-    }
-    if (S_ISDIR(st.st_mode))
-    {
-      if (!CopyTreeRecursive(s, t, progress, preserve_existing_gc_sys_files))
-      {
-        ok = false;
-        break;
-      }
-    }
-    else if (S_ISREG(st.st_mode))
-    {
-      if (progress)
-        progress->current_path = TrimGcSysPathForDisplay(s);
-      if (!CopyOneFile(s, t, st.st_size > 0 ? static_cast<size_t>(st.st_size) : 0, progress,
-                       preserve_existing_gc_sys_files))
-      {
-        ok = false;
-        break;
-      }
-      if (progress)
-      {
-        ++progress->copied_files;
-        DrawGcSysProgress(*progress, true);
-      }
-    }
-  }
-  closedir(d);
-  return ok;
-}
-
 static bool CopyProfileHotfixFile(const char* name)
 {
   const std::string src = std::string(kDolphinProfileHotfixSource) + "/" + name;
@@ -1202,7 +1116,7 @@ static bool CopyProfileHotfixFile(const char* name)
     return false;
   }
 
-  if (!CopyOneFile(src, dst, st.st_size > 0 ? static_cast<size_t>(st.st_size) : 0, nullptr, false))
+  if (!CopyOneFile(src, dst, st.st_size > 0 ? static_cast<size_t>(st.st_size) : 0, nullptr))
   {
     LOG("Profile hotfix copy failed: %s -> %s\n", src.c_str(), dst.c_str());
     return false;
@@ -1302,20 +1216,6 @@ static void MarkControllerModesTipShown()
   }
 }
 
-static bool GcSysMarkerMatches()
-{
-  FILE* f = fopen(kGcSysMarker, "rb");
-  if (!f)
-    return false;
-  char buf[64] = {0};
-  const size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-  fclose(f);
-  std::string v(buf, n);
-  while (!v.empty() && (v.back() == '\n' || v.back() == '\r' || v.back() == ' ' || v.back() == '\t'))
-    v.pop_back();
-  return v == kGcSysVersion;
-}
-
 static bool RootMesaVersionMarkerMatches()
 {
   FILE* f = fopen(kRootMesaVersionMarker, "rb");
@@ -1376,94 +1276,119 @@ static void EnsureRootMesaCacheMatchesCoreVersion()
   WriteRootMesaVersionMarker();
 }
 
-// Copies romfs:/Sys -> sdmc:/tico/system/gc/Sys after a version bump. Safe to
-// call every boot: the marker check makes the common case a no-op.
-static bool EnsureGcSysInstalled()
+// The files players provide, from where earlier versions kept them (and where the
+// docs said to put them) to User/GC, where Dolphin looks first. Never over a
+// file already there.
+static void MoveProvidedSystemFiles()
 {
-  if (GcSysMarkerMatches() && PathIsFile(kGcSysSentinel))
+  const std::string from = std::string(kGcSysDest) + "/GC/";
+  const std::string to = "sdmc:/tico/system/gc/User/GC/";
+  std::vector<std::string> names = {"dsp_rom.bin", "dsp_coef.bin", "font_western.bin",
+                                    "font_japanese.bin"};
+  for (const char* region : {"USA", "EUR", "JAP"})
+    names.push_back(std::string(region) + "/IPL.bin");
+
+  for (const std::string& name : names)
   {
-    LOG("GC Sys already installed (version=%s)\n", kGcSysVersion);
-    return true;
+    const std::string source = from + name;
+    const std::string dest = to + name;
+    if (!PathIsFile(source.c_str()) || PathIsFile(dest.c_str()))
+      continue;
+    // the shipped fonts were copied here too: only a player's own moves
+    const std::string shipped = std::string(kGcSysSource) + "/GC/" + name;
+    if (PathIsFile(shipped.c_str()) && FilesAreEqual(source, shipped))
+      continue;
+    File::CreateFullPath(dest);
+    if (std::rename(source.c_str(), dest.c_str()) == 0)
+      LOG("System files: moved %s to %s\n", source.c_str(), dest.c_str());
   }
-  if (!PathIsDir(kGcSysSource))
+}
+
+// What only PC Dolphin's interface uses, no longer shipped (build_dolphin_standalone_nro.sh)
+static bool IsDroppedSystemFile(std::string_view relative_path)
+{
+  for (std::string_view prefix : {"/Themes/", "/Profiles/", "/Resources/", "/totaldb.dsy",
+                                  "/wiitdb-", "/triforcetdb-"})
   {
-    LOG("GC Sys source missing in RomFS (%s)\n", kGcSysSource);
-    return false;
+    if (relative_path.starts_with(prefix))
+      return true;
   }
+  return false;
+}
 
-  GcSysInstallProgress progress;
-  progress.console_visible = true;
-  consoleInit(nullptr);
-  DrawGcSysProgress(progress, true);
-
-  EnsureDir("sdmc:/tico");
-  EnsureDir("sdmc:/tico/system");
-  EnsureDir("sdmc:/tico/system/gc");
-
-  progress.phase = "Scanning bundled files";
-  DrawGcSysProgress(progress, true);
-  if (!CountTreeRecursive(kGcSysSource, progress))
+static void CollectFiles(const std::string& dir, std::vector<std::string>* files,
+                         std::vector<std::string>* dirs)
+{
+  DIR* d = opendir(dir.c_str());
+  if (!d)
+    return;
+  dirs->push_back(dir);
+  while (struct dirent* e = readdir(d))
   {
-    LOG("GC Sys scan FAILED\n");
-    progress.phase = "Update failed while scanning files";
-    DrawGcSysProgress(progress, true);
-    Common::SleepCurrentThread(2000);
-    consoleExit(nullptr);
-    return false;
+    if (!std::strcmp(e->d_name, ".") || !std::strcmp(e->d_name, ".."))
+      continue;
+    const std::string path = dir + "/" + e->d_name;
+    if (PathIsDir(path.c_str()))
+      CollectFiles(path, files, dirs);
+    else
+      files->push_back(path);
   }
+  closedir(d);
+}
 
-  progress.phase = "Copying bundled files";
-  DrawGcSysProgress(progress, true);
-
-  LOG("Installing GC Sys version %s via temp dir: %s -> %s\n", kGcSysVersion, kGcSysSource,
-      kGcSysTempDest);
-
-  if (!DeleteDirectoryRecursivelyIfExists(kGcSysTempDest) ||
-      !CopyTreeRecursive(kGcSysSource, kGcSysTempDest, &progress))
-  {
-    LOG("GC Sys install FAILED while copying\n");
-    progress.phase = "Update failed while copying files";
-    DrawGcSysProgress(progress, true);
-    Common::SleepCurrentThread(2000);
-    consoleExit(nullptr);
-    return false;
-  }
-
-  progress.phase = "Applying update";
-  progress.current_path.clear();
-  progress.copied_files = 0;
-  progress.copied_bytes = 0;
-  DrawGcSysProgress(progress, true);
-
-  std::remove(kGcSysMarker);
-  if (!CopyTreeRecursive(kGcSysTempDest, kGcSysDest, &progress, true))
-  {
-    LOG("GC Sys install FAILED while applying staged files\n");
-    progress.phase = "Update failed while applying files";
-    DrawGcSysProgress(progress, true);
-    Common::SleepCurrentThread(2000);
-    consoleExit(nullptr);
-    return false;
-  }
+// Once: the copy of Sys earlier versions made on the SD. What is the same as
+// RomFS goes; what a player added or changed stays, and is logged.
+static void RemoveOldSystemCopy()
+{
+  if (PathIsFile(kSysFromRomfsMarker))
+    return;
   DeleteDirectoryRecursivelyIfExists(kGcSysTempDest);
+  std::remove(kGcSysMarker);
 
-  if (FILE* f = fopen(kGcSysMarker, "wb"))
+  std::vector<std::string> files;
+  std::vector<std::string> dirs;
+  CollectFiles(kGcSysDest, &files, &dirs);
+  if (!files.empty())
   {
-    fputs(kGcSysVersion, f);
-    fputc('\n', f);
-    fclose(f);
+    GcSysInstallProgress progress;
+    progress.console_visible = true;
+    progress.title = "Tidying up the old system files";
+    progress.show_version = false;
+    progress.phase = "System files are now read from the app";
+    progress.total_files = files.size();
+    consoleInit(nullptr);
+    DrawGcSysProgress(progress, true);
+
+    size_t kept = 0;
+    for (const std::string& file : files)
+    {
+      const std::string relative = file.substr(std::strlen(kGcSysDest));
+      const std::string shipped = std::string(kGcSysSource) + relative;
+      if ((PathIsFile(shipped.c_str()) && FilesAreEqual(file, shipped)) ||
+          (IsDroppedSystemFile(relative) && !PathIsFile(shipped.c_str())))
+      {
+        std::remove(file.c_str());
+      }
+      else
+      {
+        ++kept;
+        LOG("System files: kept %s (added or changed)\n", file.c_str());
+      }
+      ++progress.copied_files;
+      progress.current_path = TrimGcSysPathForDisplay(file);
+      DrawGcSysProgress(progress);
+    }
+    // folders left empty, deepest first
+    for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
+      rmdir(it->c_str());
+    fsdevCommitDevice("sdmc");
+    consoleExit(nullptr);
+    LOG("System files: old copy removed, %zu file(s) kept\n", kept);
   }
-  fsdevCommitDevice("sdmc");
 
-  progress.phase = "Update complete";
-  progress.copied_files = progress.total_files;
-  progress.copied_bytes = progress.total_bytes;
-  DrawGcSysProgress(progress, true);
-  Common::SleepCurrentThread(500);
-  consoleExit(nullptr);
-
-  LOG("GC Sys install complete (version=%s)\n", kGcSysVersion);
-  return true;
+  File::CreateFullPath(kSysFromRomfsMarker);
+  if (FILE* f = fopen(kSysFromRomfsMarker, "wb"))
+    fclose(f);
 }
 
 int main(int argc, char* argv[])
@@ -1565,11 +1490,10 @@ int main(int argc, char* argv[])
     LOG("Environment set\n");
 
     const std::string user_dir = "sdmc:/tico/system/gc/User";
-    const std::string sys_dir = "sdmc:/tico/system/gc/Sys";
-
-    // Seed Dolphin's Sys tree onto the SD from RomFS before anything reads it.
-    if (!EnsureGcSysInstalled())
-      return 1;
+    // Dolphin's Sys tree, read from RomFS (see "System files")
+    const std::string sys_dir = kGcSysSource;
+    MoveProvidedSystemFiles();
+    RemoveOldSystemCopy();
     EnsureDolphinProfilesUpdatedFor008();
     // saves now live in sdmc:/tico/saves, as the other cores keep them
     MigrateSaves();

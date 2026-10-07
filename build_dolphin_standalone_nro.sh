@@ -70,8 +70,15 @@ cp -R "${SCRIPT_DIR}/tico/fonts" "${ROMFS_DIR}/"
 cp -R "${SCRIPT_DIR}/tico/lang" "${ROMFS_DIR}/"
 cp -R "${SCRIPT_DIR}/tico/assets" "${ROMFS_DIR}/"
 cp "${SCRIPT_DIR}/tico/module/settings.json" "${ROMFS_DIR}/module/"
-# Dolphin's Sys tree, seeded to sdmc:/tico/system/gc/Sys on first run (see main.cpp).
+# Dolphin's Sys tree, read from RomFS (see "System files" in main.cpp), without
+# what only PC Dolphin's interface uses: its themes, controller profiles, DSP
+# debugger symbols, other languages' title lists and its pictures (the
+# RetroAchievements badges stay).
 cp -R "${SCRIPT_DIR}/Data/Sys" "${ROMFS_DIR}/"
+rm -rf "${ROMFS_DIR}/Sys/Themes" "${ROMFS_DIR}/Sys/Profiles" "${ROMFS_DIR}/Sys/totaldb.dsy"
+find "${ROMFS_DIR}/Sys" -maxdepth 1 \( -name 'wiitdb-*.txt' -o -name 'triforcetdb-*.txt' \) \
+  ! -name '*-en.txt' -delete
+find "${ROMFS_DIR}/Sys/Resources" -type f ! -name 'achievements_*.png' -delete
 
 # Profile hotfix payload for 0.0.8. Dolphin normally reads profiles from
 # sdmc:/tico/config/cores/profiles/dolphin; these two files are force-reseeded
