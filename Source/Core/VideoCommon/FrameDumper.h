@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <chrono>
+
 #include "Common/CommonTypes.h"
 #include "Common/Event.h"
 #include "Common/Flag.h"
@@ -31,6 +33,10 @@ public:
                         const MathUtil::Rectangle<int>& target_rect, u64 ticks, int frame_number);
 
   void SaveScreenshot(std::string filename);
+  // SaveScreenshot that WaitForScreenshot can then wait on: the picture is taken
+  // with the next frame the game draws.
+  void RequestScreenshot(std::string filename);
+  bool WaitForScreenshot(std::chrono::milliseconds timeout);
 
   bool IsFrameDumping() const;
   int GetRequiredResolutionLeastCommonMultiple() const;

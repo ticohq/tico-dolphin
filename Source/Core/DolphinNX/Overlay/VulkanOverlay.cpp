@@ -61,6 +61,7 @@ enum NavBits : unsigned int
 std::atomic_bool s_registered = false;
 std::atomic_bool s_visible = false;
 std::atomic_bool s_cheat_refresh = false;
+std::atomic_bool s_resume_prompt = false;
 std::atomic_int s_pending_action = 0;
 std::atomic_uint s_pending_nav = 0;
 std::atomic_bool s_touch_down = false;
@@ -191,6 +192,14 @@ void DrawCallback(Vulkan::VKFramebuffer* fb, VkCommandBuffer cmd)
 
   if (s_cheat_refresh.exchange(false))
     OverlayUI::RefreshCheatList();
+
+  if (s_resume_prompt.exchange(false))
+  {
+    s_visible.store(true);
+    ImGuiOverlay::SetVisible(true);
+    s_shown = true;
+    OverlayUI::ShowResumePrompt();
+  }
 
   const bool visible = s_visible.load();
   if (visible != s_shown)
@@ -386,6 +395,33 @@ void ShowNotice(std::string message, std::vector<std::string> choices)
   std::lock_guard lock(s_notice_mutex);
   s_pending_notice.emplace(std::move(message), std::move(choices));
   s_visible.store(true);
+}
+
+void ShowResumePrompt()
+{
+  s_resume_prompt.store(true);
+  s_visible.store(true);
+}
+
+unsigned long long LoadPicture(const std::string& path, float* aspect)
+{
+  int width = 0;
+  int height = 0;
+  int channels = 0;
+  unsigned char* rgba = stbi_load(path.c_str(), &width, &height, &channels, 4);
+  if (!rgba)
+    return 0;
+  const ImTextureID texture = s_host.CreateTextureRGBA(rgba, width, height);
+  stbi_image_free(rgba);
+  if (aspect && height > 0)
+    *aspect = static_cast<float>(width) / static_cast<float>(height);
+  return static_cast<unsigned long long>(texture);
+}
+
+void FreePicture(unsigned long long texture)
+{
+  if (texture)
+    s_host.DestroyTexture(static_cast<ImTextureID>(texture));
 }
 
 void RequestCheatRefresh()

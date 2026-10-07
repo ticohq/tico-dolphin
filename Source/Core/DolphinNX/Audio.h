@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <string>
+
 #include <atomic>
 
 #include <SDL2/SDL.h>
@@ -33,6 +35,10 @@ private:
   SDL_AudioDeviceID m_device = 0;
   std::atomic<bool> m_running{false};
 };
+
+// Plays a sound over the game's (e.g. tico's trophy sound): a 16-bit PCM WAV,
+// resampled to the output's 48 kHz stereo. Replaces one still playing.
+bool PlayEffect(const std::string& wav_path);
 
 }  // namespace Audio
 }  // namespace DolphinNX

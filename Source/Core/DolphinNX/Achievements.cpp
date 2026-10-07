@@ -21,6 +21,7 @@
 #include "Common/Logging/Log.h"
 #include "Core/AchievementManager.h"
 #include "Core/Config/AchievementSettings.h"
+#include "DolphinNX/Audio.h"
 #include "TicoOverlayHost.h"
 #include "overlay/overlay_ui.h"
 
@@ -136,6 +137,30 @@ private:
 };
 
 RAHost s_host;
+
+// tico's sound effects setting (audio.jsonc)
+bool TicoSoundsEnabled()
+{
+  std::string text;
+  if (!File::ReadFileToString("sdmc:/tico/config/audio.jsonc", text))
+    return false;
+  const nlohmann::json root = nlohmann::json::parse(text, nullptr, false, true);
+  if (!root.is_object() || !root.contains("sound_enabled"))
+    return false;
+  const nlohmann::json& value = root["sound_enabled"];
+  return value.is_boolean() ? value.get<bool>() :
+                              value.is_string() && value.get<std::string>() == "true";
+}
+
+// An unlock or a mastered game gets tico's trophy sound.
+void PlayTrophySoundFor(const std::string& message)
+{
+  if ((message.starts_with("Unlocked: ") || message.starts_with("Congratulations")) &&
+      TicoSoundsEnabled())
+  {
+    DolphinNX::Audio::PlayEffect("romfs:/assets/trophy.wav");
+  }
+}
 bool s_started = false;
 bool s_hardcore = false;
 std::string s_token;
@@ -191,6 +216,7 @@ void Start()
   AchievementManager& manager = AchievementManager::GetInstance();
   manager.SetMessageSink([](std::string message, u32 duration_ms,
                             const VideoCommon::CustomTextureData::ArraySlice::Level* icon) {
+    PlayTrophySoundFor(message);
     s_host.Push(std::move(message), duration_ms, icon);
   });
   manager.Init(nullptr);
