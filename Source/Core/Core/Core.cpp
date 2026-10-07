@@ -106,6 +106,7 @@ void funlockfile(FILE* filehandle)
 
 #if defined(__SWITCH__) && !defined(__LIBRETRO__)
 #include "DolphinNX/BootTrace.h"
+#include "DolphinNX/Saves.h"
 #endif
 
 namespace Core
@@ -810,6 +811,13 @@ static
 #endif
   }
 
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+  // tico: the game's save in tico's saves folder, now that its title is known
+  // (a Riivolution save redirect wins)
+  if (system.IsWii() && !savegame_redirect)
+    savegame_redirect = DolphinNX::Saves::WiiSaveRedirect();
+#endif
+
   // Initialise Wii filesystem contents.
   // This is done here after Boot and not in BootManager to ensure that we operate
   // with the correct title context since save copying requires title directories to exist.
@@ -821,9 +829,16 @@ static
     bsd_ptr->InvokeWiiSyncCleanup();
   }};
   if (system.IsWii())
+  {
     Core::InitializeWiiFileSystemContents(savegame_redirect, boot_session_data);
+#if defined(__SWITCH__) && !defined(__LIBRETRO__)
+    DolphinNX::Saves::ImportWiiSaves();
+#endif
+  }
   else
+  {
     wiifs_guard.Dismiss();
+  }
 
   // This adds the SyncGPU handler to CoreTiming, so now CoreTiming::Advance might block.
 #if defined(__SWITCH__) && !defined(__LIBRETRO__)

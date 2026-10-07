@@ -61,6 +61,7 @@
 #include "DolphinNX/Cheats.h"
 #include "DolphinNX/Discs.h"
 #include "DolphinNX/LibraryScreen.h"
+#include "DolphinNX/Saves.h"
 #include "DolphinNX/Input.h"
 #include "DolphinNX/TicoCore.h"
 #include "DolphinNX/Overlay/VulkanOverlay.h"
@@ -1354,6 +1355,8 @@ int main(int argc, char* argv[])
     if (!EnsureGcSysInstalled())
       return 1;
     EnsureDolphinProfilesUpdatedFor008();
+    // saves now live in sdmc:/tico/saves, as the other cores keep them
+    DolphinNX::Saves::MigrateGameCubeSaves();
 
     s_nwindow = nwindowGetDefault();
     LOG("NWindow: %p\n", (void*)s_nwindow);

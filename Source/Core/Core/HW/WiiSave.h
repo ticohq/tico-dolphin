@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "Common/CommonTypes.h"
@@ -42,6 +43,9 @@ enum class CopyResult
 };
 
 CopyResult Copy(Storage* source, Storage* destination);
+
+/// The title a .bin file is a save for, or nullopt if it can't be read.
+std::optional<u64> ReadDataBinTitleID(IOS::HLE::IOSC* iosc, const std::string& data_bin_path);
 
 /// Import a save into the NAND from a .bin file.
 CopyResult Import(const std::string& data_bin_path, const std::function<bool()>& can_overwrite);

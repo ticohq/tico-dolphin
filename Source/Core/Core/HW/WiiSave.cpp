@@ -541,6 +541,15 @@ CopyResult Copy(Storage* source, Storage* dest)
   return CopyResult::Success;
 }
 
+std::optional<u64> ReadDataBinTitleID(IOS::HLE::IOSC* iosc, const std::string& data_bin_path)
+{
+  const std::optional<Header> header =
+      MakeDataBinStorage(iosc, data_bin_path, "rb")->ReadHeader();
+  if (!header)
+    return std::nullopt;
+  return static_cast<u64>(header->tid);
+}
+
 CopyResult Import(const std::string& data_bin_path, const std::function<bool()>& can_overwrite)
 {
   IOS::HLE::Kernel ios;

@@ -20,6 +20,7 @@ add_executable(dolphin-nx
   Achievements.cpp
   Cheats.cpp
   Discs.cpp
+  Saves.cpp
   Library.cpp
   LibraryScreen.cpp
   MbedTLSEntropy.cpp
