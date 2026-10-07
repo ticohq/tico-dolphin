@@ -634,6 +634,13 @@ std::string GetInfoStringOfSlot(u32 slot, bool translate)
   return SystemTimeAsDoubleToString(header.legacy_header.time);
 }
 
+static u64 HeaderTimeToUnixTime(const StateHeader& header)
+{
+  constexpr u64 MS_PER_SEC = 1000;
+  return static_cast<u64>(header.legacy_header.time * MS_PER_SEC) +
+         (DOUBLE_TIME_OFFSET * MS_PER_SEC);
+}
+
 u64 GetUnixTimeOfSlot(u32 slot)
 {
   std::lock_guard lk{s_state_saves_in_progress};
@@ -642,9 +649,31 @@ u64 GetUnixTimeOfSlot(u32 slot)
   if (!ReadHeader(MakeStateFilename(slot), header))
     return 0;
 
-  constexpr u64 MS_PER_SEC = 1000;
-  return static_cast<u64>(header.legacy_header.time * MS_PER_SEC) +
-         (DOUBLE_TIME_OFFSET * MS_PER_SEC);
+  return HeaderTimeToUnixTime(header);
+}
+
+u64 GetUnixTimeOfUndoSaveState()
+{
+  std::lock_guard lk{s_state_saves_in_progress};
+
+  const std::string filename = File::GetUserPath(D_STATESAVES_IDX) + "lastState.sav";
+  State::StateHeader header;
+  if (!File::Exists(filename) || !ReadHeader(filename, header))
+    return 0;
+
+  // the state a save overwrote, if it belongs to the running game
+  if (strncmp(SConfig::GetInstance().GetGameID().c_str(), header.legacy_header.game_id,
+              std::size(header.legacy_header.game_id)) != 0)
+  {
+    return 0;
+  }
+
+  return HeaderTimeToUnixTime(header);
+}
+
+bool CanUndoLoadState()
+{
+  return !s_undo_load_buffer.empty();
 }
 
 static bool DecompressLZ4(Common::UniqueBuffer<u8>& raw_buffer, u64 size, File::IOFile& f)

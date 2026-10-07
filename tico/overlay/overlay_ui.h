@@ -31,6 +31,10 @@ enum class Action {
     NoticeChoice,
     // Settings > Players: open the system's controller screen
     ControllerOrder,
+    // Load State's undo rows (SetUndoStateCallback): go back to the state before the
+    // last load, or load the state the last save overwrote
+    UndoLoadState,
+    UndoSaveState,
     SaveStateSlot1,
     SaveStateSlot2,
     SaveStateSlot3,
@@ -115,6 +119,17 @@ struct SlotPreview {
 // owns the textures and frees the previous one for a slot when asked again.
 using SlotPreviewFn = std::function<SlotPreview(int slot)>;
 void SetSlotPreviewCallback(SlotPreviewFn callback);
+
+// Undo for save states: two rows after the slots in Load State, listed only
+// when a callback is set. Read again each time Load State opens.
+struct UndoStateInfo {
+    // a load can be undone
+    bool can_undo_load = false;
+    // when the state the last save overwrote was made; empty when there is none
+    std::string overwritten_saved_at;
+};
+using UndoStateFn = std::function<UndoStateInfo()>;
+void SetUndoStateCallback(UndoStateFn callback);
 
 struct CheatMenuEntry {
     std::string name;

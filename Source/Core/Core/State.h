@@ -92,6 +92,12 @@ std::string GetInfoStringOfSlot(u32 slot, bool translate = true);
 // Returns when the savestate in the given slot was created, or 0 if the slot is empty.
 u64 GetUnixTimeOfSlot(u32 slot);
 
+// When the state that the last save overwrote was made (UndoSaveState loads it), or 0 when there
+// is none for the running game.
+u64 GetUnixTimeOfUndoSaveState();
+// Whether UndoLoadState has a state to go back to.
+bool CanUndoLoadState();
+
 // These don't happen instantly - they get scheduled as events.
 // ...But only if we're not in the main CPU thread.
 //    If we're in the main CPU thread then they run immediately instead.
