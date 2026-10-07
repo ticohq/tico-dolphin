@@ -158,7 +158,7 @@ target_link_libraries(dolphin-nx PRIVATE
 # Linker flags for NRO-compatible ELF
 set_target_properties(dolphin-nx PROPERTIES
   OUTPUT_NAME dolphin-nx
-  LINK_FLAGS "-Wl,--gc-sections -Wl,--allow-multiple-definition"
+  LINK_FLAGS "-Wl,--gc-sections -Wl,--allow-multiple-definition -Wl,--wrap=abort -Wl,--wrap=exit -Wl,--wrap=_exit"
 )
 
 install(TARGETS dolphin-nx RUNTIME DESTINATION bin)
