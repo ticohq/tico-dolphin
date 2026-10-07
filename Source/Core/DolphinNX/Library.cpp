@@ -45,6 +45,8 @@ const std::vector<Console> &Consoles()
          {".iso", ".gcm", ".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".m3u"}},
         {"wii", "Wii", "Wii",
          {".iso", ".gcm", ".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".m3u", ".wad"}},
+        {"triforce", "Triforce", "Triforce",
+         {".bin", ".iso", ".gcm", ".rvz", ".gcz", ".ciso", ".wia"}},
     };
     return consoles;
 }

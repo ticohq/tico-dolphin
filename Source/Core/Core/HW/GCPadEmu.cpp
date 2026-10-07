@@ -229,6 +229,11 @@ void GCPad::LoadDefaults(const ControllerInterface& ciface)
   m_triggers->SetControlExpression(1, "`R`");
   m_triggers->SetControlExpression(2, "`L`");
   m_triggers->SetControlExpression(3, "`R`");
+
+  // Triforce: Test, Service, Coin, on buttons the GameCube layout leaves free
+  m_triforce->SetControlExpression(0, "`R3`");
+  m_triforce->SetControlExpression(1, "`L3`");
+  m_triforce->SetControlExpression(2, "`Select`");
 #else
   // Buttons: A, B, X, Y, Z
   m_buttons->SetControlExpression(0, "`X`");

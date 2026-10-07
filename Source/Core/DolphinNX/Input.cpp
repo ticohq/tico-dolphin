@@ -256,8 +256,11 @@ static void SetGameCubePortEnabled(unsigned player, bool enabled)
   const SerialInterface::SIDevices device =
       enabled ? SerialInterface::SIDEVICE_GC_CONTROLLER : SerialInterface::SIDEVICE_NONE;
 
-  // The SI picks the new device up from Config at its next poll.
-  Config::SetBaseOrCurrent(Config::GetInfoForSIDevice(player), device);
+  // The SI picks the new device up from Config at its next poll. On Triforce
+  // Dolphin puts the arcade baseboard on port 1, which reads this pad: the
+  // ports stay as it set them, and only the mapping below applies.
+  if (!Core::System::GetInstance().IsTriforce())
+    Config::SetBaseOrCurrent(Config::GetInfoForSIDevice(player), device);
 
   auto* gc_pad = static_cast<GCPad*>(Pad::GetConfig()->GetController(player));
   if (gc_pad)

@@ -49,7 +49,7 @@ constexpr std::array<const char*, 4> kProfileDirs = {{
 // "keep Dolphin's default". Groups absent from this list (Rumble, Options, Mic,
 // ...) are never touched.
 const std::map<std::string, std::vector<std::string>, std::less<>> kMappableGroups = {
-    {Target::GameCube, {"Buttons", "D-Pad", "Main Stick", "C-Stick", "Triggers"}},
+    {Target::GameCube, {"Buttons", "D-Pad", "Main Stick", "C-Stick", "Triggers", "Triforce"}},
     {Target::Wiimote,
      {"Buttons", "D-Pad", "Shake", "Tilt", "Swing", "IR", "IMUAccelerometer", "IMUGyroscope",
       "IMUIR"}},
@@ -342,6 +342,24 @@ bool Apply(ControllerEmu::ControlGroupContainer* controller, const std::string& 
       continue;
     for (size_t i = 0; i < group->controls.size(); ++i)
       group->SetControlExpression(static_cast<int>(i), "");
+  }
+
+  // Triforce (arcade) games take credits with Coin, so it has to be on a button:
+  // these unless the profile says otherwise. The GameCube layout leaves them free.
+  if (target == Target::GameCube)
+  {
+    if (auto* triforce = FindGroup(controller, "Triforce"))
+    {
+      for (const auto& [control_name, button] :
+           {std::pair{"Test", "R3"}, std::pair{"Service", "L3"}, std::pair{"Coin", "Select"}})
+      {
+        for (size_t i = 0; i < triforce->controls.size(); ++i)
+        {
+          if (triforce->controls[i]->name == control_name)
+            triforce->SetControlExpression(static_cast<int>(i), std::string("`") + button + "`");
+        }
+      }
+    }
   }
 
   for (const auto& [group_name, controls] : target_it->second)
