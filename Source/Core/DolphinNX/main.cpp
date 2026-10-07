@@ -774,6 +774,8 @@ static void EnsureDir(const std::string& p)
 struct GcSysInstallProgress
 {
   bool console_visible = false;
+  const char* title = "Updating GameCube system files";
+  bool show_version = true;
   const char* phase = "Preparing";
   std::string current_path;
   size_t total_files = 0;
@@ -818,8 +820,10 @@ static void DrawGcSysProgress(GcSysInstallProgress& progress, bool force = false
 
   std::printf("\x1b[2J\x1b[1;1H");
   std::printf("tico Dolphin\n\n");
-  std::printf("Updating GameCube system files\n");
-  std::printf("Version %s\n\n", kGcSysVersion);
+  std::printf("%s\n", progress.title);
+  if (progress.show_version)
+    std::printf("Version %s\n", kGcSysVersion);
+  std::printf("\n");
   std::printf("%s\n\n", progress.phase);
   std::printf("[%s] %zu%%\n", bar, percent);
   std::printf("%zu / %zu files\n", progress.copied_files, progress.total_files);
@@ -1034,6 +1038,33 @@ static bool CopyProfileHotfixFile(const char* name)
 
   LOG("Profile hotfix copied: %s\n", dst.c_str());
   return true;
+}
+
+// Moves saves from where earlier versions kept them into sdmc:/tico/saves, once,
+// on the same screen as the system files; nothing shows when there is nothing
+// to move.
+static void MigrateSaves()
+{
+  GcSysInstallProgress progress;
+  progress.title = "Moving your saves to sdmc:/tico/saves";
+  progress.show_version = false;
+  progress.phase = "Moving saves";
+  DolphinNX::Saves::Migrate([&progress](const std::string& path, size_t done, size_t total) {
+    if (!progress.console_visible)
+    {
+      progress.console_visible = true;
+      consoleInit(nullptr);
+    }
+    progress.current_path = TrimGcSysPathForDisplay(path);
+    progress.copied_files = done;
+    progress.total_files = total;
+    DrawGcSysProgress(progress, true);
+  });
+  if (progress.console_visible)
+  {
+    fsdevCommitDevice("sdmc");
+    consoleExit(nullptr);
+  }
 }
 
 static void EnsureDolphinProfilesUpdatedFor008()
@@ -1356,7 +1387,7 @@ int main(int argc, char* argv[])
       return 1;
     EnsureDolphinProfilesUpdatedFor008();
     // saves now live in sdmc:/tico/saves, as the other cores keep them
-    DolphinNX::Saves::MigrateGameCubeSaves();
+    MigrateSaves();
 
     s_nwindow = nwindowGetDefault();
     LOG("NWindow: %p\n", (void*)s_nwindow);

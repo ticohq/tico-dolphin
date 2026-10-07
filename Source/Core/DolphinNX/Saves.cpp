@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <ctime>
 #include <string>
+#include <vector>
 
 #include <fmt/format.h>
 
@@ -29,30 +31,10 @@ constexpr const char* kGameCubeSaves = "sdmc:/tico/saves/gc";
 constexpr const char* kWiiSaves = "sdmc:/tico/saves/wii";
 constexpr const char* kWiiImport = "sdmc:/tico/saves/wii/import";
 
-// Where Dolphin kept the memory cards before (its default, under its user folder)
+// Where Dolphin kept saves before (its defaults, under its user folder)
 constexpr const char* kOldGameCubeSaves = "sdmc:/tico/system/gc/User/GC";
+constexpr const char* kOldWiiTitles = "sdmc:/tico/system/gc/User/Wii/title";
 constexpr const char* kMigrationMarker = "sdmc:/tico/config/.migrations/dolphin_saves_layout";
-
-// Moves every file of @p from into @p to, keeping any that is already there.
-void MoveFiles(const std::string& from, const std::string& to)
-{
-  if (!File::IsDirectory(from))
-    return;
-  for (const File::FSTEntry& entry : File::ScanDirectoryTree(from, false).children)
-  {
-    if (entry.isDirectory)
-      continue;
-    const std::string dest = to + "/" + entry.virtualName;
-    if (File::Exists(dest))
-    {
-      WARN_LOG_FMT(CORE, "Saves: {} is already in {}, left in {}", entry.virtualName, to, from);
-      continue;
-    }
-    File::CreateDirs(to);
-    if (File::Rename(entry.physicalName, dest))
-      NOTICE_LOG_FMT(CORE, "Saves: moved {} to {}", entry.physicalName, dest);
-  }
-}
 
 // A title's folder: its game ID (the low half of the title ID, as the Wii's SD
 // card names it), or the hex title ID when that isn't letters and digits.
@@ -88,40 +70,98 @@ std::string Timestamp()
 }
 }  // namespace
 
-void MigrateGameCubeSaves()
+void Migrate(const MigrationProgress& progress)
 {
   if (File::Exists(kMigrationMarker))
     return;
 
-  // folder cards: <old>/<USA|EUR|JAP>/Card A -> saves/gc/<USA|EUR|JPN>, Card B
-  // under saves/gc/Card B
+  struct Move
+  {
+    std::string from;
+    std::string to;
+  };
+  std::vector<Move> moves;
+  const auto add_files = [&moves](const std::string& from, const std::string& to) {
+    if (!File::IsDirectory(from))
+      return;
+    for (const File::FSTEntry& entry : File::ScanDirectoryTree(from, false).children)
+    {
+      if (!entry.isDirectory)
+        moves.push_back({entry.physicalName, to + "/" + entry.virtualName});
+    }
+  };
+
+  // GameCube folder cards: <old>/<USA|EUR|JAP>/Card A -> saves/gc/<USA|EUR|JPN>,
+  // Card B under saves/gc/Card B
   constexpr std::pair<const char*, const char*> kRegions[] = {
       {USA_DIR, USA_DIR}, {EUR_DIR, EUR_DIR}, {JAP_DIR, JPN_DIR}, {JPN_DIR, JPN_DIR}};
   for (const auto& [old_region, region] : kRegions)
   {
     const std::string old_dir = fmt::format("{}/{}", kOldGameCubeSaves, old_region);
-    MoveFiles(old_dir + "/Card A", fmt::format("{}/{}", kGameCubeSaves, region));
-    MoveFiles(old_dir + "/Card B", fmt::format("{}/Card B/{}", kGameCubeSaves, region));
+    add_files(old_dir + "/Card A", fmt::format("{}/{}", kGameCubeSaves, region));
+    add_files(old_dir + "/Card B", fmt::format("{}/Card B/{}", kGameCubeSaves, region));
   }
 
-  // raw cards (MemoryCardA.USA.raw and the like) keep their names
+  // GameCube raw cards (MemoryCardA.USA.raw and the like) keep their names
   if (File::IsDirectory(kOldGameCubeSaves))
   {
-    for (const File::FSTEntry& entry :
-         File::ScanDirectoryTree(kOldGameCubeSaves, false).children)
+    for (const File::FSTEntry& entry : File::ScanDirectoryTree(kOldGameCubeSaves, false).children)
     {
       const std::string& name = entry.virtualName;
-      if (entry.isDirectory || !name.starts_with("MemoryCard") || !name.ends_with(".raw"))
-        continue;
-      const std::string dest = fmt::format("{}/{}", kGameCubeSaves, name);
-      File::CreateDirs(kGameCubeSaves);
-      if (!File::Exists(dest) && File::Rename(entry.physicalName, dest))
-        NOTICE_LOG_FMT(CORE, "Saves: moved {} to {}", entry.physicalName, dest);
+      if (!entry.isDirectory && name.starts_with("MemoryCard") && name.ends_with(".raw"))
+        moves.push_back({entry.physicalName, fmt::format("{}/{}", kGameCubeSaves, name)});
     }
   }
 
-  File::CreateFullPath(kMigrationMarker);
-  File::IOFile marker(kMigrationMarker, "wb");
+  // Wii: each game's data folder in the NAND, <old>/<type>/<id>/data
+  for (const u32 type : {0x00010000u, 0x00010001u, 0x00010004u})
+  {
+    const std::string type_dir = fmt::format("{}/{:08x}", kOldWiiTitles, type);
+    if (!File::IsDirectory(type_dir))
+      continue;
+    for (const File::FSTEntry& title : File::ScanDirectoryTree(type_dir, false).children)
+    {
+      const std::string data = title.physicalName + "/data";
+      if (!title.isDirectory || title.virtualName.size() != 8 || !HasFiles(data))
+        continue;
+      const u64 title_id =
+          (u64{type} << 32) | std::strtoul(title.virtualName.c_str(), nullptr, 16);
+      moves.push_back({data, fmt::format("{}/{}", kWiiSaves, FolderName(title_id))});
+    }
+  }
+
+  bool ok = true;
+  for (size_t i = 0; i < moves.size(); ++i)
+  {
+    const Move& move = moves[i];
+    if (progress)
+      progress(move.to, i, moves.size());
+    if (File::Exists(move.to))
+    {
+      // never over a save that is already there; the old one stays where it was
+      WARN_LOG_FMT(CORE, "Saves: {} is already there, {} left in place", move.to, move.from);
+      continue;
+    }
+    File::CreateFullPath(move.to);
+    if (File::Rename(move.from, move.to))
+    {
+      NOTICE_LOG_FMT(CORE, "Saves: moved {} to {}", move.from, move.to);
+    }
+    else
+    {
+      ERROR_LOG_FMT(CORE, "Saves: could not move {} to {}", move.from, move.to);
+      ok = false;
+    }
+  }
+  if (progress && !moves.empty())
+    progress({}, moves.size(), moves.size());
+
+  // a move that failed is tried again on the next start
+  if (ok)
+  {
+    File::CreateFullPath(kMigrationMarker);
+    File::IOFile marker(kMigrationMarker, "wb");
+  }
 }
 
 void ApplyGameCubeCardPaths()
@@ -138,9 +178,10 @@ std::optional<DiscIO::Riivolution::SavegameRedirect> WiiSaveRedirect()
   const u64 title_id = SConfig::GetInstance().GetTitleID();
   if (!IsGameTitle(title_id))
     return std::nullopt;
-  // clone: on the game's first start here, its save comes along from the NAND
+  // no clone: Migrate moved the saves out of the NAND, and a deleted save
+  // folder means a new save rather than the NAND's old one coming back
   return DiscIO::Riivolution::SavegameRedirect{
-      fmt::format("{}/{}", kWiiSaves, FolderName(title_id)), true};
+      fmt::format("{}/{}", kWiiSaves, FolderName(title_id)), false};
 }
 
 void ImportWiiSaves()
