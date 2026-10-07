@@ -29,6 +29,9 @@ add_executable(dolphin-nx
   Overlay/VulkanOverlay.cpp
   # tico's overlay and frontend pieces, shared with the other cores
   ${CMAKE_SOURCE_DIR}/tico/UsbStorage.cpp
+  # the SD card read cache, from wine-nx
+  ${CMAKE_SOURCE_DIR}/tico/sdcache/sd_cache.c
+  ${CMAKE_SOURCE_DIR}/tico/sdcache/sd_cache_tico.c
   ${CMAKE_SOURCE_DIR}/tico/overlay/imgui_overlay.cpp
   ${CMAKE_SOURCE_DIR}/tico/overlay/overlay_ui.cpp
   ${CMAKE_SOURCE_DIR}/tico/overlay/ra_alerts.cpp
@@ -158,3 +161,9 @@ set_target_properties(dolphin-nx PROPERTIES
 )
 
 install(TARGETS dolphin-nx RUNTIME DESTINATION bin)
+
+# reads only: Dolphin also changes the card through fsdev* directly, which a
+# kept stat or held write would not see; at most 96 MB of chunks
+set_source_files_properties(
+  ${CMAKE_SOURCE_DIR}/tico/sdcache/sd_cache.c
+  PROPERTIES COMPILE_DEFINITIONS "SD_CACHE_STATS_AND_HELD_WRITES=0;SD_CACHE_POOL_MAX=768")
