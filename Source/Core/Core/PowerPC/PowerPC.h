@@ -171,6 +171,8 @@ struct PowerPCState
 #ifdef __SWITCH__
   // BL pushes below this address reset the BLR stack.
   u8* blr_stack_limit = nullptr;
+  // The thread's own stack pointer while the JIT runs on its guarded stack.
+  u8* host_stack_pointer = nullptr;
 #endif
 
 #ifdef _M_X86_64

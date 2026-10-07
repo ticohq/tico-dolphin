@@ -174,6 +174,11 @@ bool JitArm64::HandleFault(uintptr_t access_address, SContext* ctx)
 
   bool success = false;
 
+  // Handle BLR stack faults, may happen in C++ code.
+  const uintptr_t stack_guard = reinterpret_cast<uintptr_t>(m_stack_guard);
+  if (stack_guard && access_address >= stack_guard && access_address < stack_guard + GUARD_SIZE)
+    return HandleStackFault();
+
   // If the fault is in JIT code space, look for fastmem areas.
   if (IsInSpaceOrChildSpace(reinterpret_cast<u8*>(ctx->CTX_PC)))
   {
@@ -645,7 +650,8 @@ void JitArm64::WriteExit(u32 destination, bool LK, u32 exit_address_after_return
   if (LK)
   {
 #ifdef __SWITCH__
-    EmitBLRStackLimitCheck(ARM64Reg::X0);
+    if (!m_jit_stack)
+      EmitBLRStackLimitCheck(ARM64Reg::X0);
 #endif
     // Push {ARM_PC (64-bit); PPC_PC (32-bit); feature_flags (32-bit)} on the stack
     ARM64Reg reg_to_push = ARM64Reg::X1;
@@ -756,7 +762,8 @@ void JitArm64::WriteExit(Arm64Gen::ARM64Reg dest, bool LK, u32 exit_address_afte
   else
   {
 #ifdef __SWITCH__
-    EmitBLRStackLimitCheck(ARM64Reg::X0);
+    if (!m_jit_stack)
+      EmitBLRStackLimitCheck(ARM64Reg::X0);
 #endif
     // Push {ARM_PC (64-bit); PPC_PC (32-bit); feature_flags (32-bit)} on the stack
     ARM64Reg reg_to_push = ARM64Reg::X1;
@@ -831,6 +838,7 @@ void JitArm64::FakeLKExit(u32 exit_address_after_return, ARM64Reg exit_address_a
   }
 
 #ifdef __SWITCH__
+  if (!m_jit_stack)
   {
     auto limit_reg = gpr.GetScopedReg();
     EmitBLRStackLimitCheck(EncodeRegTo64(limit_reg));
