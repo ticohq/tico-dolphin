@@ -50,6 +50,7 @@
 #include "Core/HW/ProcessorInterface.h"
 #include "Core/Host.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "Core/HW/GCMemcard/GCMemcardBase.h"
 #include "Core/State.h"
 #include "Core/System.h"
 #include "DiscIO/Volume.h"
@@ -880,6 +881,27 @@ static void ConfigureNextLoadForTico()
 
   if (std::remove("imgui.ini") == 0)
     LOG("Deleted imgui.ini before exit\n");
+}
+
+// Closed from the HOME menu: the app is in the background, where the system
+// doesn't run its GPU work, so the GPU thread never finishes its frame and the
+// emulation can't be stopped. The saves are written out and the system, which
+// waits on the exit lock, is let go on with closing the app.
+[[noreturn]] static void LeaveForSystemExit()
+{
+  LOG("Closed by the system: writing saves and leaving without stopping the emulation\n");
+  UICommon::FlushUnsavedData();  // a state save still being taken
+  State::Shutdown();             // waits for the auto save to reach the card
+  MemoryCardBase::FlushAllForExit();
+  UsbStorage::Shutdown();
+  RestoreSwitchPerformance();
+  LOG("=== Dolphin NX left for the system ===\n");
+  std::fflush(nullptr);
+  // ending the process ourselves would look like a crash to the system:
+  // unlocked, it ends the app itself, with every thread in it
+  appletUnlockExit();
+  while (true)
+    svcSleepThread(1'000'000'000);
 }
 
 static int ExitSwitchFrontend(int exit_code)
@@ -1790,7 +1812,8 @@ int main(int argc, char* argv[])
     const auto startup_started_at = std::chrono::steady_clock::now();
     bool startup_watchdog_fired = false;
     bool startup_abort_due_no_present = false;
-    while (appletMainLoop() && s_running &&
+    bool system_exit = false;
+    while (!(system_exit = !appletMainLoop()) && s_running &&
            (Core::IsRunning(system) || Core::IsRunningOrStarting(system)))
     {
       if (s_state_load_in_progress.load(std::memory_order_acquire))
@@ -2117,6 +2140,9 @@ int main(int argc, char* argv[])
       }
       WriteAutoSave(system);
     }
+
+    if (system_exit)
+      LeaveForSystemExit();
 
     if (s_cheat_download_thread.joinable())
       s_cheat_download_thread.join();
