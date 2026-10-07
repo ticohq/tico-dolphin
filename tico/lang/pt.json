@@ -125,5 +125,6 @@
   "settings_dolphin_vi_skip": "Pulo de VI",
   "settings_dolphin_fast_texture_sampling": "Amostragem Rápida de Texturas",
   "settings_dolphin_performance_queries": "Consultas de Desempenho",
-  "settings_dolphin_pointer_yaw": "Alcance do ponteiro (graus)"
+  "settings_dolphin_pointer_yaw": "Alcance do ponteiro (graus)",
+  "settings_dolphin_calibrate_on_recenter": "Calibrar suporte ao recentralizar"
 }
