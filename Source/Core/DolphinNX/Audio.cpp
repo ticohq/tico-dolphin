@@ -24,7 +24,7 @@ namespace Audio
 namespace
 {
 constexpr u32 kOutputRate = 48000;
-// as porpoise's audout thread, above the default 0x2C
+// as nezumiiruka's audout thread, above the default 0x2C
 constexpr s32 kAudioThreadPriority = 0x26;
 
 std::mutex s_effect_mutex;
