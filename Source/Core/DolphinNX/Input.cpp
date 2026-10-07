@@ -250,14 +250,13 @@ static ControllerEmu::Attachments* GetWiimoteAttachments(WiimoteEmu::Wiimote* wi
       wiimote->GetWiimoteGroup(WiimoteEmu::WiimoteGroup::Attachments));
 }
 
-static void SetGameCubePortEnabled(Core::System& system, unsigned player, bool enabled)
+static void SetGameCubePortEnabled(unsigned player, bool enabled)
 {
   const SerialInterface::SIDevices device =
       enabled ? SerialInterface::SIDEVICE_GC_CONTROLLER : SerialInterface::SIDEVICE_NONE;
 
+  // The SI picks the new device up from Config at its next poll.
   Config::SetBaseOrCurrent(Config::GetInfoForSIDevice(player), device);
-  system.GetSerialInterface().ChangeDevice(Config::Get(Config::GetInfoForSIDevice(player)),
-                                           player);
 
   auto* gc_pad = static_cast<GCPad*>(Pad::GetConfig()->GetController(player));
   if (gc_pad)
@@ -442,32 +441,30 @@ static bool ApplyWiiControllerMode(unsigned player, WiiControllerMode mode, bool
     return false;
   }
 
-  Core::System& system = Core::System::GetInstance();
-
   switch (mode)
   {
   case WiiControllerMode::GameCube:
     SetWiimoteEnabled(player, false, WiimoteEmu::ExtensionNumber::NONE, false, false);
-    SetGameCubePortEnabled(system, player, true);
+    SetGameCubePortEnabled(player, true);
     break;
 
   case WiiControllerMode::WiimoteVertical:
-    SetGameCubePortEnabled(system, player, false);
+    SetGameCubePortEnabled(player, false);
     SetWiimoteEnabled(player, true, WiimoteEmu::ExtensionNumber::NONE, false, false);
     break;
 
   case WiiControllerMode::WiimoteHorizontal:
-    SetGameCubePortEnabled(system, player, false);
+    SetGameCubePortEnabled(player, false);
     SetWiimoteEnabled(player, true, WiimoteEmu::ExtensionNumber::NONE, true, false);
     break;
 
   case WiiControllerMode::WiimoteNunchuk:
-    SetGameCubePortEnabled(system, player, false);
+    SetGameCubePortEnabled(player, false);
     SetWiimoteEnabled(player, true, WiimoteEmu::ExtensionNumber::NUNCHUK, false, false);
     break;
 
   case WiiControllerMode::WiimoteClassic:
-    SetGameCubePortEnabled(system, player, false);
+    SetGameCubePortEnabled(player, false);
     SetWiimoteEnabled(player, true, WiimoteEmu::ExtensionNumber::CLASSIC, false, false);
     break;
   }
@@ -488,7 +485,7 @@ static bool ApplyGameCubeControllerMode(unsigned player)
   if (Pad::GetConfig()->ControllersNeedToBeCreated())
     return false;
 
-  SetGameCubePortEnabled(Core::System::GetInstance(), player,
+  SetGameCubePortEnabled(player,
                          s_controller_config[player].gc_port_enabled);
   return true;
 }
