@@ -36,7 +36,7 @@
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/IOS/FS/FileSystemProxy.h"
 #include "Core/IOS/MIOS.h"
-#if !defined(LIBRETRO) && !defined(__SWITCH__)
+#if !defined(LIBRETRO)
 #include "Core/IOS/Network/IP/Top.h"
 #include "Core/IOS/Network/KD/NetKDRequest.h"
 #include "Core/IOS/Network/KD/NetKDTime.h"
@@ -341,7 +341,7 @@ EmulationKernel::~EmulationKernel()
 
   m_device_map.clear();
   m_device_map.clear();
-#if !defined(LIBRETRO) && !defined(__SWITCH__)
+#if !defined(LIBRETRO)
   m_socket_manager.reset();
 #endif
 }
@@ -381,7 +381,7 @@ std::shared_ptr<ESDevice> EmulationKernel::GetESDevice()
 
 std::shared_ptr<WiiSockMan> EmulationKernel::GetSocketManager()
 {
-#if !defined(LIBRETRO) && !defined(__SWITCH__)
+#if !defined(LIBRETRO)
   return m_socket_manager;
 #else
   return nullptr;
@@ -577,8 +577,7 @@ void EmulationKernel::AddStaticDevices()
   AddDevice(std::make_unique<DeviceStub>(*this, "/dev/sdio/slot1"));
 
   // Network modules
-  // Network modules
-#if !defined(LIBRETRO) && !defined(__SWITCH__)
+#if !defined(LIBRETRO)
   if (HasFeature(features, Feature::KD) || HasFeature(features, Feature::SO) ||
       HasFeature(features, Feature::SSL))
   {
@@ -609,7 +608,7 @@ void EmulationKernel::AddStaticDevices()
     AddDevice(std::make_unique<NetSSLDevice>(*this, "/dev/net/ssl"));
   }
 #else
-  // On Switch and Libretro the real network stack is disabled, but games
+  // On Libretro the real network stack is disabled, but games
   // (notably Mario Kart Wii) treat /dev/net/kd as part of "Wii system memory"
   // and surface a "Could not write to/read from Wii System memory" error
   // when KD Open() returns IPC_ENOENT. Registering stubs makes Open/IOCtl
@@ -893,8 +892,8 @@ void EmulationKernel::UpdateDevices()
 
 void EmulationKernel::UpdateWantDeterminism(const bool new_want_determinism)
 {
+#if !defined(LIBRETRO)
   if (m_socket_manager)
-#if !defined(LIBRETRO) && !defined(__SWITCH__)
     m_socket_manager->UpdateWantDeterminism(new_want_determinism);
 #endif
   for (const auto& device : m_device_map)
@@ -917,8 +916,8 @@ void EmulationKernel::DoState(PointerWrap& p)
   if (m_title_id == Titles::MIOS)
     return;
 
+#if !defined(LIBRETRO)
   if (m_socket_manager)
-#if !defined(LIBRETRO) && !defined(__SWITCH__)
     m_socket_manager->DoState(p);
 #endif
 

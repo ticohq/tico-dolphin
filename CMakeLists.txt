@@ -561,7 +561,6 @@ if(SWITCH_STANDALONE)
   set(USE_RETRO_ACHIEVEMENTS ON CACHE BOOL "" FORCE)
   set(USE_UPNP OFF CACHE BOOL "" FORCE)
   set(USE_MGBA OFF CACHE BOOL "" FORCE)
-  set(USE_SFML OFF CACHE BOOL "" FORCE)
   check_and_add_flag(FPIC -fPIE)
   # Force bundled libraries (no system packages on Switch)
   set(USE_SYSTEM_MBEDTLS OFF CACHE BOOL "" FORCE)
@@ -845,9 +844,7 @@ endif()
 
 dolphin_find_optional_system_library(MBEDTLS Externals/mbedtls 2.28)
 
-if(NOT SWITCH_STANDALONE)
-  dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
-endif()
+dolphin_find_optional_system_library(SFML Externals/SFML 3.0 COMPONENTS Network System)
 # On Switch the bundled curl, on the bundled mbedtls (see Externals/curl)
 dolphin_find_optional_system_library(CURL Externals/curl)
 

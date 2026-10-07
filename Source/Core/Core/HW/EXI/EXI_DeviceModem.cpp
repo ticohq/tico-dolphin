@@ -8,6 +8,11 @@
 #include <memory>
 #include <string>
 
+#ifdef __SWITCH__
+// libnx declares the byte order helpers here rather than in <netinet/in.h>.
+#include <arpa/inet.h>
+#endif
+
 #include "Common/ChunkFile.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"

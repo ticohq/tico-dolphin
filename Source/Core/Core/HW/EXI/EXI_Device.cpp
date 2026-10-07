@@ -10,9 +10,11 @@
 #include "Core/HW/EXI/EXI_DeviceAGP.h"
 #include "Core/HW/EXI/EXI_DeviceBaseboard.h"
 #include "Core/HW/EXI/EXI_DeviceDummy.h"
-#if !defined(LIBRETRO) && !defined(__SWITCH__)
+#if !defined(LIBRETRO)
 #include "Core/HW/EXI/EXI_DeviceEthernet.h"
 #include "Core/HW/EXI/EXI_DeviceModem.h"
+#endif
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
 #include "Core/HW/EXI/EXI_DeviceGecko.h"
 #endif
 #include "Core/HW/EXI/EXI_DeviceIPL.h"
@@ -147,7 +149,7 @@ std::unique_ptr<IEXIDevice> EXIDevice_Create(Core::System& system, const EXIDevi
 #endif
     break;
 
-#if !defined(LIBRETRO) && !defined(__SWITCH__)
+#if !defined(LIBRETRO)
   case EXIDeviceType::Ethernet:
     result = std::make_unique<CEXIETHERNET>(system, BBADeviceType::TAP);
     break;
@@ -171,7 +173,9 @@ std::unique_ptr<IEXIDevice> EXIDevice_Create(Core::System& system, const EXIDevi
   case EXIDeviceType::ModemTapServer:
     result = std::make_unique<CEXIModem>(system, ModemDeviceType::TAPSERVER);
     break;
+#endif
 
+#if !defined(LIBRETRO) && !defined(__SWITCH__)
   case EXIDeviceType::Gecko:
     result = std::make_unique<CEXIGecko>(system);
     break;

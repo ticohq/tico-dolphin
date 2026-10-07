@@ -473,6 +473,16 @@ target_sources(core PRIVATE
   NetPlayCommon.h
   NetPlayServer.cpp
   NetPlayServer.h
+  HW/EXI/EXI_DeviceGecko.cpp
+  HW/EXI/EXI_DeviceGecko.h
+  HW/SI/SI_DeviceGBA.cpp
+  HW/SI/SI_DeviceGBA.h
+)
+endif()
+
+# on Switch too: the Wii's network and the GameCube's Broadband Adapter
+if(NOT LIBRETRO)
+target_sources(core PRIVATE
   NetworkCaptureLogger.cpp
   NetworkCaptureLogger.h
   HW/EXI/BBA/TAPServerConnection.cpp
@@ -483,12 +493,8 @@ target_sources(core PRIVATE
   HW/EXI/Modem/TAPServerModem.cpp
   HW/EXI/EXI_DeviceEthernet.cpp
   HW/EXI/EXI_DeviceEthernet.h
-  HW/EXI/EXI_DeviceGecko.cpp
-  HW/EXI/EXI_DeviceGecko.h
   HW/EXI/EXI_DeviceModem.cpp
   HW/EXI/EXI_DeviceModem.h
-  HW/SI/SI_DeviceGBA.cpp
-  HW/SI/SI_DeviceGBA.h
   IOS/Network/ICMP.h
   IOS/Network/ICMPLin.cpp
   IOS/Network/IP/Top.cpp
@@ -723,6 +729,10 @@ PRIVATE
 if(NOT LIBRETRO AND NOT SWITCH_STANDALONE)
 target_link_libraries(core PUBLIC
   enet::enet
+)
+endif()
+if(NOT LIBRETRO)
+target_link_libraries(core PUBLIC
   sfml-network
 )
 endif()

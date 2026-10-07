@@ -42,9 +42,14 @@
 
 #else
 #include <arpa/inet.h>
+#ifndef __SWITCH__
+// Horizon has no getifaddrs or resolver; its configuration comes from NIFM below
 #include <ifaddrs.h>
+#endif
 #include <netinet/in.h>
+#ifndef __SWITCH__
 #include <resolv.h>
+#endif
 #include <sys/socket.h>
 #include <unistd.h>
 #ifdef __SWITCH__
