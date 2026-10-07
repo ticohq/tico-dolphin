@@ -24,6 +24,8 @@
         ".rvz",
         ".wbfs",
         ".wia",
+        ".gcz",
+        ".ciso",
         ".m3u"
       ],
       "disc_based": true,
@@ -48,6 +50,8 @@
         ".rvz",
         ".wbfs",
         ".wia",
+        ".gcz",
+        ".ciso",
         ".m3u",
         ".wad"
       ],
