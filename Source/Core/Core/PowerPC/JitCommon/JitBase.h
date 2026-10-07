@@ -15,6 +15,9 @@
 
 #include "Common/BitSet.h"
 #include "Common/CommonTypes.h"
+#ifdef __SWITCH__
+#include "Common/HorizonJitStack.h"
+#endif
 #include "Common/Config/ConfigInfo.h"
 #include "Common/x64Emitter.h"
 #include "Core/CPUThreadConfigCallback.h"
@@ -171,6 +174,10 @@ protected:
 
 #ifdef __SWITCH__
   static constexpr size_t BLR_STACK_BUDGET = 256 * 1024;
+  static constexpr size_t JIT_STACK_SIZE = 1024 * 1024;
+  // The JIT's own stack, guarded (see InitBLROptimization); empty when the
+  // per-push limit check is used instead.
+  Common::HorizonJitStack::Stack m_jit_stack;
 #endif
 
   static const std::array<std::pair<bool JitBase::*, const Config::Info<bool>*>, 25> JIT_SETTINGS;

@@ -39,7 +39,9 @@ set(CMAKE_ASM_COMPILER_AR     ${DEVKITPRO_BIN}${PREFIX}gcc-ar CACHE FILEPATH "" 
 set(CMAKE_ASM_COMPILER_RANLIB ${DEVKITPRO_BIN}${PREFIX}gcc-ranlib)
 
 # Architecture flags
-set(ARCH "-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE -D__SWITCH__")
+# -ffixed-x18: the fault handler (Core/MemTools.cpp) resumes through x18, so
+# no compiled code may keep a value there across a fault.
+set(ARCH "-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE -ffixed-x18 -D__SWITCH__")
 
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -Wall -O2 -ffunction-sections ${ARCH}")
 set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_CXX_FLAGS} -fno-rtti")

@@ -55,6 +55,17 @@ void JitArm64::GenerateAsm()
 
   // Store the stack pointer, so we can reset it if the BLR optimization fails.
   ADD(ARM64Reg::X8, ARM64Reg::SP, 0);
+#ifdef __SWITCH__
+  // With a guarded stack of its own, the JIT runs on that and goes back to the
+  // thread's stack on the way out.
+  static_assert(PPCSTATE_OFF(host_stack_pointer) <= 32760);
+  STR(IndexType::Unsigned, ARM64Reg::X8, PPC_REG, PPCSTATE_OFF(host_stack_pointer));
+  if (m_enable_blr_optimization && m_jit_stack)
+  {
+    MOVP2R(ARM64Reg::X8, m_jit_stack.Top());
+    ADD(ARM64Reg::SP, ARM64Reg::X8, 0);
+  }
+#endif
   STR(IndexType::Unsigned, ARM64Reg::X8, PPC_REG, PPCSTATE_OFF(stored_stack_pointer));
 
   // Push {nullptr; -1} as invalid destination on the stack.
@@ -246,7 +257,11 @@ void JitArm64::GenerateAsm()
 
   // Reset the stack pointer, since the BLR optimization may have pushed things onto the stack
   // without popping them.
+#ifdef __SWITCH__
+  LDR(IndexType::Unsigned, ARM64Reg::X8, PPC_REG, PPCSTATE_OFF(host_stack_pointer));
+#else
   LDR(IndexType::Unsigned, ARM64Reg::X8, PPC_REG, PPCSTATE_OFF(stored_stack_pointer));
+#endif
   ADD(ARM64Reg::SP, ARM64Reg::X8, 0);
 
   m_float_emit.ABI_PopRegisters(regs_to_save_fpr, ARM64Reg::X8);

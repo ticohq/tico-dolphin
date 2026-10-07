@@ -118,6 +118,9 @@ JitBase::JitBase(Core::System& system)
 JitBase::~JitBase()
 {
   CPUThreadConfigCallback::RemoveConfigChangedCallback(m_registered_config_callback_id);
+#ifdef __SWITCH__
+  Common::HorizonJitStack::Release(m_jit_stack);
+#endif
 }
 
 bool JitBase::DoesConfigNeedRefresh() const
@@ -186,12 +189,36 @@ void JitBase::InitBLROptimization()
   m_enable_blr_optimization =
       jo.enableBlocklink && !IsDebuggingEnabled() && EMM::IsExceptionHandlerSupported();
   m_cleanup_after_stackfault = false;
+
+#ifdef __SWITCH__
+  // Horizon cannot guard a thread's own stack, so the JIT gets one of its own with a guard page
+  // where the console lets us arm one. Without it, every BL push checks a limit instead
+  // (JitArm64::EmitBLRStackLimitCheck). Decided before the dispatcher is generated, which
+  // switches to that stack.
+  if (m_enable_blr_optimization && !m_jit_stack)
+    m_jit_stack = Common::HorizonJitStack::Allocate(JIT_STACK_SIZE, GUARD_OFFSET, GUARD_SIZE);
+#endif
 }
 
 void JitBase::ProtectStack()
 {
   if (!m_enable_blr_optimization)
     return;
+
+#ifdef __SWITCH__
+  if (m_jit_stack)
+  {
+    if (!Common::HorizonJitStack::Arm(m_jit_stack))
+    {
+      // the code already pushes onto that stack: build it again without the optimization
+      m_enable_blr_optimization = false;
+      ClearCache();
+      return;
+    }
+    m_stack_guard = m_jit_stack.guard;
+    return;
+  }
+#endif
 
 #ifdef _WIN32
   ULONG reserveSize = SAFE_STACK_SIZE;
@@ -256,6 +283,15 @@ void JitBase::ProtectStack()
 
 void JitBase::UnprotectStack()
 {
+#ifdef __SWITCH__
+  if (m_jit_stack)
+  {
+    if (m_stack_guard)
+      Common::HorizonJitStack::Disarm(m_jit_stack);
+    m_stack_guard = nullptr;
+    return;
+  }
+#endif
 #ifndef _WIN32
   if (m_stack_guard)
   {

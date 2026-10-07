@@ -119,6 +119,7 @@ target_sources(common PRIVATE
   Matrix.cpp
   Matrix.h
   HorizonFastmem.h
+  HorizonJitStack.h
   MemArena.h
   MemoryUtil.cpp
   MemoryUtil.h
@@ -293,6 +294,7 @@ elseif(APPLE)
 elseif(SWITCH_STANDALONE)
   target_sources(common PRIVATE
     Logging/ConsoleListenerNix.cpp
+    HorizonJitStack.cpp
     MemArenaSwitch.cpp
   )
 else()

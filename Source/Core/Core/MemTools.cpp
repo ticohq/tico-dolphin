@@ -17,6 +17,7 @@
 #ifdef __SWITCH__
 #include <atomic>
 
+#include "Common/HorizonJitStack.h"
 #include "Core/HW/Memmap.h"
 #include "Core/PowerPC/PowerPC.h"
 
@@ -482,6 +483,11 @@ extern "C" void __libnx_exception_handler(ThreadExceptionDump* ctx)
   const uintptr_t fault_address = ctx->far.x;
   const uintptr_t lazy_region_base = s_lazy_region_base.load(std::memory_order_acquire);
   const size_t lazy_region_size = s_lazy_region_size.load(std::memory_order_relaxed);
+
+  // The JIT stack's probe faults on purpose to learn whether guard pages work;
+  // it continues after the faulting store.
+  if (Common::HorizonJitStack::HandleProbeFault(fault_address, ctx->pc.x)) [[unlikely]]
+    RestoreContextAndJump(ctx);
 
   // Lazy entry-points arena: the JitArm64 dispatcher reads m_entry_points_ptr
   // unconditionally on every dispatch, so uncommitted pages in the
