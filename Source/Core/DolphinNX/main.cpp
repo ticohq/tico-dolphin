@@ -924,7 +924,7 @@ static int ExitSwitchFrontend(int exit_code)
 // System files
 //
 // Dolphin's "Sys" tree (GameSettings, Shaders, GC/Wii data, ...) is read straight
-// from this NRO's RomFS (romfs:/Sys, from Data/Sys), as porpoise does, so an
+// from this NRO's RomFS (romfs:/Sys, from Data/Sys), as nezumiiruka does, so an
 // update brings its own and nothing is copied. The files players provide (the
 // GameCube BIOS, DSP ROMs, fonts) live in User/GC, where Dolphin looks first;
 // sdmc:/tico/system/gc/Sys, where earlier versions kept the copy, stays a place

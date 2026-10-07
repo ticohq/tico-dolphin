@@ -35,6 +35,11 @@ All core emulation work belongs to the Dolphin team and its contributors.
 - **Official Dolphin repository** — https://github.com/dolphin-emu/dolphin
 - **Dolphin website** — https://dolphin-emu.org
 
+The Switch port also builds on two other Switch ports of Dolphin:
+
+- **[nezumiiruka](https://github.com/PalindromicBreadLoaf/nezumiiruka)** by **PalindromicBreadLoaf**: the deko3d renderer, Riivolution, cheats, networking and many Switch fixes
+- **[dolphin-nx](https://github.com/NaGaa95/dolphin-nx)** by **NaGaa95**: memory, JIT and video fixes, networking and the SD card read cache
+
 ----------
 
 ## A Note
