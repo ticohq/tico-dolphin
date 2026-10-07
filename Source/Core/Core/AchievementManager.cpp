@@ -385,7 +385,14 @@ bool AchievementManager::CanPause()
 
 void AchievementManager::DoIdle()
 {
-  std::thread([this] {
+  // one idle thread at a time: a running one goes on while the game stays
+  // paused, a finished one is joined before the next starts
+  if (m_idle_running.load())
+    return;
+  JoinIdleThread();
+  m_idle_running.store(true);
+  m_idle_thread = std::thread([this] {
+    Common::ScopeGuard done{[this] { m_idle_running.store(false); }};
     while (true)
     {
       Common::SleepCurrentThread(1000);
@@ -412,7 +419,13 @@ void AchievementManager::DoIdle()
         rc_client_idle(m_client);
       });
     }
-  }).detach();
+  });
+}
+
+void AchievementManager::JoinIdleThread()
+{
+  if (m_idle_thread.joinable())
+    m_idle_thread.join();
 }
 
 std::recursive_mutex& AchievementManager::GetLock()
@@ -803,6 +816,8 @@ void AchievementManager::Logout()
 
 void AchievementManager::Shutdown()
 {
+  // the idle thread stops within a second once the game isn't paused
+  JoinIdleThread();
   if (m_client)
   {
     CloseGame();
