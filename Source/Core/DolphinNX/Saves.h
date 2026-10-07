@@ -5,7 +5,10 @@
 
 #pragma once
 
+#include <cstddef>
+#include <functional>
 #include <optional>
+#include <string>
 
 #include "DiscIO/RiivolutionPatcher.h"
 
@@ -14,15 +17,22 @@
 // (settings, installed WADs) stay in Dolphin's NAND under tico/system/gc.
 namespace DolphinNX::Saves
 {
-/// Moves saves from where earlier versions kept them, once. Never overwrites.
-void MigrateGameCubeSaves();
+/// Called for each save moved (where it goes, how many are done, of how many),
+/// then once more with an empty path when all are.
+using MigrationProgress =
+    std::function<void(const std::string& path, std::size_t done, std::size_t total)>;
+
+/// Moves saves from where earlier versions kept them (GameCube memory cards, each
+/// Wii game's save in the NAND), once. Never overwrites; @p progress is only
+/// called when there is something to move.
+void Migrate(const MigrationProgress& progress);
 
 /// Points the GameCube memory cards at tico's saves folder (as config defaults,
 /// so a raw override in dolphin.jsonc still wins).
 void ApplyGameCubeCardPaths();
 
-/// The running Wii title's save folder as a NAND redirect. On a game's first
-/// start its save is copied there from the NAND. Call once the title is known.
+/// The running Wii title's save folder as a NAND redirect. Call once the title
+/// is known.
 std::optional<DiscIO::Riivolution::SavegameRedirect> WiiSaveRedirect();
 
 /// Imports a data.bin (a Wii's SD card export) for the running title from
