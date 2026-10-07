@@ -30,5 +30,11 @@ target_compile_definitions(sfml-system PUBLIC SFML_STATIC)
 target_include_directories(sfml-system PUBLIC SFML/include PRIVATE SFML/src)
 target_include_directories(sfml-network PUBLIC SFML/include PRIVATE SFML/src)
 target_link_libraries(sfml-network PUBLIC sfml-system)
+
+if(SWITCH_STANDALONE)
+  # Must come before SFML/include so the shim can provide a proper lookup.
+  target_include_directories(sfml-system BEFORE PUBLIC horizon)
+  target_include_directories(sfml-network BEFORE PUBLIC horizon)
+endif()
 dolphin_disable_warnings(sfml-network)
 dolphin_disable_warnings(sfml-system)
