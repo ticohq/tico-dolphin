@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "overlay/translation_manager.h"
+#include "../TicoSession.h"
 
 #include <array>
 #include <cstdio>
@@ -93,7 +94,7 @@ bool ReadWholeFile(const char* path, std::string& out) {
 std::string LoadConfiguredLanguage() {
     for (const char* path : kGeneralConfigPaths) {
         std::string content;
-        if (!ReadWholeFile(path, content)) {
+        if (!tico::ReadConfigFile(path, content)) {
             continue;
         }
         const std::string stripped = StripJsonComments(content);

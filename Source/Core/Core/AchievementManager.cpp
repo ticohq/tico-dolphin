@@ -1416,7 +1416,25 @@ void AchievementManager::FetchBadge(AchievementManager::Badge* badge, u32 badge_
         Common::SHA1::DigestToString(Common::SHA1::CalculateDigest(name_to_fetch)));
 
     AchievementManager::Badge tmp_badge;
+#ifdef __SWITCH__
+    // tico downloads a game's achievement badges before it launches; this
+    // only reads that cache. Game and player images are not used.
+    {
+      const bool achievement = badge_type == RC_IMAGE_TYPE_ACHIEVEMENT ||
+                               badge_type == RC_IMAGE_TYPE_ACHIEVEMENT_LOCKED;
+      const std::string tico_path =
+          fmt::format("sdmc:/tico/assets/ra/{}{}.png", name_to_fetch,
+                      badge_type == RC_IMAGE_TYPE_ACHIEVEMENT_LOCKED ? "_lock" : "");
+      if (!m_tico_badges || !achievement || !LoadPNGTexture(&tmp_badge, tico_path))
+      {
+        update_event.Trigger(callback_data);
+        return;
+      }
+    }
+    if (false)
+#else
     if (!LoadPNGTexture(&tmp_badge, cache_path))
+#endif
     {
       rc_api_fetch_image_request_t icon_request = {.image_name = name_to_fetch.c_str(),
                                                    .image_type = badge_type};

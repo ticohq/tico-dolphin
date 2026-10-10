@@ -7,6 +7,7 @@
 /// dolphin.jsonc, edited from Settings > Library), as Flycast's library does.
 
 #include "DolphinNX/Library.h"
+#include "TicoSession.h"
 
 #include "TicoUtils.h"
 #include "UsbStorage.h"
@@ -78,7 +79,7 @@ std::string WithSlash(std::string path)
 std::vector<std::string> TicoRomBases()
 {
     std::vector<std::string> bases;
-    std::ifstream file("sdmc:/tico/config/general.jsonc");
+    tico::SettingsStream file("general");
     const nlohmann::json j = file.good() ? nlohmann::json::parse(file, nullptr, false, true)
                                          : nlohmann::json();
     const std::string roms = j.is_object() ? j.value("roms_path", std::string()) : std::string();

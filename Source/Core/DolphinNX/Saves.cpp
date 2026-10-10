@@ -3,6 +3,8 @@
 
 #include "DolphinNX/Saves.h"
 
+#include "TicoSession.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -27,14 +29,43 @@ namespace DolphinNX::Saves
 {
 namespace
 {
-constexpr const char* kGameCubeSaves = "sdmc:/tico/saves/gc";
-constexpr const char* kWiiSaves = "sdmc:/tico/saves/wii";
-constexpr const char* kWiiImport = "sdmc:/tico/saves/wii/import";
+// The current user's saves (TicoSession.h): tico's folder, or theirs in it.
+std::string SavesRoot()
+{
+  return tico::UserContentRoot("sdmc:/tico/saves/", true);
+}
+std::string GameCubeSaves()
+{
+  return SavesRoot() + "gc";
+}
+std::string WiiSaves()
+{
+  return SavesRoot() + "wii";
+}
+std::string WiiImport()
+{
+  return SavesRoot() + "wii/import";
+}
 
 // Where Dolphin kept saves before (its defaults, under its user folder)
 constexpr const char* kOldGameCubeSaves = "sdmc:/tico/system/gc/User/GC";
 constexpr const char* kOldWiiTitles = "sdmc:/tico/system/gc/User/Wii/title";
 constexpr const char* kMigrationMarker = "sdmc:/tico/config/.migrations/dolphin_saves_layout";
+constexpr const char* kOldStateSaves = "sdmc:/tico/system/gc/User/StateSaves";
+constexpr const char* kStatesMarker = "sdmc:/tico/config/.migrations/dolphin_states_layout";
+
+// The user's states folder for a platform
+std::string StatesFolder(bool wii)
+{
+  return tico::UserContentRoot("sdmc:/tico/states/", false) + (wii ? "wii/" : "gc/");
+}
+
+// A state's platform from its name (the game ID, then .sNN...): Wii discs and
+// channels start R, S, W, H or X; anything else is GameCube's.
+bool IsWiiStateFile(const std::string& name)
+{
+  return !name.empty() && std::string("RSWHX").find(name[0]) != std::string::npos;
+}
 
 // A title's folder: its game ID (the low half of the title ID, as the Wii's SD
 // card names it), or the hex title ID when that isn't letters and digits.
@@ -72,6 +103,11 @@ std::string Timestamp()
 
 void Migrate(const MigrationProgress& progress)
 {
+  // The old saves in tico/system/gc belong to the account tico's welcome
+  // wizard moved everything to: anyone else leaves them for that account
+  // (and the marker unwritten, so they still move when it plays).
+  if (!tico::CurrentSession().inheritsShared)
+    return;
   if (File::Exists(kMigrationMarker))
     return;
 
@@ -98,8 +134,8 @@ void Migrate(const MigrationProgress& progress)
   for (const auto& [old_region, region] : kRegions)
   {
     const std::string old_dir = fmt::format("{}/{}", kOldGameCubeSaves, old_region);
-    add_files(old_dir + "/Card A", fmt::format("{}/{}", kGameCubeSaves, region));
-    add_files(old_dir + "/Card B", fmt::format("{}/Card B/{}", kGameCubeSaves, region));
+    add_files(old_dir + "/Card A", fmt::format("{}/{}", GameCubeSaves(), region));
+    add_files(old_dir + "/Card B", fmt::format("{}/Card B/{}", GameCubeSaves(), region));
   }
 
   // GameCube raw cards (MemoryCardA.USA.raw and the like) keep their names
@@ -109,7 +145,7 @@ void Migrate(const MigrationProgress& progress)
     {
       const std::string& name = entry.virtualName;
       if (!entry.isDirectory && name.starts_with("MemoryCard") && name.ends_with(".raw"))
-        moves.push_back({entry.physicalName, fmt::format("{}/{}", kGameCubeSaves, name)});
+        moves.push_back({entry.physicalName, fmt::format("{}/{}", GameCubeSaves(), name)});
     }
   }
 
@@ -126,7 +162,7 @@ void Migrate(const MigrationProgress& progress)
         continue;
       const u64 title_id =
           (u64{type} << 32) | std::strtoul(title.virtualName.c_str(), nullptr, 16);
-      moves.push_back({data, fmt::format("{}/{}", kWiiSaves, FolderName(title_id))});
+      moves.push_back({data, fmt::format("{}/{}", WiiSaves(), FolderName(title_id))});
     }
   }
 
@@ -164,13 +200,37 @@ void Migrate(const MigrationProgress& progress)
   }
 }
 
+void ApplyStatesFolder(bool wii)
+{
+  const std::string folder = StatesFolder(wii);
+  File::CreateFullPath(folder);
+  File::SetUserPath(D_STATESAVES_IDX, folder);
+
+  // Dolphin's own StateSaves (every user's, before): to the account tico moved
+  // the shared data to, by platform, never over an existing state.
+  if (!tico::CurrentSession().inheritsShared || File::Exists(kStatesMarker) ||
+      !File::IsDirectory(kOldStateSaves))
+    return;
+  for (const File::FSTEntry& entry : File::ScanDirectoryTree(kOldStateSaves, false).children)
+  {
+    if (entry.isDirectory)
+      continue;
+    const std::string target = StatesFolder(IsWiiStateFile(entry.virtualName)) + entry.virtualName;
+    File::CreateFullPath(target);
+    if (!File::Exists(target))
+      File::Rename(entry.physicalName, target);
+  }
+  File::CreateFullPath(kStatesMarker);
+  File::IOFile marker(kStatesMarker, "wb");
+}
+
 void ApplyGameCubeCardPaths()
 {
   // Dolphin adds the region: saves/gc/USA, saves/gc/MemoryCardA.USA.raw, ...
-  Config::SetBase(Config::MAIN_GCI_FOLDER_A_PATH, std::string(kGameCubeSaves));
-  Config::SetBase(Config::MAIN_GCI_FOLDER_B_PATH, fmt::format("{}/Card B", kGameCubeSaves));
-  Config::SetBase(Config::MAIN_MEMCARD_A_PATH, fmt::format("{}/MemoryCardA.raw", kGameCubeSaves));
-  Config::SetBase(Config::MAIN_MEMCARD_B_PATH, fmt::format("{}/MemoryCardB.raw", kGameCubeSaves));
+  Config::SetBase(Config::MAIN_GCI_FOLDER_A_PATH, GameCubeSaves());
+  Config::SetBase(Config::MAIN_GCI_FOLDER_B_PATH, fmt::format("{}/Card B", GameCubeSaves()));
+  Config::SetBase(Config::MAIN_MEMCARD_A_PATH, fmt::format("{}/MemoryCardA.raw", GameCubeSaves()));
+  Config::SetBase(Config::MAIN_MEMCARD_B_PATH, fmt::format("{}/MemoryCardB.raw", GameCubeSaves()));
 }
 
 std::optional<DiscIO::Riivolution::SavegameRedirect> WiiSaveRedirect()
@@ -181,7 +241,7 @@ std::optional<DiscIO::Riivolution::SavegameRedirect> WiiSaveRedirect()
   // no clone: Migrate moved the saves out of the NAND, and a deleted save
   // folder means a new save rather than the NAND's old one coming back
   return DiscIO::Riivolution::SavegameRedirect{
-      fmt::format("{}/{}", kWiiSaves, FolderName(title_id)), false};
+      fmt::format("{}/{}", WiiSaves(), FolderName(title_id)), false};
 }
 
 void ImportWiiSaves()
@@ -189,7 +249,7 @@ void ImportWiiSaves()
   auto& system = Core::System::GetInstance();
   IOS::HLE::EmulationKernel* ios = system.GetIOS();
   const u64 title_id = SConfig::GetInstance().GetTitleID();
-  if (!ios || !IsGameTitle(title_id) || !File::IsDirectory(kWiiImport))
+  if (!ios || !IsGameTitle(title_id) || !File::IsDirectory(WiiImport()))
     return;
 
   // any .bin under import/ (a Wii's private/wii/title/<ID>/data.bin copied over
@@ -209,7 +269,7 @@ void ImportWiiSaves()
         candidates.push_back(entry.physicalName);
     }
   };
-  collect(collect, File::ScanDirectoryTree(kWiiImport, true));
+  collect(collect, File::ScanDirectoryTree(WiiImport(), true));
 
   for (const std::string& path : candidates)
   {
@@ -217,7 +277,7 @@ void ImportWiiSaves()
       continue;
 
     // the save it replaces stays beside it
-    const std::string save_dir = fmt::format("{}/{}", kWiiSaves, FolderName(title_id));
+    const std::string save_dir = fmt::format("{}/{}", WiiSaves(), FolderName(title_id));
     if (HasFiles(save_dir))
     {
       const std::string backup = fmt::format("{}.backup-{}", save_dir, Timestamp());

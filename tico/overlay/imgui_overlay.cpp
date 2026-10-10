@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "overlay/imgui_overlay.h"
+#include "../TicoSession.h"
 
 #include <algorithm>
 #include <array>
@@ -168,7 +169,8 @@ bool LoadAvatarFromAccount() {
     }
 
     AccountUid uid{};
-    bool found = R_SUCCEEDED(accountGetPreselectedUser(&uid)) && accountUidIsValid(&uid);
+    bool found = tico::CurrentSession().AccountId(uid); // Who tico says plays
+    if (!found) found = R_SUCCEEDED(accountGetPreselectedUser(&uid)) && accountUidIsValid(&uid);
     if (!found) {
         found = R_SUCCEEDED(accountGetLastOpenedUser(&uid)) && accountUidIsValid(&uid);
     }
@@ -211,7 +213,7 @@ bool LoadAvatarFromAccount() {
 #endif
 
 void LoadAvatar() {
-    for (const char* path : kAvatarPaths) {
+    for (const char* path : tico::AvatarCandidates(kAvatarPaths)) {
         int width = 0;
         int height = 0;
         int channels = 0;
