@@ -90,5 +90,6 @@
   "emulator_pad_joycon_left": "Joy-Con (L)",
   "emulator_pad_joycon_right": "Joy-Con (R)",
   "emulator_pad_gamecube": "GameCube-Controller",
-  "emulator_pad_other": "Controller"
+  "emulator_pad_other": "Controller",
+  "settings_dolphin_load_boost": "Boost beim Laden (Spielstart, Spielstände)"
 }

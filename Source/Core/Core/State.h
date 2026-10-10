@@ -85,6 +85,10 @@ struct StateExtendedHeader
 void Init(Core::System& system);
 void Shutdown();
 
+// Returns once every state being saved has been written (they compress and
+// write on a worker after Save returns).
+void WaitForSaves();
+
 // Returns a string containing information of the savestate in the given slot
 // which can be presented to the user for identification purposes
 std::string GetInfoStringOfSlot(u32 slot, bool translate = true);

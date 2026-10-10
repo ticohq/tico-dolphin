@@ -222,6 +222,13 @@
               "restart": true
             },
             {
+              "key": "dolphin_load_boost",
+              "label": "settings_dolphin_load_boost",
+              "type": "bool",
+              "default": "enabled",
+              "restart": true
+            },
+            {
               "key": "dolphin_skip_gc_bios",
               "label": "settings_dolphin_skip_gamecube_bios",
               "type": "bool",
