@@ -323,50 +323,14 @@ bool DKGfx::BindBackbuffer(const ClearColor& clear_color)
 
 void DKGfx::PresentBackbuffer()
 {
-  // Presenting flushes the queue, kicking off everything recorded this frame.
-  const bool reaches_screen = m_swap_chain && m_current_slot >= 0;
-  if (reaches_screen)
+  // Presenting flushes the queue kicking off everything recorded this frame.
+  if (m_swap_chain && m_current_slot >= 0)
     g_dk_command_buffer_mgr->SubmitCommandBuffer(false, m_swap_chain.get(), m_current_slot);
   else
     g_dk_command_buffer_mgr->SubmitCommandBuffer(false);
 
   m_current_slot = -1;
   g_dk_command_buffer_mgr->PublishFrameGpuTime();
-
-  m_presents++;
-  m_presents_reaching_screen += reaches_screen ? 1 : 0;
-  if (m_presents >= PRESENT_REPORT_INTERVAL)
-    ReportFrameStatistics();
-}
-
-void DKGfx::ReportFrameStatistics()
-{
-  DKStateTracker* state_tracker = DKStateTracker::GetInstance();
-  const DKStateTracker::DrawCounts& draws = state_tracker->GetDrawCounts();
-  const DkScissor& scissor = state_tracker->GetScissor();
-  const DkViewport& viewport = state_tracker->GetViewport();
-  const u64 dropped =
-      draws.no_pipeline + draws.invalid_pipeline + draws.no_framebuffer + draws.no_descriptors;
-  const DKFramebuffer* framebuffer = state_tracker->GetFramebuffer();
-
-  const std::string report = fmt::format(
-      "deko3d: {}/{} frames presented, {} draws, {} dropped (pipeline {}/{}, framebuffer {}, "
-      "descriptors {}), fences {}/{}, target {}x{}, scissor {}+{} {}x{}, viewport {}+{} {}x{}",
-      m_presents_reaching_screen, m_presents, draws.recorded, dropped, draws.no_pipeline,
-      draws.invalid_pipeline, draws.no_framebuffer, draws.no_descriptors,
-      g_dk_command_buffer_mgr->GetCompletedFenceCounter(),
-      g_dk_command_buffer_mgr->GetCurrentFenceCounter(), framebuffer ? framebuffer->GetWidth() : 0,
-      framebuffer ? framebuffer->GetHeight() : 0, scissor.x, scissor.y, scissor.width,
-      scissor.height, viewport.x, viewport.y, viewport.width, viewport.height);
-
-  if (m_presents_reaching_screen != m_presents || draws.recorded == 0 || dropped != 0)
-    WARN_LOG_FMT(VIDEO, "{}", report);
-  else
-    NOTICE_LOG_FMT(VIDEO, "{}", report);
-
-  m_presents = 0;
-  m_presents_reaching_screen = 0;
-  state_tracker->ResetDrawCounts();
 }
 
 SurfaceInfo DKGfx::GetSurfaceInfo() const

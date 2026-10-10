@@ -256,5 +256,6 @@
   "emulator_portal_where": "フィギュアのダンプを sdmc:/tico/skylanders にコピーしてください",
   "settings_dolphin_boost_mode": "ブーストモード（CPU 1785 MHz、GPU 768 MHz）",
   "settings_dolphin_renderer": "レンダラー",
-  "settings_dolphin_load_boost": "読み込み時のブースト（ゲーム起動、ステート）"
+  "settings_dolphin_load_boost": "読み込み時のブースト（ゲーム起動、ステート）",
+  "settings_dolphin_dual_core": "デュアルコア（オフは遅くなりますが、一部のクラッシュを防げます）"
 }

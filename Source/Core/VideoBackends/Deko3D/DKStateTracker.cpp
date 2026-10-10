@@ -503,29 +503,13 @@ void DKStateTracker::UpdateUniformBuffers(DkCmdBuf cmdbuf)
 
 bool DKStateTracker::Bind()
 {
-  if (!m_pipeline)
-  {
-    m_draw_counts.no_pipeline++;
+  if (!m_pipeline || !m_pipeline->IsValid() || !m_framebuffer)
     return false;
-  }
-  if (!m_pipeline->IsValid())
-  {
-    m_draw_counts.invalid_pipeline++;
-    return false;
-  }
-  if (!m_framebuffer)
-  {
-    m_draw_counts.no_framebuffer++;
-    return false;
-  }
 
   // Descriptors are written before anything is recorded, because running out of ring space submits
   // the command buffer and invalidates everything below.
   if ((m_dirty_flags & DIRTY_FLAG_TEXTURES) && !PrepareTextureHandles())
-  {
-    m_draw_counts.no_descriptors++;
     return false;
-  }
 
   DkCmdBuf cmdbuf = g_dk_command_buffer_mgr->GetCurrentCommandBuffer();
 
@@ -576,7 +560,6 @@ bool DKStateTracker::Bind()
   m_dirty_flags &=
       ~(DIRTY_FLAG_STATIC_STATE | DIRTY_FLAG_PIPELINE | DIRTY_FLAG_INDEX_BUFFER |
         DIRTY_FLAG_VIEWPORT | DIRTY_FLAG_SCISSOR | DIRTY_FLAG_TEXTURES | DIRTY_FLAG_SSBO);
-  m_draw_counts.recorded++;
   return true;
 }
 

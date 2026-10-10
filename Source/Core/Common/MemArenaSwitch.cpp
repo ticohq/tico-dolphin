@@ -148,6 +148,10 @@ const FastmemSupport& GetFastmemSupport()
   static const FastmemSupport support = DetectFastmemSupport();
   return support;
 }
+
+// Taken at startup (ReserveArenaAddressSpace), lent to the fastmem arena
+void* s_arena_window = nullptr;
+bool s_arena_window_in_use = false;
 }  // namespace
 
 namespace HorizonFastmem
@@ -160,6 +164,21 @@ bool IsArenaSupported()
 bool AreReadOnlyMappingsSupported()
 {
   return GetFastmemSupport().read_only_mappings;
+}
+
+void ReserveArenaAddressSpace()
+{
+  if (s_arena_window)
+    return;
+
+  virtmemLock();
+  void* const window = FindLargePageAligned(virtmemFindAslr, ARENA_SIZE, 0x200000);
+  if (window && virtmemAddReservation(window, ARENA_SIZE))
+    s_arena_window = window;
+  virtmemUnlock();
+
+  if (!s_arena_window)
+    WARN_LOG_FMT(MEMMAP, "Switch: could not reserve the fastmem window at startup");
 }
 }  // namespace HorizonFastmem
 
@@ -301,6 +320,17 @@ u8* MemArena::ReserveMemoryRegion(size_t memory_size)
 
   size_t aligned_size = (memory_size + 0x1FFFFF) & ~size_t{0x1FFFFF};
 
+  // The window reserved at startup, while the address space was in one piece
+  if (s_arena_window && !s_arena_window_in_use && aligned_size <= HorizonFastmem::ARENA_SIZE)
+  {
+    s_arena_window_in_use = true;
+    m_reserved_region = s_arena_window;
+    m_reserved_region_size = aligned_size;
+    INFO_LOG_FMT(MEMMAP, "Switch: Using the startup fastmem window at {}",
+                 fmt::ptr(m_reserved_region));
+    return static_cast<u8*>(m_reserved_region);
+  }
+
   virtmemLock();
   m_reserved_region = FindLargePageAligned(virtmemFindAslr, aligned_size, 0x200000);
   if (m_reserved_region == nullptr)
@@ -336,6 +366,11 @@ void MemArena::ReleaseMemoryRegion()
     virtmemRemoveReservation(static_cast<VirtmemReservation*>(m_reservation));
     virtmemUnlock();
     m_reservation = nullptr;
+  }
+  else if (m_reserved_region && m_reserved_region == s_arena_window)
+  {
+    // Kept reserved for the next game
+    s_arena_window_in_use = false;
   }
 
   m_reserved_region = nullptr;

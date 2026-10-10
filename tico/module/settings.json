@@ -190,6 +190,13 @@
               "restart": true
             },
             {
+              "key": "dolphin_dual_core",
+              "label": "settings_dolphin_dual_core",
+              "type": "bool",
+              "default": "enabled",
+              "restart": true
+            },
+            {
               "key": "dolphin_precision_frame_timing",
               "label": "settings_dolphin_precision_frame_timing",
               "type": "bool",
@@ -453,16 +460,16 @@
               "key": "dolphin_renderer",
               "label": "settings_dolphin_renderer",
               "type": "enum",
-              "default": "Vulkan",
+              "default": "Deko3D",
               "restart": true,
               "choices": [
                 {
-                  "label": "Vulkan",
-                  "value": "Vulkan"
+                  "label": "deko3d",
+                  "value": "Deko3D"
                 },
                 {
-                  "label": "deko3d (experimental)",
-                  "value": "Deko3D"
+                  "label": "Vulkan",
+                  "value": "Vulkan"
                 }
               ]
             },

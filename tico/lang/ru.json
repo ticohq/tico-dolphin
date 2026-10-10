@@ -91,5 +91,6 @@
   "emulator_pad_joycon_right": "Joy-Con (R)",
   "emulator_pad_gamecube": "Контроллер GameCube",
   "emulator_pad_other": "Контроллер",
-  "settings_dolphin_load_boost": "Ускорение при загрузке (запуск игры, сохранения)"
+  "settings_dolphin_load_boost": "Ускорение при загрузке (запуск игры, сохранения)",
+  "settings_dolphin_dual_core": "Двухъядерный режим (выкл. медленнее, может исправить некоторые вылеты)"
 }
