@@ -48,3 +48,6 @@ CMakeLists.txt.user
 .cache/clangd
 # Ignore CMake user presets
 CMakeUserPresets.json
+
+# TicoSecure build secret (shared with tico)
+/tico/TicoSecret.h

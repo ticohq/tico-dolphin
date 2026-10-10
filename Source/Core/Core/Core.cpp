@@ -816,6 +816,8 @@ static
   // (a Riivolution save redirect wins)
   if (system.IsWii() && !savegame_redirect)
     savegame_redirect = DolphinNX::Saves::WiiSaveRedirect();
+  // and its states in the user's states folder, by platform
+  DolphinNX::Saves::ApplyStatesFolder(system.IsWii());
 #endif
 
   // Initialise Wii filesystem contents.

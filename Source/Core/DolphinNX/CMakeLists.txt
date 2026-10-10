@@ -150,7 +150,9 @@ foreach(dep EGL GLESv2 glapi)
     target_link_libraries(dolphin-nx PRIVATE ${DOLPHIN_NX_SDL_DEP_${dep}})
   endif()
 endforeach()
+# libsodium: TicoSecure opens the session tico seals for each launch.
 target_link_libraries(dolphin-nx PRIVATE
+  ${DEVKITPRO}/portlibs/switch/lib/libsodium.a
   ${DEVKITPRO}/libnx/lib/libnx.a
   m
 )

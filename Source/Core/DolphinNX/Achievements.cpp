@@ -23,13 +23,13 @@
 #include "Core/Config/AchievementSettings.h"
 #include "DolphinNX/Audio.h"
 #include "TicoOverlayHost.h"
+#include "TicoSession.h"
 #include "overlay/overlay_ui.h"
 
 namespace DolphinNX::Achievements
 {
 namespace
 {
-constexpr const char* kAccountsPath = "sdmc:/tico/config/accounts.jsonc";
 constexpr std::size_t kMaxNotifications = 8;
 
 struct BadgePixels
@@ -142,7 +142,7 @@ RAHost s_host;
 bool TicoSoundsEnabled()
 {
   std::string text;
-  if (!File::ReadFileToString("sdmc:/tico/config/audio.jsonc", text))
+  if (!tico::ReadSettings("audio", text))
     return false;
   const nlohmann::json root = nlohmann::json::parse(text, nullptr, false, true);
   if (!root.is_object() || !root.contains("sound_enabled"))
@@ -165,53 +165,25 @@ bool s_started = false;
 bool s_hardcore = false;
 std::string s_token;
 
-nlohmann::json ReadAccounts()
-{
-  std::string text;
-  if (!File::ReadFileToString(kAccountsPath, text))
-    return nlohmann::json::object();
-  nlohmann::json root = nlohmann::json::parse(text, nullptr, false, true);
-  return root.is_object() ? root : nlohmann::json::object();
-}
-
-RAAlertPosition ParsePosition(const std::string& position)
-{
-  if (position == "top_left")
-    return RAAlertPosition::TopLeft;
-  if (position == "bottom_left")
-    return RAAlertPosition::BottomLeft;
-  if (position == "bottom_right")
-    return RAAlertPosition::BottomRight;
-  return RAAlertPosition::TopRight;
-}
-
-// The token a password login got, back into tico's account so the next game
-// (in any core) logs in with it.
-void SaveToken(const std::string& token)
-{
-  nlohmann::json root = ReadAccounts();
-  root["ra_token"] = token;
-  if (!File::WriteStringToFile(kAccountsPath, root.dump(4)))
-    WARN_LOG_FMT(ACHIEVEMENTS, "Could not save the RetroAchievements token to {}", kAccountsPath);
-}
 }  // namespace
 
 void Start()
 {
-  const nlohmann::json account = ReadAccounts();
-  const bool enabled = account.value("ra_enabled", false);
-  const std::string username = account.value("ra_username", std::string());
-  const std::string password = account.value("ra_password", std::string());
-  s_token = account.value("ra_token", std::string());
+  // tico hands over only a token, in the sealed session (TicoSession.h); the
+  // password stays with tico.
+  const tico::Session& session = tico::CurrentSession();
+  const bool enabled = session.valid && session.raEnabled && !session.raUsername.empty() &&
+                       !session.raToken.empty();
+  s_token = session.raToken;
 
-  Config::SetBase(Config::RA_ENABLED, enabled && !username.empty());
-  if (!enabled || username.empty())
+  Config::SetBase(Config::RA_ENABLED, enabled);
+  if (!enabled)
     return;
 
-  Config::SetBase(Config::RA_USERNAME, username);
+  Config::SetBase(Config::RA_USERNAME, session.raUsername);
   Config::SetBase(Config::RA_API_TOKEN, s_token);
-  Config::SetBase(Config::RA_HARDCORE_ENABLED, account.value("ra_hardcore_mode", false));
-  s_host.SetPosition(ParsePosition(account.value("ra_alert_position", std::string("top_right"))));
+  Config::SetBase(Config::RA_HARDCORE_ENABLED, session.raHardcore);
+  s_host.SetPosition(RAAlertPosition::TopRight);
 
   AchievementManager& manager = AchievementManager::GetInstance();
   manager.SetMessageSink([](std::string message, u32 duration_ms,
@@ -219,11 +191,10 @@ void Start()
     PlayTrophySoundFor(message);
     s_host.Push(std::move(message), duration_ms, icon);
   });
+  manager.SetTicoBadges(session.raBadges);
   manager.Init(nullptr);
-  if (s_token.empty() && !password.empty())
-    manager.Login(password);
   s_started = true;
-  INFO_LOG_FMT(ACHIEVEMENTS, "RetroAchievements on for {} (hardcore {})", username,
+  INFO_LOG_FMT(ACHIEVEMENTS, "RetroAchievements on for {} (hardcore {})", session.raUsername,
                Config::Get(Config::RA_HARDCORE_ENABLED));
 }
 
@@ -237,13 +208,6 @@ void Update()
   {
     s_hardcore = hardcore;
     SwitchFrontend::OverlayUI::SetHardcoreMode(hardcore);
-  }
-
-  const std::string token = Config::Get(Config::RA_API_TOKEN);
-  if (!token.empty() && token != s_token)
-  {
-    s_token = token;
-    SaveToken(token);
   }
 }
 

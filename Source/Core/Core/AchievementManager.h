@@ -123,6 +123,10 @@ public:
       std::function<void(std::string message, u32 duration_ms,
                          const VideoCommon::CustomTextureData::ArraySlice::Level* icon)>;
   void SetMessageSink(MessageSink sink);
+  // tico fetches badges before a game launches: read them from its cache
+  // (sdmc:/tico/assets/ra) and download none. False: no badges at all.
+  void SetTicoBadges(bool enabled) { m_tico_badges = enabled; }
+  bool m_tico_badges = true;
   std::mutex m_message_sink_lock;
   MessageSink m_message_sink;
   void Login(const std::string& password);

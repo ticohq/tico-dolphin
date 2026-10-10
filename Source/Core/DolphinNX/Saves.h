@@ -31,6 +31,12 @@ void Migrate(const MigrationProgress& progress);
 /// so a raw override in dolphin.jsonc still wins).
 void ApplyGameCubeCardPaths();
 
+/// Points Dolphin's save states (and their pictures) at the current user's
+/// states folder, states/gc or states/wii (TicoSession.h), now that the
+/// platform is known. Dolphin kept every user's states in its own folder
+/// before: they move once, for the account tico moved the shared data to.
+void ApplyStatesFolder(bool wii);
+
 /// The running Wii title's save folder as a NAND redirect. Call once the title
 /// is known.
 std::optional<DiscIO::Riivolution::SavegameRedirect> WiiSaveRedirect();
