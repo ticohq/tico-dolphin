@@ -556,6 +556,27 @@ static bool OverrideClocksWithClockManager()
   return false;
 }
 
+// As dolphin-nx does: the system's CPU boost (FastLoad: the CPU at 1785 MHz,
+// the GPU lowered) only while Dolphin starts, moving files, loading the game
+// and compiling. Normal once the game shows its first frame, or as soon as
+// Boost mode's own clocks take over for the whole game.
+static bool s_startup_boost = false;
+
+static void BeginStartupBoost()
+{
+  s_startup_boost = R_SUCCEEDED(appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad));
+  LOG("Startup boost %s\n", s_startup_boost ? "on" : "unavailable");
+}
+
+static void EndStartupBoost()
+{
+  if (!s_startup_boost)
+    return;
+  appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
+  s_startup_boost = false;
+  LOG("Startup boost off\n");
+}
+
 static void ConfigureSwitchPerformance()
 {
   if (OverrideClocksWithClockManager())
@@ -576,6 +597,7 @@ static void ConfigureSwitchPerformance()
 
 static void RestoreSwitchPerformance()
 {
+  EndStartupBoost();
   if (s_clock_manager_open)
   {
     SetClockManagerOverride(0, 0);
@@ -1584,6 +1606,7 @@ int main(int argc, char* argv[])
     const std::string user_dir = "sdmc:/tico/system/gc/User";
     // Dolphin's Sys tree, read from RomFS (see "System files")
     const std::string sys_dir = kGcSysSource;
+    BeginStartupBoost();
     MoveProvidedSystemFiles();
     RemoveOldSystemCopy();
     EnsureDolphinProfilesUpdatedFor008();
@@ -1630,11 +1653,17 @@ int main(int argc, char* argv[])
     LOG("TicoCore::ApplyConfig...\n");
     DolphinNX::TicoCore::ApplyConfig(IsGameCubeDisc(boot_game_metadata));
     LOG("Config applied\n");
-    // Boost mode: the CPU at 1785 MHz and the GPU at 768 MHz while the game runs
-    if (DolphinNX::TicoCore::GetConfigValue("dolphin_boost_mode", "enabled") == "enabled")
+    // Boost mode (off unless chosen): the CPU at 1785 MHz and the GPU at 768 MHz
+    // while the game runs, in place of the startup boost
+    if (DolphinNX::TicoCore::GetConfigValue("dolphin_boost_mode", "disabled") == "enabled")
+    {
+      EndStartupBoost();
       ConfigureSwitchPerformance();
+    }
     else
-      LOG("Boost mode off: the clocks stay as they are\n");
+    {
+      LOG("Boost mode off: the startup boost lasts until the first frame\n");
+    }
     if (!EnsureActiveWiiNandRoot())
       LOG("WARNING: failed to prepare Wii NAND root before boot\n");
     if (!IsGameCubeDisc(boot_game_metadata))
@@ -1831,6 +1860,7 @@ int main(int argc, char* argv[])
         const u64 presented_frames = s_presented_frames.load(std::memory_order_relaxed);
         if (presented_frames > 0)
         {
+          EndStartupBoost(); // The game is up
           overlay_ok = DolphinNX::GameOverlay::Init();
           if (overlay_ok)
           {
