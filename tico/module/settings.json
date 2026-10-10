@@ -218,7 +218,7 @@
               "key": "dolphin_boost_mode",
               "label": "settings_dolphin_boost_mode",
               "type": "bool",
-              "default": "enabled",
+              "default": "disabled",
               "restart": true
             },
             {

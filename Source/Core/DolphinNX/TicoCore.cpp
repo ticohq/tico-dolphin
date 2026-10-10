@@ -103,7 +103,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 82> kDefault
     {"dolphin_language", "auto"},
     {"dolphin_override_region_settings", "disabled"},
     {"dolphin_emulate_skylander_portal", "disabled"},
-    {"dolphin_boost_mode", "enabled"},
+    {"dolphin_boost_mode", "disabled"},
     {"dolphin_renderer", "Vulkan"},
     {"dolphin_fast_disc_speed", "disabled"},
     {"dolphin_main_mmu", "disabled"},
