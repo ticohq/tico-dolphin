@@ -544,6 +544,12 @@ static bool HasService(const char* name)
   return R_SUCCEEDED(rc) && has != 0;
 }
 
+// Boost mode raises a clock, never lowers it: each of the CPU and GPU is
+// boosted only when it runs at or below the target. One already faster (an
+// overclock, a clock manager's profile) is left as it is.
+static bool s_boost_mode_cpu = false;
+static bool s_boost_mode_gpu = false;
+
 static bool OverrideClocksWithClockManager()
 {
   // Horizon-OC's hoc-clk, kefir/4IFIR's sys-clk-OC, sys-clk
@@ -555,11 +561,12 @@ static bool OverrideClocksWithClockManager()
     if (R_FAILED(smGetService(&s_clock_manager, name)))
       continue;
     s_clock_manager_open = true;
-    // modules: 0 CPU, 1 GPU
-    if (SetClockManagerOverride(0, kSwitchCpuClockHz) &&
-        SetClockManagerOverride(1, kSwitchGpuClockHz))
+    // modules: 0 CPU, 1 GPU; only the ones being boosted
+    if ((!s_boost_mode_cpu || SetClockManagerOverride(0, kSwitchCpuClockHz)) &&
+        (!s_boost_mode_gpu || SetClockManagerOverride(1, kSwitchGpuClockHz)))
     {
-      LOG("Clocks via %s override: cpu=%u gpu=%u\n", name, kSwitchCpuClockHz, kSwitchGpuClockHz);
+      LOG("Clocks via %s override: cpu=%u gpu=%u\n", name,
+          s_boost_mode_cpu ? kSwitchCpuClockHz : 0, s_boost_mode_gpu ? kSwitchGpuClockHz : 0);
       return true;
     }
     LOG("%s refused the clock override\n", name);
@@ -621,16 +628,28 @@ static void EndLoadBoost()
 
 static void ConfigureSwitchPerformance()
 {
+  // A clock that can't be read is boosted, as before
+  u32 cpu_now = 0;
+  u32 gpu_now = 0;
+  s_boost_mode_cpu = !GetSwitchClockRate(true, &cpu_now) || cpu_now <= kSwitchCpuClockHz;
+  s_boost_mode_gpu = !GetSwitchClockRate(false, &gpu_now) || gpu_now <= kSwitchGpuClockHz;
+  if (!s_boost_mode_cpu)
+    LOG("Boost mode: the CPU already runs faster (%u MHz), left as it is\n", cpu_now / 1000000);
+  if (!s_boost_mode_gpu)
+    LOG("Boost mode: the GPU already runs faster (%u MHz), left as it is\n", gpu_now / 1000000);
+  if (!s_boost_mode_cpu && !s_boost_mode_gpu)
+    return;
+
   if (OverrideClocksWithClockManager())
     return;
 
-  if (GetSwitchClockRate(true, &s_switch_original_cpu_hz))
+  if (s_boost_mode_cpu && GetSwitchClockRate(true, &s_switch_original_cpu_hz))
     s_switch_clock_restore_cpu = true;
-  if (GetSwitchClockRate(false, &s_switch_original_gpu_hz))
+  if (s_boost_mode_gpu && GetSwitchClockRate(false, &s_switch_original_gpu_hz))
     s_switch_clock_restore_gpu = true;
 
-  const bool cpu_ok = SetSwitchClockRate(true, kSwitchCpuClockHz);
-  const bool gpu_ok = SetSwitchClockRate(false, kSwitchGpuClockHz);
+  const bool cpu_ok = s_boost_mode_cpu && SetSwitchClockRate(true, kSwitchCpuClockHz);
+  const bool gpu_ok = s_boost_mode_gpu && SetSwitchClockRate(false, kSwitchGpuClockHz);
 
   LOG("Switch clocks target cpu=%u gpu=%u (saved cpu=%u gpu=%u, applied cpu=%d gpu=%d)\n",
       kSwitchCpuClockHz, kSwitchGpuClockHz, s_switch_original_cpu_hz, s_switch_original_gpu_hz,
@@ -694,8 +713,10 @@ static void KeepSwitchClocks()
       LOG("Clocks: %s, asking the clock manager again\n", resumed ? "resumed" : "mode changed");
       SetClockManagerOverride(0, 0);
       SetClockManagerOverride(1, 0);
-      SetClockManagerOverride(0, kSwitchCpuClockHz);
-      SetClockManagerOverride(1, kSwitchGpuClockHz);
+      if (s_boost_mode_cpu)
+        SetClockManagerOverride(0, kSwitchCpuClockHz);
+      if (s_boost_mode_gpu)
+        SetClockManagerOverride(1, kSwitchGpuClockHz);
     }
     return;
   }
@@ -709,13 +730,19 @@ static void KeepSwitchClocks()
 
   u32 cpu_hz = 0;
   u32 gpu_hz = 0;
-  const bool cpu_reset = GetSwitchClockRate(true, &cpu_hz) && cpu_hz != kSwitchCpuClockHz;
-  const bool gpu_reset = GetSwitchClockRate(false, &gpu_hz) && gpu_hz != kSwitchGpuClockHz;
+  // Only what Boost mode raised, only when it fell below: a clock something
+  // else raised higher stays
+  const bool cpu_reset =
+      s_boost_mode_cpu && GetSwitchClockRate(true, &cpu_hz) && cpu_hz < kSwitchCpuClockHz;
+  const bool gpu_reset =
+      s_boost_mode_gpu && GetSwitchClockRate(false, &gpu_hz) && gpu_hz < kSwitchGpuClockHz;
   if (cpu_reset || gpu_reset)
   {
     LOG("Clocks were reset (cpu=%u gpu=%u): setting them again\n", cpu_hz, gpu_hz);
-    SetSwitchClockRate(true, kSwitchCpuClockHz);
-    SetSwitchClockRate(false, kSwitchGpuClockHz);
+    if (cpu_reset)
+      SetSwitchClockRate(true, kSwitchCpuClockHz);
+    if (gpu_reset)
+      SetSwitchClockRate(false, kSwitchGpuClockHz);
   }
 }
 
