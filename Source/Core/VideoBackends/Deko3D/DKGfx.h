@@ -97,17 +97,11 @@ private:
   void BindFramebuffer(DKFramebuffer* framebuffer);
   void ResetSamplerStates();
 
-  // TODO: diagnostic scaffolding for the black screen.
-  void ReportFrameStatistics();
-
   std::unique_ptr<DKSwapChain> m_swap_chain;
   float m_backbuffer_scale;
 
   std::array<SamplerState, VideoCommon::MAX_PIXEL_SHADER_SAMPLERS> m_sampler_states = {};
 
   int m_current_slot = -1;
-
-  u32 m_presents = 0;
-  u32 m_presents_reaching_screen = 0;
 };
 }  // namespace Deko3D

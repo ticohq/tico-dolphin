@@ -90,7 +90,7 @@ constexpr std::array<std::string_view, 29> kFixedBaseOptions = {{
     "dolphin_mods_enable",
 }};
 
-constexpr std::array<std::pair<std::string_view, std::string_view>, 83> kDefaultOptions = {{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 84> kDefaultOptions = {{
     {"display_mode", "Display"},
     {"display_size", "4:3"},
     {"integer_scale", "Auto"},
@@ -105,9 +105,10 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 83> kDefault
     {"dolphin_emulate_skylander_portal", "disabled"},
     {"dolphin_boost_mode", "disabled"},
     {"dolphin_load_boost", "enabled"},
-    {"dolphin_renderer", "Vulkan"},
+    {"dolphin_renderer", "Deko3D"},
     {"dolphin_fast_disc_speed", "disabled"},
     {"dolphin_main_mmu", "disabled"},
+    {"dolphin_dual_core", "enabled"},
     {"dolphin_rush_presentation", "disabled"},
     {"dolphin_early_presentation", "disabled"},
     {"dolphin_call_back_audio_method", "0"},
@@ -176,7 +177,7 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 83> kDefault
     {"dolphin_save_load_settings", "disabled"},
 }};
 
-static_assert(kDefaultOptions.size() == 83);
+static_assert(kDefaultOptions.size() == 84);
 
 // The console's primary DNS server, from its network settings.
 std::optional<std::string> ConsoleDnsServer()
@@ -915,7 +916,7 @@ private:
     Config::SetBase(Config::MAIN_DUMP_AUDIO, false);
 
     Config::SetBase(Config::GFX_VSYNC, true);
-    Config::SetBase(Config::MAIN_GFX_BACKEND, std::string("Vulkan"));
+    Config::SetBase(Config::MAIN_GFX_BACKEND, std::string("Deko3D"));
     Config::SetBase(Config::GFX_ENABLE_GPU_TEXTURE_DECODING, false);
     Config::SetBase(Config::GFX_ENABLE_PIXEL_LIGHTING, false);
     Config::SetBase(Config::GFX_EFB_SCALE, 1);
@@ -1019,9 +1020,9 @@ private:
   {
     // Video > Renderer: Vulkan (Mesa's NVK) or deko3d (the Switch GPU's own API)
     {
-      const std::string renderer = GetString("dolphin_renderer", "Vulkan");
+      const std::string renderer = GetString("dolphin_renderer", "Deko3D");
       Config::SetBase(Config::MAIN_GFX_BACKEND,
-                      renderer == "Deko3D" ? std::string("Deko3D") : std::string("Vulkan"));
+                      renderer == "Vulkan" ? std::string("Vulkan") : std::string("Deko3D"));
     }
     Config::SetBase(Config::MAIN_SKIP_IPL,
                     GetBool("dolphin_skip_gc_bios", Config::Get(Config::MAIN_SKIP_IPL)));
@@ -1045,6 +1046,9 @@ private:
                             Config::Get(Config::MAIN_ENABLE_CHEATS)));
     Config::SetBase(Config::MAIN_MMU,
                     GetBool("dolphin_main_mmu", Config::Get(Config::MAIN_MMU)));
+    // The emulated GPU on its own core; off is much slower but can fix some crashes
+    Config::SetBase(Config::MAIN_CPU_THREAD,
+                    GetBool("dolphin_dual_core", Config::Get(Config::MAIN_CPU_THREAD)));
     Config::SetBase(Config::MAIN_SYNC_GPU,
                     GetBool("dolphin_sync_gpu", Config::Get(Config::MAIN_SYNC_GPU)));
     Config::SetBase(Config::MAIN_SYNC_GPU_MAX_DISTANCE,

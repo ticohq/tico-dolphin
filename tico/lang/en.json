@@ -264,5 +264,6 @@
   "emulator_portal_where": "Copy figure dumps to sdmc:/tico/skylanders",
   "settings_dolphin_boost_mode": "Boost mode (CPU 1785 MHz, GPU 768 MHz)",
   "settings_dolphin_renderer": "Renderer",
-  "settings_dolphin_load_boost": "Boost while loading (game start, states)"
+  "settings_dolphin_load_boost": "Boost while loading (game start, states)",
+  "settings_dolphin_dual_core": "Dual core (off is slower, can fix some crashes)"
 }

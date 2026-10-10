@@ -30,6 +30,7 @@
 
 #include "Common/CommonPaths.h"
 #include "Common/FileUtil.h"
+#include "Common/HorizonFastmem.h"
 #include "Common/IniFile.h"
 #include "Common/Logging/LogManager.h"
 #include "Common/MsgHandler.h"
@@ -1575,6 +1576,9 @@ static void InstallCrashDiagnostics()
 
 int main(int argc, char* argv[])
 {
+  // first: 8 GiB of address space for fastmem, before anything splits it up
+  Common::HorizonFastmem::ReserveArenaAddressSpace();
+
   appletLockExit();
   // before any file is opened: small reads near each other (a compressed
   // disc's pieces, streamed audio) come from memory instead of the card

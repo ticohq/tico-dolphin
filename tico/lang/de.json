@@ -91,5 +91,6 @@
   "emulator_pad_joycon_right": "Joy-Con (R)",
   "emulator_pad_gamecube": "GameCube-Controller",
   "emulator_pad_other": "Controller",
-  "settings_dolphin_load_boost": "Boost beim Laden (Spielstart, Spielstände)"
+  "settings_dolphin_load_boost": "Boost beim Laden (Spielstart, Spielstände)",
+  "settings_dolphin_dual_core": "Dual-Core (aus ist langsamer, kann manche Abstürze beheben)"
 }

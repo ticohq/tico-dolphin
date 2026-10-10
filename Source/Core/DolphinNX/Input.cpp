@@ -251,10 +251,19 @@ static ControllerEmu::Attachments* GetWiimoteAttachments(WiimoteEmu::Wiimote* wi
       wiimote->GetWiimoteGroup(WiimoteEmu::WiimoteGroup::Attachments));
 }
 
+// A GameCube controller on the official adapter: its port goes straight
+// through Dolphin's adapter device (GCAdapter.cpp), with no profile in between.
+static bool PlayerHasGameCubeController(unsigned player)
+{
+  return hidGetNpadStyleSet(s_player_npad_ids[player]) & HidNpadStyleTag_NpadGc;
+}
+
 static void SetGameCubePortEnabled(unsigned player, bool enabled)
 {
   const SerialInterface::SIDevices device =
-      enabled ? SerialInterface::SIDEVICE_GC_CONTROLLER : SerialInterface::SIDEVICE_NONE;
+      !enabled                              ? SerialInterface::SIDEVICE_NONE :
+      PlayerHasGameCubeController(player) ? SerialInterface::SIDEVICE_WIIU_ADAPTER :
+                                              SerialInterface::SIDEVICE_GC_CONTROLLER;
 
   // The SI picks the new device up from Config at its next poll. On Triforce
   // Dolphin puts the arcade baseboard on port 1, which reads this pad: the
@@ -1190,7 +1199,8 @@ static void ConfigurePad()
   padConfigureInput(MAX_SWITCH_PLAYERS,
                     HidNpadStyleSet_NpadStandard | HidNpadStyleTag_NpadLagon |
                         HidNpadStyleTag_NpadLucia | HidNpadStyleTag_NpadLager |
-                        HidNpadStyleTag_NpadLark | HidNpadStyleTag_NpadHandheldLark);
+                        HidNpadStyleTag_NpadLark | HidNpadStyleTag_NpadHandheldLark |
+                        HidNpadStyleTag_NpadGc);
   ApplyJoyConAssignment();
   ILOG("padInitialize...\n");
   padInitialize(&s_pads[0], HidNpadIdType_No1, HidNpadIdType_Handheld);
@@ -1539,7 +1549,8 @@ void Init(const WindowSystemInfo& wsi)
 // Re-resolve and re-apply a player's auto profile when its physical controller style
 // changes mid-session (Joy-Cons attached to / detached from the console, an NSO pad
 // swapped in, etc.). Uses the light path -- profile + UpdateReferences only, no SI
-// device change -- so it does not trigger an in-game controller re-plug.
+// device change -- so it does not trigger an in-game controller re-plug. Only a
+// GameCube controller coming or going changes the device (to or from the adapter).
 static void ReapplyAutoProfileOnStyleChange(unsigned player)
 {
   const u32 no1 = hidGetNpadStyleSet(static_cast<HidNpadIdType>(HidNpadIdType_No1 + player));
@@ -1550,6 +1561,7 @@ static void ReapplyAutoProfileOnStyleChange(unsigned player)
     return;
 
   const bool first = !s_style_tracked[player];
+  const bool was_gc = s_last_style_set[player] & HidNpadStyleTag_NpadGc;
   s_last_style_set[player] = style;
   s_style_tracked[player] = true;
   if (first)
@@ -1557,6 +1569,13 @@ static void ReapplyAutoProfileOnStyleChange(unsigned player)
 
   if (Pad::GetConfig()->ControllersNeedToBeCreated())
     return;
+
+  // A GameCube controller plugged in or out moves the port to or from the adapter
+  if (was_gc != PlayerHasGameCubeController(player) &&
+      Config::Get(Config::GetInfoForSIDevice(player)) != SerialInterface::SIDEVICE_NONE)
+  {
+    SetGameCubePortEnabled(player, true);
+  }
 
   Core::System& system = Core::System::GetInstance();
   if (!system.IsWii())
