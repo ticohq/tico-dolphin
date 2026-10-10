@@ -217,6 +217,10 @@ static void KeepPausePictureFor(int slot)
     File::Copy(PausePicturePath(), StatePicturePath(slot), true);
 }
 
+// Boost while loading (below, with the clocks)
+static bool HoldLoadBoost(const char* why);
+static void ReleaseLoadBoost();
+
 // The game's state goes to the auto slot (listed first in Load State) whatever
 // ends the session: Exit, Restart or HOME.
 static bool s_auto_saved = false;
@@ -225,7 +229,13 @@ static void WriteAutoSave(Core::System& system)
   if (s_auto_saved)
     return;
   s_auto_saved = true;
+  const bool boosted = HoldLoadBoost("saving the auto save");
   State::Save(system, SwitchFrontend::OverlayUI::kAutoStateSlot);
+  if (boosted)
+  {
+    State::WaitForSaves(); // written before the boost (and the GPU's minimum) ends
+    ReleaseLoadBoost();
+  }
   KeepPausePictureFor(SwitchFrontend::OverlayUI::kAutoStateSlot);
   RecordStateDisc(system, SwitchFrontend::OverlayUI::kAutoStateSlot);
   LOG("Auto save written\n");
@@ -245,8 +255,9 @@ static void StartStateLoad(Core::System& system, int slot,
   if (s_state_load_thread.joinable())
     s_state_load_thread.join();
   AudioCommon::SetSoundStreamRunning(system, false);
+  const bool boosted = HoldLoadBoost("loading a state"); // the game waits for it
 
-  s_state_load_thread = std::thread([&system, slot, action]() {
+  s_state_load_thread = std::thread([&system, slot, action, boosted]() {
     Common::SetCurrentThreadName("StateLoad - switchnx");
     Common::SetCurrentThreadAffinity(2);
     if (action == Action::UndoLoadState)
@@ -258,6 +269,8 @@ static void StartStateLoad(Core::System& system, int slot,
       InsertStateDisc(system, slot);
       State::Load(system, slot);
     }
+    if (boosted)
+      ReleaseLoadBoost();
     AudioCommon::SetSoundStreamRunning(system, true);
     s_state_load_in_progress.store(false, std::memory_order_release);
   });
@@ -556,25 +569,54 @@ static bool OverrideClocksWithClockManager()
   return false;
 }
 
-// As dolphin-nx does: the system's CPU boost (FastLoad: the CPU at 1785 MHz,
-// the GPU lowered) only while Dolphin starts, moving files, loading the game
-// and compiling. Normal once the game shows its first frame, or as soon as
-// Boost mode's own clocks take over for the whole game.
+// Boost while loading (Settings, on by default), as dolphin-nx does: the
+// system's CPU boost (FastLoad: the CPU at 1785 MHz, the GPU at its minimum)
+// while a game starts, until its first frame, and while a state is saved or
+// loaded, with the game waiting. Never with Boost mode's clocks on, nor when
+// the CPU already runs at 1785 MHz or faster (an overclock): FastLoad would
+// only slow it. Holds count, so overlapping loads share one boost.
+static std::atomic<bool> s_load_boost_allowed{false};
+static std::atomic<int> s_load_boost_holds{0};
 static bool s_startup_boost = false;
 
-static void BeginStartupBoost()
+static bool HoldLoadBoost(const char* why)
 {
-  s_startup_boost = R_SUCCEEDED(appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad));
-  LOG("Startup boost %s\n", s_startup_boost ? "on" : "unavailable");
+  if (!s_load_boost_allowed.load(std::memory_order_acquire))
+    return false;
+  u32 cpu_hz = 0;
+  if (s_load_boost_holds.load(std::memory_order_acquire) == 0 &&
+      GetSwitchClockRate(true, &cpu_hz) && cpu_hz >= kSwitchCpuClockHz)
+  {
+    LOG("Load boost skipped (%s): the CPU already runs at %u MHz\n", why, cpu_hz / 1000000);
+    return false;
+  }
+  if (s_load_boost_holds.fetch_add(1, std::memory_order_acq_rel) == 0)
+  {
+    if (R_FAILED(appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad)))
+    {
+      s_load_boost_holds.fetch_sub(1, std::memory_order_acq_rel);
+      return false;
+    }
+    LOG("Load boost on (%s)\n", why);
+  }
+  return true;
 }
 
-static void EndStartupBoost()
+static void ReleaseLoadBoost()
 {
-  if (!s_startup_boost)
-    return;
-  appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
+  if (s_load_boost_holds.fetch_sub(1, std::memory_order_acq_rel) == 1)
+  {
+    appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
+    LOG("Load boost off\n");
+  }
+}
+
+// Exit: whatever still holds the boost lets it go
+static void EndLoadBoost()
+{
+  if (s_load_boost_holds.exchange(0, std::memory_order_acq_rel) > 0)
+    appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
   s_startup_boost = false;
-  LOG("Startup boost off\n");
 }
 
 static void ConfigureSwitchPerformance()
@@ -597,7 +639,7 @@ static void ConfigureSwitchPerformance()
 
 static void RestoreSwitchPerformance()
 {
-  EndStartupBoost();
+  EndLoadBoost();
   if (s_clock_manager_open)
   {
     SetClockManagerOverride(0, 0);
@@ -1606,7 +1648,6 @@ int main(int argc, char* argv[])
     const std::string user_dir = "sdmc:/tico/system/gc/User";
     // Dolphin's Sys tree, read from RomFS (see "System files")
     const std::string sys_dir = kGcSysSource;
-    BeginStartupBoost();
     MoveProvidedSystemFiles();
     RemoveOldSystemCopy();
     EnsureDolphinProfilesUpdatedFor008();
@@ -1654,15 +1695,17 @@ int main(int argc, char* argv[])
     DolphinNX::TicoCore::ApplyConfig(IsGameCubeDisc(boot_game_metadata));
     LOG("Config applied\n");
     // Boost mode (off unless chosen): the CPU at 1785 MHz and the GPU at 768 MHz
-    // while the game runs, in place of the startup boost
+    // while the game runs. Without it, Boost while loading (on unless turned
+    // off) speeds up the start and every state saved or loaded.
     if (DolphinNX::TicoCore::GetConfigValue("dolphin_boost_mode", "disabled") == "enabled")
     {
-      EndStartupBoost();
       ConfigureSwitchPerformance();
     }
     else
     {
-      LOG("Boost mode off: the startup boost lasts until the first frame\n");
+      s_load_boost_allowed =
+          DolphinNX::TicoCore::GetConfigValue("dolphin_load_boost", "enabled") == "enabled";
+      s_startup_boost = HoldLoadBoost("starting the game");
     }
     if (!EnsureActiveWiiNandRoot())
       LOG("WARNING: failed to prepare Wii NAND root before boot\n");
@@ -1860,7 +1903,11 @@ int main(int argc, char* argv[])
         const u64 presented_frames = s_presented_frames.load(std::memory_order_relaxed);
         if (presented_frames > 0)
         {
-          EndStartupBoost(); // The game is up
+          if (s_startup_boost) // The game is up
+          {
+            s_startup_boost = false;
+            ReleaseLoadBoost();
+          }
           overlay_ok = DolphinNX::GameOverlay::Init();
           if (overlay_ok)
           {
@@ -1970,7 +2017,15 @@ int main(int argc, char* argv[])
         if (OverlayUI::IsSaveStateAction(overlay_action))
         {
           const int slot = OverlayUI::GetStateSlotForAction(overlay_action);
+          const bool boosted = HoldLoadBoost("saving a state");
           State::Save(system, slot);
+          if (boosted)
+          {
+            // Written while the game still waits: it never runs on the
+            // boost's minimum GPU
+            State::WaitForSaves();
+            ReleaseLoadBoost();
+          }
           KeepPausePictureFor(slot);
           RecordStateDisc(system, slot);
           OverlayUI::ShowToast(TrFormat("emulator_state_saved", slot));

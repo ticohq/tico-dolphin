@@ -952,6 +952,11 @@ void Shutdown()
   s_flush_unsaved_data_hook.reset();
 }
 
+void WaitForSaves()
+{
+  s_compress_and_dump_thread.WaitForCompletion();
+}
+
 void Save(Core::System& system, u32 slot)
 {
   SaveAs(system, MakeStateFilename(slot));
