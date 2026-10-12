@@ -92,5 +92,8 @@
   "emulator_pad_gamecube": "Контроллер GameCube",
   "emulator_pad_other": "Контроллер",
   "settings_dolphin_load_boost": "Ускорение при загрузке (запуск игры, сохранения)",
-  "settings_dolphin_dual_core": "Двухъядерный режим (выкл. медленнее, может исправить некоторые вылеты)"
+  "settings_dolphin_dual_core": "Двухъядерный режим (выкл. медленнее, может исправить некоторые вылеты)",
+  "settings_dolphin_section_hud": "Экранная информация",
+  "settings_dolphin_fps_counter": "Счётчик FPS",
+  "settings_dolphin_rendered_resolution": "Разрешение рендеринга"
 }

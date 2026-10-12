@@ -257,5 +257,8 @@
   "settings_dolphin_boost_mode": "加速模式（CPU 1785 MHz，GPU 768 MHz）",
   "settings_dolphin_renderer": "渲染器",
   "settings_dolphin_load_boost": "加载时加速（游戏启动、即时存档）",
-  "settings_dolphin_dual_core": "双核（关闭会更慢，但可修复部分崩溃）"
+  "settings_dolphin_dual_core": "双核（关闭会更慢，但可修复部分崩溃）",
+  "settings_dolphin_section_hud": "屏幕信息",
+  "settings_dolphin_fps_counter": "帧率计数器",
+  "settings_dolphin_rendered_resolution": "渲染分辨率"
 }
