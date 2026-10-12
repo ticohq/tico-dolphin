@@ -16,6 +16,8 @@
 ///   ra_enabled, ra_username,
 ///   ra_token, ra_hardcore_mode  RetroAchievements (a token, never a password)
 ///   ra_badges                   false: pop-ups use a placeholder, no badge
+///   play_nonce                  this launch's id, for the playtime the core
+///                               reports back (PlaytimeFrame)
 #pragma once
 
 #include "TicoSecure.h"
@@ -29,6 +31,7 @@
 #endif
 #endif
 
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <sstream>
@@ -47,6 +50,7 @@ struct Session {
   bool raBadges = true; ///< tico fetched badges; false: show a placeholder
   bool inheritsShared = true; ///< A core's old saves are this user's to move
   std::string raUsername, raToken;
+  std::string playNonce; ///< This launch's, for PlaytimeFlush
 
 #ifdef __SWITCH__
   /// @brief userId as an account service id.
@@ -98,6 +102,7 @@ inline const Session &CurrentSession() {
         !(j.contains("inherits_shared") && j["inherits_shared"].is_boolean()) || flag("inherits_shared");
     s.raUsername = str("ra_username");
     s.raToken = str("ra_token");
+    s.playNonce = str("play_nonce");
     return s;
   }();
   return session;
@@ -227,6 +232,81 @@ inline std::string UserContentRoot(std::string folder, bool saves) {
       !base.empty() && user.compare(0, base.size(), base) == 0 ? user.substr(base.size()) : "";
   return folder + part;
 }
+
+/// @name Playtime
+/// A core calls PlaytimeFrame() once per emulated frame, and PlaytimeFlush()
+/// when the game closes. The time between two frames counts when it is under
+/// a second, so a pause, a menu that stops emulation, or sleep counts
+/// nothing. Every 30 seconds, and on PlaytimeFlush(), the total goes to
+/// sdmc:/tico/run/play.bin, sealed. tico adds it to the player's time when it
+/// starts again: only for the launch whose play_nonce it carries, and never
+/// more than the time tico was away (the system tick, which no clock change
+/// moves).
+/// @{
+namespace detail {
+struct PlayClock {
+  std::uint64_t start = 0, last = 0, counted = 0, flushed = 0;
+  bool started = false;
+};
+inline PlayClock &Clock() {
+  static PlayClock clock;
+  return clock;
+}
+inline const char *PlayResultPath() {
+#ifdef __SWITCH__
+  return "sdmc:/tico/run/play.bin";
+#else
+  return "tico/run/play.bin";
+#endif
+}
+} // namespace detail
+
+inline void PlaytimeFlush() {
+#ifdef __SWITCH__
+  const Session &s = CurrentSession();
+  const detail::PlayClock &clock = detail::Clock();
+  if (!s.valid || s.playNonce.empty() || !clock.started)
+    return;
+  nlohmann::json j;
+  j["nonce"] = s.playNonce;
+  j["seconds"] = clock.counted / armGetSystemTickFreq();
+  j["start_tick"] = clock.start;
+  j["end_tick"] = clock.last;
+  const std::vector<std::uint8_t> sealed = secure::Seal("core-play", j.dump());
+  if (sealed.empty())
+    return;
+  const std::string path = detail::PlayResultPath();
+  const std::string temp = path + ".tmp";
+  if (FILE *file = std::fopen(temp.c_str(), "wb")) {
+    const bool ok = std::fwrite(sealed.data(), 1, sealed.size(), file) == sealed.size();
+    std::fclose(file);
+    std::remove(path.c_str());
+    if (!ok || std::rename(temp.c_str(), path.c_str()) != 0)
+      std::remove(temp.c_str());
+  }
+  detail::Clock().flushed = armGetSystemTick();
+#endif
+}
+
+inline void PlaytimeFrame() {
+#ifdef __SWITCH__
+  detail::PlayClock &clock = detail::Clock();
+  const std::uint64_t now = armGetSystemTick();
+  const std::uint64_t freq = armGetSystemTickFreq();
+  if (!clock.started) {
+    clock.started = true;
+    clock.start = clock.last = clock.flushed = now;
+    return;
+  }
+  const std::uint64_t delta = now - clock.last;
+  clock.last = now;
+  if (delta < freq)
+    clock.counted += delta;
+  if (now - clock.flushed >= 30 * freq)
+    PlaytimeFlush();
+#endif
+}
+/// @}
 
 /// @brief Where a core may look for the player's custom avatar, given its
 /// usual list: with a session, only the current user's own file (no file:

@@ -64,6 +64,7 @@
 #include "VideoCommon/Present.h"
 #include "VideoCommon/Resources/CustomResourceManager.h"
 
+#include "TicoSession.h"
 #include "DolphinNX/Achievements.h"
 #include "DolphinNX/Audio.h"
 #include "DolphinNX/Cheats.h"
@@ -1928,6 +1929,12 @@ int main(int argc, char* argv[])
       UpdateWindowModeAndCrop();
       KeepSwitchClocks();
       DolphinNX::Input::Update();
+      // Playtime: while the game runs (its menu pauses it, so that is not counted)
+      if (s_presented_frames.load(std::memory_order_relaxed) > 0 &&
+          Core::GetState(system) == Core::State::Running)
+      {
+        tico::PlaytimeFrame();
+      }
 
       if (!overlay_ok)
       {
@@ -2213,6 +2220,7 @@ int main(int argc, char* argv[])
 
       frame++;
     }
+    tico::PlaytimeFlush(); // the game's last seconds
 
     const u64 presented_frames = s_presented_frames.load(std::memory_order_relaxed);
     const auto startup_elapsed =
