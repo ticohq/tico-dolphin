@@ -108,8 +108,8 @@ cp "${DOLPHIN_PROFILE_SRC}/handheld.json" "${DOLPHIN_PROFILE_DST}/"
 cp "${DOLPHIN_PROFILE_SRC}/joycon_dual.json" "${DOLPHIN_PROFILE_DST}/"
 
 nacptool --create \
-  "tico Dolphin" \
-  "ticoverse.com, dolphin-emu" \
+  "tico-dolphin" \
+  "Dolphin Team/ticoverse.com" \
   "${TICO_NRO_VERSION}" \
   "${BUILD_DIR}/dolphin.nacp"
 
@@ -120,6 +120,7 @@ elf2nro \
   "${BUILD_DIR}/Binaries/dolphin-nx" \
   "${BUILD_DIR}/tico-dolphin.nro" \
   --nacp="${BUILD_DIR}/dolphin.nacp" \
+  --icon="${SCRIPT_DIR}/tico/icon.jpg" \
   --romfsdir="${ROMFS_DIR}"
 
 # The tico module: a directory that extracts to sdmc:/tico/modules/<id>/.
