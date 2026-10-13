@@ -92,8 +92,32 @@ constexpr const char kAd[] = "tico-secure-v1";
 /// @brief False when this build fell back to the development secret.
 inline bool HasBuildSecret() { return detail::BuildSecret().fromBuild; }
 
+#ifdef __SWITCH__
+namespace detail {
+// libsodium's own generator reads /dev/urandom, which Horizon does not have:
+// sodium_init() would abort. libnx's randomGet is seeded by the kernel.
+inline const char *RandomName() { return "libnx"; }
+inline std::uint32_t RandomU32() {
+  std::uint32_t value;
+  randomGet(&value, sizeof(value));
+  return value;
+}
+inline void RandomStir() {}
+inline void RandomBuf(void *buf, const std::size_t size) { randomGet(buf, size); }
+inline int RandomClose() { return 0; }
+} // namespace detail
+#endif
+
 inline bool Init() {
-  static const bool ready = sodium_init() >= 0;
+  static const bool ready = [] {
+#ifdef __SWITCH__
+    static randombytes_implementation random = {detail::RandomName, detail::RandomU32,
+                                                detail::RandomStir, nullptr,
+                                                detail::RandomBuf, detail::RandomClose};
+    randombytes_set_implementation(&random);
+#endif
+    return sodium_init() >= 0;
+  }();
   return ready;
 }
 
