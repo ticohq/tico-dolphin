@@ -29,7 +29,7 @@
       ],
       "disc_based": true,
       "naming": "redump",
-      "games_file": "gc.json",
+      "games_file": "gc.dat",
       "retroachievements_id": 16,
       "colors": {
         "start": "6F7AE6",
@@ -67,7 +67,10 @@
       ],
       "disc_based": true,
       "naming": "redump",
-      "games_file": "wii.json",
+      "gamelists": [
+        "wii.dat",
+        { "file": "wiiware.dat", "naming": "no-intro" }
+      ],
       "retroachievements_id": 19,
       "colors": {
         "start": "8CE3F5",
