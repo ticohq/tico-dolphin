@@ -164,7 +164,10 @@ void LoadBorder() {
 
 #ifdef __SWITCH__
 bool LoadAvatarFromAccount() {
-    if (R_FAILED(accountInitialize(AccountServiceType_Application))) {
+    // The System account service, not Application: opening Application registers
+    // the process with ns each time, and in tico's chain of NROs in one process
+    // (tico, a game, tico, a game) the fourth registration makes ns abort.
+    if (R_FAILED((R_SUCCEEDED(accountInitialize(AccountServiceType_System)) ? 0 : accountInitialize(AccountServiceType_Application)))) {
         return false;
     }
 
