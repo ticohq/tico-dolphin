@@ -10,6 +10,7 @@
 #include "overlay/translation_manager.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <dirent.h>
 #include <map>
@@ -303,9 +304,14 @@ std::vector<DiscEntry> ScanDiscs(std::string currentPath)
     for (const auto &pair : bestDiscs)
         discs.push_back(pair.second);
 
-    // Sort by display name
-    std::sort(discs.begin(), discs.end(), [](const DiscEntry &a, const DiscEntry &b) {
-        return a.displayName < b.displayName;
+    // By the number at the end of "Disc N": as text, "Disc 10" would come
+    // before "Disc 2"
+    auto discNumber = [](const DiscEntry &d) {
+        const size_t space = d.displayName.find_last_of(' ');
+        return space == std::string::npos ? 0 : std::atoi(d.displayName.c_str() + space + 1);
+    };
+    std::sort(discs.begin(), discs.end(), [&](const DiscEntry &a, const DiscEntry &b) {
+        return discNumber(a) < discNumber(b);
     });
 
     return discs;
