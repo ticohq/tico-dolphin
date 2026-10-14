@@ -804,7 +804,7 @@ static std::optional<DiscIO::Region> GameCubeIplRegion()
       {USA_DIR, DiscIO::Region::NTSC_U},
       {EUR_DIR, DiscIO::Region::PAL},
       {JAP_DIR, DiscIO::Region::NTSC_J}};
-  for (const char* root : {"sdmc:/tico/system/gc/User/GC", "sdmc:/tico/system/gc/Sys/GC"})
+  for (const char* root : {"sdmc:/tico/system/dolphin/User/GC", "sdmc:/tico/system/dolphin/Sys/GC"})
   {
     for (const auto& [dir, region] : kRegions)
     {
@@ -1020,13 +1020,13 @@ static int ExitSwitchFrontend(int exit_code)
 // from this NRO's RomFS (romfs:/Sys, from Data/Sys), as nezumiiruka does, so an
 // update brings its own and nothing is copied. The files players provide (the
 // GameCube BIOS, DSP ROMs, fonts) live in User/GC, where Dolphin looks first;
-// sdmc:/tico/system/gc/Sys, where earlier versions kept the copy, stays a place
+// sdmc:/tico/system/dolphin/Sys, where earlier versions kept the copy, stays a place
 // to drop them, and they are moved over on every start.
 // ---------------------------------------------------------------------------
 static constexpr const char* kGcSysSource = "romfs:/Sys";
-static constexpr const char* kGcSysDest = "sdmc:/tico/system/gc/Sys";
-static constexpr const char* kGcSysTempDest = "sdmc:/tico/system/gc/Sys.update";
-static constexpr const char* kGcSysMarker = "sdmc:/tico/system/gc/.sys_version";
+static constexpr const char* kGcSysDest = "sdmc:/tico/system/dolphin/Sys";
+static constexpr const char* kGcSysTempDest = "sdmc:/tico/system/dolphin/Sys.update";
+static constexpr const char* kGcSysMarker = "sdmc:/tico/system/dolphin/.sys_version";
 #ifndef TICO_NRO_VERSION
 #define TICO_NRO_VERSION "0.0.0"
 #endif
@@ -1400,7 +1400,7 @@ static void EnsureRootMesaCacheMatchesCoreVersion()
 static void MoveProvidedSystemFiles()
 {
   const std::string from = std::string(kGcSysDest) + "/GC/";
-  const std::string to = "sdmc:/tico/system/gc/User/GC/";
+  const std::string to = "sdmc:/tico/system/dolphin/User/GC/";
   std::vector<std::string> names = {"dsp_rom.bin", "dsp_coef.bin", "font_western.bin",
                                     "font_japanese.bin"};
   for (const char* region : {"USA", "EUR", "JAP"})
@@ -1588,6 +1588,14 @@ int main(int argc, char* argv[])
   socketInitializeDefault();
   romfsInit();
 
+  // Dolphin's folder is named after the emulator; before 3.0.1 it was
+  // tico/system/gc. tico moves it too, but Dolphin may start without tico.
+  {
+    struct stat st;
+    if (stat("sdmc:/tico/system/dolphin", &st) != 0 && stat("sdmc:/tico/system/gc", &st) == 0)
+      rename("sdmc:/tico/system/gc", "sdmc:/tico/system/dolphin");
+  }
+
   if (kNxLogEnabled)
   {
     if (FILE* fp = fopen(kNxLogPath, "w"))
@@ -1673,11 +1681,11 @@ int main(int argc, char* argv[])
     LOG("Overlay title: %s\n", display_title.empty() ? "(empty)" : display_title.c_str());
     SwitchFrontend::OverlayUI::SetGameTitle(display_title);
 
-    setenv("HOME", "sdmc:/tico/system/gc", 1);
+    setenv("HOME", "sdmc:/tico/system/dolphin", 1);
     SetDefaultEnvIfUnset("MESA_VK_WSI_PRESENT_MODE", "fifo");
     LOG("Environment set\n");
 
-    const std::string user_dir = "sdmc:/tico/system/gc/User";
+    const std::string user_dir = "sdmc:/tico/system/dolphin/User";
     // Dolphin's Sys tree, read from RomFS (see "System files")
     const std::string sys_dir = kGcSysSource;
     MoveProvidedSystemFiles();

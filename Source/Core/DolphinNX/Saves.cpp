@@ -48,10 +48,10 @@ std::string WiiImport()
 }
 
 // Where Dolphin kept saves before (its defaults, under its user folder)
-constexpr const char* kOldGameCubeSaves = "sdmc:/tico/system/gc/User/GC";
-constexpr const char* kOldWiiTitles = "sdmc:/tico/system/gc/User/Wii/title";
+constexpr const char* kOldGameCubeSaves = "sdmc:/tico/system/dolphin/User/GC";
+constexpr const char* kOldWiiTitles = "sdmc:/tico/system/dolphin/User/Wii/title";
 constexpr const char* kMigrationMarker = "sdmc:/tico/config/.migrations/dolphin_saves_layout";
-constexpr const char* kOldStateSaves = "sdmc:/tico/system/gc/User/StateSaves";
+constexpr const char* kOldStateSaves = "sdmc:/tico/system/dolphin/User/StateSaves";
 constexpr const char* kStatesMarker = "sdmc:/tico/config/.migrations/dolphin_states_layout";
 
 // The user's states folder for a platform
@@ -103,7 +103,7 @@ std::string Timestamp()
 
 void Migrate(const MigrationProgress& progress)
 {
-  // The old saves in tico/system/gc belong to the account tico's welcome
+  // The old saves in tico/system/dolphin belong to the account tico's welcome
   // wizard moved everything to: anyone else leaves them for that account
   // (and the marker unwritten, so they still move when it plays).
   if (!tico::CurrentSession().inheritsShared)
