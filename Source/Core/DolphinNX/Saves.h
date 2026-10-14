@@ -14,7 +14,7 @@
 
 // GameCube memory cards live in sdmc:/tico/saves/gc and each Wii game's save in
 // sdmc:/tico/saves/wii/<GAMEID>, in Dolphin's own formats. The Wii's system files
-// (settings, installed WADs) stay in Dolphin's NAND under tico/system/gc.
+// (settings, installed WADs) stay in Dolphin's NAND under tico/system/dolphin.
 namespace DolphinNX::Saves
 {
 /// Called for each save moved (where it goes, how many are done, of how many),

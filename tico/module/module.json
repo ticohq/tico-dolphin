@@ -10,7 +10,7 @@
   "bool_false_value": "disabled",
   "profiles": "config/cores/profiles/dolphin",
   "profile_key": "dolphin_mapping_profile",
-  "system_dir": "gc",
+  "system_dir": "dolphin",
   "list_label": "Dolphin (GC, WII, Triforce)",
   "systems": [
     {
@@ -41,12 +41,12 @@
         "title": "GameCube Menu",
         "launch": "menu:/gc",
         "requires_any": [
-          "sdmc:/tico/system/gc/User/GC/USA/IPL.bin",
-          "sdmc:/tico/system/gc/User/GC/EUR/IPL.bin",
-          "sdmc:/tico/system/gc/User/GC/JAP/IPL.bin",
-          "sdmc:/tico/system/gc/Sys/GC/USA/IPL.bin",
-          "sdmc:/tico/system/gc/Sys/GC/EUR/IPL.bin",
-          "sdmc:/tico/system/gc/Sys/GC/JAP/IPL.bin"
+          "sdmc:/tico/system/dolphin/User/GC/USA/IPL.bin",
+          "sdmc:/tico/system/dolphin/User/GC/EUR/IPL.bin",
+          "sdmc:/tico/system/dolphin/User/GC/JAP/IPL.bin",
+          "sdmc:/tico/system/dolphin/Sys/GC/USA/IPL.bin",
+          "sdmc:/tico/system/dolphin/Sys/GC/EUR/IPL.bin",
+          "sdmc:/tico/system/dolphin/Sys/GC/JAP/IPL.bin"
         ]
       }
     },
@@ -79,7 +79,7 @@
         "title": "Wii Menu",
         "launch": "menu:/wii",
         "requires_any": [
-          "sdmc:/tico/system/gc/User/Wii/title/00000001/00000002/content/title.tmd"
+          "sdmc:/tico/system/dolphin/User/Wii/title/00000001/00000002/content/title.tmd"
         ]
       }
     },
