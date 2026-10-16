@@ -219,10 +219,6 @@ static void KeepPausePictureFor(int slot)
     File::Copy(PausePicturePath(), StatePicturePath(slot), true);
 }
 
-// Boost while loading (below, with the clocks)
-static bool HoldLoadBoost(const char* why);
-static void ReleaseLoadBoost();
-
 // The game's state goes to the auto slot (listed first in Load State) whatever
 // ends the session: Exit, Restart or HOME.
 static bool s_auto_saved = false;
@@ -231,13 +227,7 @@ static void WriteAutoSave(Core::System& system)
   if (s_auto_saved)
     return;
   s_auto_saved = true;
-  const bool boosted = HoldLoadBoost("saving the auto save");
   State::Save(system, SwitchFrontend::OverlayUI::kAutoStateSlot);
-  if (boosted)
-  {
-    State::WaitForSaves(); // written before the boost (and the GPU's minimum) ends
-    ReleaseLoadBoost();
-  }
   KeepPausePictureFor(SwitchFrontend::OverlayUI::kAutoStateSlot);
   RecordStateDisc(system, SwitchFrontend::OverlayUI::kAutoStateSlot);
   LOG("Auto save written\n");
@@ -257,9 +247,8 @@ static void StartStateLoad(Core::System& system, int slot,
   if (s_state_load_thread.joinable())
     s_state_load_thread.join();
   AudioCommon::SetSoundStreamRunning(system, false);
-  const bool boosted = HoldLoadBoost("loading a state"); // the game waits for it
 
-  s_state_load_thread = std::thread([&system, slot, action, boosted]() {
+  s_state_load_thread = std::thread([&system, slot, action]() {
     Common::SetCurrentThreadName("StateLoad - switchnx");
     Common::SetCurrentThreadAffinity(2);
     if (action == Action::UndoLoadState)
@@ -271,8 +260,6 @@ static void StartStateLoad(Core::System& system, int slot,
       InsertStateDisc(system, slot);
       State::Load(system, slot);
     }
-    if (boosted)
-      ReleaseLoadBoost();
     AudioCommon::SetSoundStreamRunning(system, true);
     s_state_load_in_progress.store(false, std::memory_order_release);
   });
@@ -578,12 +565,14 @@ static bool OverrideClocksWithClockManager()
   return false;
 }
 
-// Boost while loading (Settings, on by default), as dolphin-nx does: the
-// system's CPU boost (FastLoad: the CPU at 1785 MHz, the GPU at its minimum)
-// while a game starts, until its first frame, and while a state is saved or
-// loaded, with the game waiting. Never with Boost mode's clocks on, nor when
-// the CPU already runs at 1785 MHz or faster (an overclock): FastLoad would
-// only slow it. Holds count, so overlapping loads share one boost.
+// Boost while loading (Settings, on by default), as dekopon does: the
+// system's CPU boost profile (ApmCpuBoostMode_FastLoad: the CPU at 1785 MHz,
+// the GPU at its minimum) only while the game loads. BootCore returns once the
+// emulation thread starts and the disc loads after, so it is held from boot
+// until the game's first frame. Never while the game runs: states are saved
+// and loaded at the game's own clocks. Never with Boost mode's clocks on, nor
+// when the CPU already runs at 1785 MHz or faster (an overclock): FastLoad
+// would only slow it.
 static std::atomic<bool> s_load_boost_allowed{false};
 static std::atomic<int> s_load_boost_holds{0};
 static bool s_startup_boost = false;
@@ -1736,7 +1725,7 @@ int main(int argc, char* argv[])
     LOG("Config applied\n");
     // Boost mode (off unless chosen): the CPU at 1785 MHz and the GPU at 768 MHz
     // while the game runs. Without it, Boost while loading (on unless turned
-    // off) speeds up the start and every state saved or loaded.
+    // off) speeds up loading the game.
     if (DolphinNX::TicoCore::GetConfigValue("dolphin_boost_mode", "disabled") == "enabled")
     {
       ConfigureSwitchPerformance();
@@ -1963,6 +1952,9 @@ int main(int argc, char* argv[])
             // the game was restarted or runs in hardcore mode.
             namespace OverlayUI = SwitchFrontend::OverlayUI;
             const bool restarted = std::remove(RestartMarkerPath().c_str()) == 0;
+            // tico's General > Quick Menu Tip: shown once the game runs smoothly
+            if (!restarted)
+              OverlayUI::ShowQuickMenuTip();
             const bool hardcore =
                 Config::Get(Config::RA_ENABLED) && Config::Get(Config::RA_HARDCORE_ENABLED);
             bool resume_prompt = false;
@@ -2063,15 +2055,7 @@ int main(int argc, char* argv[])
         if (OverlayUI::IsSaveStateAction(overlay_action))
         {
           const int slot = OverlayUI::GetStateSlotForAction(overlay_action);
-          const bool boosted = HoldLoadBoost("saving a state");
           State::Save(system, slot);
-          if (boosted)
-          {
-            // Written while the game still waits: it never runs on the
-            // boost's minimum GPU
-            State::WaitForSaves();
-            ReleaseLoadBoost();
-          }
           KeepPausePictureFor(slot);
           RecordStateDisc(system, slot);
           OverlayUI::ShowToast(TrFormat("emulator_state_saved", slot));

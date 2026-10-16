@@ -101,6 +101,11 @@ void SetBorderTextureId(unsigned long long texture_id);
 void SetSidebarIconTextures(unsigned long long settings, unsigned long long restart,
                             unsigned long long exit);
 void ShowToast(std::string message, ToastCorner corner = ToastCorner::TopLeft);
+// tico's General > Quick Menu Tip: call when a game starts. Once the game runs
+// smoothly with no menu, prompt or message on screen (after a heavy start,
+// after Continue's prompt), a pill rises from the bottom edge saying Plus and
+// Minus together open this menu. Opening the menu first drops it.
+void ShowQuickMenuTip();
 bool HasTransientContent();
 
 // Predicate the overlay uses to label save/load slots as "In Use" or "Empty".

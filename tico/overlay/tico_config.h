@@ -25,6 +25,9 @@ bool DarkMode();
 // tico's General > Continue Last Game (resume_on_launch in general.jsonc):
 // "ask", "always" or "never", for a game that has an auto save.
 std::string ResumeOnLaunch();
+// tico's General > Quick Menu Tip (quick_menu_tip in general.jsonc): whether a
+// game's start shows that Plus and Minus open the menu. On unless turned off.
+bool QuickMenuTip();
 
 // Returns the string value for `key`, or `default_value` if the key is absent.
 std::string GetConfigValue(std::string_view key, std::string_view default_value = {});
