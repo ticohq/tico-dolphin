@@ -256,9 +256,10 @@
   "emulator_portal_where": "Copia los volcados de figuras en sdmc:/tico/skylanders",
   "settings_dolphin_boost_mode": "Modo boost (CPU 1785 MHz, GPU 768 MHz)",
   "settings_dolphin_renderer": "Renderizador",
-  "settings_dolphin_load_boost": "Boost al cargar (inicio del juego, estados)",
+  "settings_dolphin_load_boost": "Boost al cargar el juego",
   "settings_dolphin_dual_core": "Doble núcleo (desactivado es más lento, puede corregir algunos cierres)",
   "settings_dolphin_section_hud": "Información en pantalla",
   "settings_dolphin_fps_counter": "Contador de FPS",
-  "settings_dolphin_rendered_resolution": "Resolución renderizada"
+  "settings_dolphin_rendered_resolution": "Resolución renderizada",
+  "emulator_quick_menu_tip": "Pulsa {plus} y {minus} a la vez para abrir el menú rápido"
 }

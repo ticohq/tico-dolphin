@@ -18,6 +18,8 @@
 ///   ra_badges                   false: pop-ups use a placeholder, no badge
 ///   play_nonce                  this launch's id, for the playtime the core
 ///                               reports back (PlaytimeFrame)
+///   presence                    what Discord shows for this game: the note a
+///                               presence sysmodule reads (PresenceShow)
 #pragma once
 
 #include "TicoSecure.h"
@@ -51,6 +53,7 @@ struct Session {
   bool inheritsShared = true; ///< A core's old saves are this user's to move
   std::string raUsername, raToken;
   std::string playNonce; ///< This launch's, for PlaytimeFlush
+  std::string presence;  ///< The Discord note's JSON, without the process; "" for none
 
 #ifdef __SWITCH__
   /// @brief userId as an account service id.
@@ -103,6 +106,8 @@ inline const Session &CurrentSession() {
     s.raUsername = str("ra_username");
     s.raToken = str("ra_token");
     s.playNonce = str("play_nonce");
+    if (j.contains("presence") && j["presence"].is_object())
+      s.presence = j["presence"].dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
     return s;
   }();
   return session;
@@ -233,6 +238,49 @@ inline std::string UserContentRoot(std::string folder, bool saves) {
   return folder + part;
 }
 
+/// @name Discord presence
+/// A presence sysmodule sees which title runs, not the game inside it, so the
+/// core leaves it a note naming the game (sdmc:/config/switchrpc/now_playing.json)
+/// with its own process and title: the sysmodule shows it only while that
+/// process lives, so nothing needs removing when the core exits. tico wrote the
+/// same note before handing over; a core running as an application of its own
+/// (the system menu build) has another process, so it writes it again.
+/// PlaytimeFrame() does it on the first frame; nothing is written without the
+/// sysmodule.
+/// @{
+inline void PresenceShow() {
+#ifdef __SWITCH__
+  const Session &s = CurrentSession();
+  if (!s.valid || s.presence.empty())
+    return;
+  FILE *probe = std::fopen("sdmc:/atmosphere/contents/3120000000000092/exefs.nsp", "rb");
+  if (!probe)
+    return;
+  std::fclose(probe);
+  nlohmann::json note = nlohmann::json::parse(s.presence, nullptr, false);
+  // std::uint64_t is libnx's u64; a core may define its own u64 (PPSSPP does)
+  std::uint64_t pid = 0, program = 0;
+  if (!note.is_object() || R_FAILED(svcGetProcessId(&pid, CUR_PROCESS_HANDLE)) ||
+      R_FAILED(svcGetInfo(&program, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0)))
+    return;
+  char programHex[17];
+  std::snprintf(programHex, sizeof(programHex), "%016llx", static_cast<unsigned long long>(program));
+  note["pid"] = pid;
+  note["program_id"] = programHex;
+  const std::string text = note.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+  const char *path = "sdmc:/config/switchrpc/now_playing.json";
+  const std::string temp = std::string(path) + ".tmp";
+  if (FILE *file = std::fopen(temp.c_str(), "wb")) {
+    const bool ok = std::fwrite(text.data(), 1, text.size(), file) == text.size();
+    std::fclose(file);
+    std::remove(path);
+    if (!ok || std::rename(temp.c_str(), path) != 0)
+      std::remove(temp.c_str());
+  }
+#endif
+}
+/// @}
+
 /// @name Playtime
 /// A core calls PlaytimeFrame() once per emulated frame, and PlaytimeFlush()
 /// when the game closes. The time between two frames counts when it is under
@@ -296,6 +344,7 @@ inline void PlaytimeFrame() {
   if (!clock.started) {
     clock.started = true;
     clock.start = clock.last = clock.flushed = now;
+    PresenceShow();
     return;
   }
   const std::uint64_t delta = now - clock.last;

@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -2924,7 +2926,170 @@ void ShowToast(std::string message, ToastCorner corner) {
     s_toast_timers[slot] = kToastDuration;
 }
 
+//==============================================================================
+// Quick menu tip
+//==============================================================================
+
+// Many players never find out that Plus and Minus together open this menu. When
+// a game starts (and tico's General > Quick Menu Tip is on), a pill rises from
+// the bottom edge saying so, once the game runs smoothly with nothing else on
+// screen: after a core's heavy start (shaders, a disc) and after Continue's
+// prompt. Opening the menu any other way first drops it.
+constexpr float kTipSteadySeconds = 1.5f; // smooth play before it rises
+constexpr float kTipFrameGap = 0.1f;      // a longer gap between frames is not smooth
+constexpr float kTipSlideDuration = 0.35f;
+constexpr float kTipHoldDuration = 5.0f;
+
+enum class TipState { Off, Waiting, Showing };
+std::atomic<bool> s_tip_requested{false};
+std::atomic<TipState> s_tip_state{TipState::Off};
+float s_tip_steady = 0.0f;
+float s_tip_timer = 0.0f;
+std::chrono::steady_clock::time_point s_tip_last_frame;
+bool s_tip_has_last_frame = false;
+
+bool AnyToastShowing() {
+    std::lock_guard lock(s_toast_mutex);
+    for (int i = 0; i < kToastSlotCount; ++i) {
+        if (!s_toast_messages[i].empty() && s_toast_timers[i] > 0.0f)
+            return true;
+    }
+    return false;
+}
+
+// One round button, as on the controller: a plus or a minus.
+void DrawTipButton(ImDrawList* dl, ImVec2 center, float radius, bool plus, float alpha) {
+    dl->AddCircleFilled(center, radius, IM_COL32(255, 255, 255, static_cast<int>(235.0f * alpha)), 24);
+    const ImU32 ink = IM_COL32(24, 24, 24, static_cast<int>(255.0f * alpha));
+    const float arm = radius * 0.5f;
+    const float thickness = std::max(1.5f, radius * 0.2f);
+    dl->AddLine(ImVec2(center.x - arm, center.y), ImVec2(center.x + arm, center.y), ink, thickness);
+    if (plus)
+        dl->AddLine(ImVec2(center.x, center.y - arm), ImVec2(center.x, center.y + arm), ink, thickness);
+}
+
+// The pill, @p shown of the way up from below the bottom edge (0..1).
+void DrawQuickMenuTip(ImDrawList* dl, ImVec2 display_size, float shown) {
+    // The translation marks where the buttons go with {plus} and {minus}
+    const std::string text =
+        TrOr("emulator_quick_menu_tip", "Press {plus} and {minus} together to open the quick menu");
+    struct Piece {
+        std::string text;
+        int button; // 0 for text, 1 plus, 2 minus
+    };
+    std::vector<Piece> pieces;
+    for (std::size_t at = 0; at < text.size();) {
+        const std::size_t plus = text.find("{plus}", at);
+        const std::size_t minus = text.find("{minus}", at);
+        const std::size_t next = std::min(plus, minus);
+        if (next == std::string::npos) {
+            pieces.push_back({text.substr(at), 0});
+            break;
+        }
+        if (next > at)
+            pieces.push_back({text.substr(at, next - at), 0});
+        pieces.push_back({std::string(), next == plus ? 1 : 2});
+        at = next + (next == plus ? 6 : 7);
+    }
+
+    const float scale = ImGui::GetIO().FontGlobalScale;
+    const float line_h = ImGui::GetTextLineHeight();
+    const float radius = line_h * 0.6f;
+    const float button_gap = 4.0f * scale;
+    const float pad_x = 22.0f * scale;
+    const float pad_y = 10.0f * scale;
+    float content_w = 0.0f;
+    for (const Piece& piece : pieces)
+        content_w += piece.button ? radius * 2.0f + button_gap * 2.0f
+                                  : ImGui::CalcTextSize(piece.text.c_str()).x;
+    const float pill_h = std::max(line_h, radius * 2.0f) + pad_y * 2.0f;
+    const float pill_w = content_w + pad_x * 2.0f;
+    const float pill_x = (display_size.x - pill_w) * 0.5f;
+    const float shown_y = display_size.y - 28.0f * scale - pill_h;
+    const float hidden_y = display_size.y + 4.0f * scale;
+    const float pill_y = hidden_y + (shown_y - hidden_y) * shown;
+    const float alpha = std::clamp(shown, 0.0f, 1.0f);
+
+    dl->AddRectFilled(ImVec2(pill_x, pill_y), ImVec2(pill_x + pill_w, pill_y + pill_h),
+                      IM_COL32(0, 0, 0, static_cast<int>(175.0f * alpha)), pill_h * 0.5f);
+    const float mid_y = pill_y + pill_h * 0.5f;
+    float x = pill_x + pad_x;
+    for (const Piece& piece : pieces) {
+        if (piece.button) {
+            DrawTipButton(dl, ImVec2(x + button_gap + radius, mid_y), radius, piece.button == 1, alpha);
+            x += radius * 2.0f + button_gap * 2.0f;
+        } else {
+            dl->AddText(ImVec2(x, mid_y - line_h * 0.5f),
+                        IM_COL32(255, 255, 255, static_cast<int>(240.0f * alpha)), piece.text.c_str());
+            x += ImGui::CalcTextSize(piece.text.c_str()).x;
+        }
+    }
+}
+
+// Every frame the overlay draws: waits for smooth play, then shows the pill.
+void UpdateQuickMenuTip(ImDrawList* dl, ImVec2 display_size) {
+    if (s_tip_requested.exchange(false)) {
+        s_tip_state = TipState::Waiting;
+        s_tip_steady = 0.0f;
+        s_tip_has_last_frame = false;
+    }
+    if (s_tip_state == TipState::Off)
+        return;
+
+    // Real time between frames: the frame's delta is fixed in some cores
+    const auto now = std::chrono::steady_clock::now();
+    const float gap = s_tip_has_last_frame
+                          ? std::chrono::duration<float>(now - s_tip_last_frame).count()
+                          : kTipFrameGap * 2.0f;
+    s_tip_last_frame = now;
+    s_tip_has_last_frame = true;
+
+    if (s_visible) {
+        // Continue's prompt or a notice is waited out; the menu itself means
+        // they found it
+        if (s_tip_state == TipState::Waiting &&
+            (s_menu == MenuScreen::Resume || s_menu == MenuScreen::Notice))
+            s_tip_steady = 0.0f;
+        else
+            s_tip_state = TipState::Off;
+        return;
+    }
+    if (s_tip_state == TipState::Waiting) {
+        if (gap > kTipFrameGap || AnyToastShowing()) {
+            s_tip_steady = 0.0f;
+            return;
+        }
+        s_tip_steady += gap;
+        if (s_tip_steady < kTipSteadySeconds)
+            return;
+        s_tip_state = TipState::Showing;
+        s_tip_timer = 0.0f;
+    }
+
+    s_tip_timer += std::min(gap, kTipFrameGap);
+    if (s_tip_timer >= kTipSlideDuration * 2.0f + kTipHoldDuration) {
+        s_tip_state = TipState::Off;
+        return;
+    }
+    float shown = 1.0f;
+    if (s_tip_timer < kTipSlideDuration)
+        shown = EaseOutCubic(s_tip_timer / kTipSlideDuration);
+    else if (s_tip_timer > kTipSlideDuration + kTipHoldDuration)
+        shown = 1.0f - EaseOutCubic((s_tip_timer - kTipSlideDuration - kTipHoldDuration) /
+                                    kTipSlideDuration);
+    DrawQuickMenuTip(dl, display_size, shown);
+}
+
+void ShowQuickMenuTip() {
+    if (TicoConfig::QuickMenuTip())
+        s_tip_requested = true;
+}
+
 bool HasTransientContent() {
+    // Waiting for smooth play needs the frames drawn too
+    if (s_tip_requested || s_tip_state != TipState::Off) {
+        return true;
+    }
     if (HudActive()) {
         return true;
     }
@@ -2980,6 +3145,7 @@ Action Render(int display_w, int display_h) {
     const float delta_time = ImGui::GetIO().DeltaTime;
     const ImVec2 display_size(static_cast<float>(display_w), static_cast<float>(display_h));
     ImDrawList* dl = ImGui::GetForegroundDrawList();
+    UpdateQuickMenuTip(dl, display_size);
 
     if (!s_visible) {
         RenderHud(dl, display_size);

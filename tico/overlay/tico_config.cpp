@@ -649,6 +649,19 @@ std::string ResumeOnLaunch() {
     return (mode == "always" || mode == "never") ? mode : "ask";
 }
 
+bool QuickMenuTip() {
+    std::string content;
+    if (!tico::ReadSettings("general", content)) {
+        return true;
+    }
+    const nlohmann::json root = nlohmann::json::parse(StripJsonComments(content), nullptr, false);
+    if (root.is_discarded() || !root.is_object() || !root.contains("quick_menu_tip") ||
+        !root["quick_menu_tip"].is_boolean()) {
+        return true;
+    }
+    return root["quick_menu_tip"].get<bool>();
+}
+
 std::string GetConfigValue(std::string_view key, std::string_view default_value) {
     return GetManager().GetConfigValue(key, default_value);
 }
