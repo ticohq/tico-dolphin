@@ -1023,9 +1023,6 @@ static constexpr const char* kGcSysVersion = TICO_NRO_VERSION;
 
 static constexpr const char* kSysFromRomfsMarker =
     "sdmc:/tico/config/.migrations/dolphin_sys_from_romfs";
-static constexpr const char* kRootMesaDir = "sdmc:/.mesa";
-static constexpr const char* kRootMesaVersionMarker =
-    "sdmc:/tico/config/.migrations/root_mesa_core_version";
 static constexpr const char* kDolphinProfileUpdateMarker =
     "sdmc:/tico/config/.migrations/dolphin_profiles_0.0.8";
 static constexpr const char* kDolphinProfileHotfixSource =
@@ -1323,66 +1320,6 @@ static void MarkControllerModesTipShown()
   }
 }
 
-static bool RootMesaVersionMarkerMatches()
-{
-  FILE* f = fopen(kRootMesaVersionMarker, "rb");
-  if (!f)
-    return false;
-
-  char buf[64] = {0};
-  const size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-  fclose(f);
-
-  std::string v(buf, n);
-  while (!v.empty() &&
-         (v.back() == '\n' || v.back() == '\r' || v.back() == ' ' || v.back() == '\t'))
-    v.pop_back();
-
-  return v == kGcSysVersion;
-}
-
-static void WriteRootMesaVersionMarker()
-{
-  EnsureDir("sdmc:/tico");
-  EnsureDir("sdmc:/tico/config");
-  EnsureDir("sdmc:/tico/config/.migrations");
-
-  if (FILE* f = fopen(kRootMesaVersionMarker, "wb"))
-  {
-    fputs(kGcSysVersion, f);
-    fputc('\n', f);
-    fclose(f);
-    fsdevCommitDevice("sdmc");
-    LOG("Root Mesa cache core-version marker written: %s\n", kRootMesaVersionMarker);
-  }
-  else
-  {
-    LOG("WARNING: failed to write Root Mesa cache core-version marker: %s\n",
-        kRootMesaVersionMarker);
-  }
-}
-
-static void EnsureRootMesaCacheMatchesCoreVersion()
-{
-  if (RootMesaVersionMarkerMatches())
-  {
-    LOG("Root Mesa cache matches core version: %s\n", kGcSysVersion);
-    return;
-  }
-
-  if (PathIsDir(kRootMesaDir))
-  {
-    LOG("Removing Root Mesa directory after core update: %s\n", kRootMesaDir);
-    if (!DeleteDirectoryRecursivelyIfExists(kRootMesaDir))
-    {
-      LOG("Failed to remove Root Mesa directory after core update: %s\n", kRootMesaDir);
-      return;
-    }
-  }
-
-  WriteRootMesaVersionMarker();
-}
-
 // The files players provide, from where earlier versions kept them (and where the
 // docs said to put them) to User/GC, where Dolphin looks first. Never over a
 // file already there.
@@ -1597,8 +1534,6 @@ int main(int argc, char* argv[])
   LOG("=== Dolphin NX Standalone Boot Log ===\n");
   LOG("argc=%d\n", argc);
   InstallCrashDiagnostics();
-
-  EnsureRootMesaCacheMatchesCoreVersion();
 
   for (int i = 0; i < argc; ++i)
   {
