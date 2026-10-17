@@ -35,6 +35,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <sys/stat.h>
 #include <string>
 #include <sstream>
 #include <map>
@@ -237,6 +239,30 @@ inline std::string UserContentRoot(std::string folder, bool saves) {
       !base.empty() && user.compare(0, base.size(), base) == 0 ? user.substr(base.size()) : "";
   return folder + part;
 }
+
+/// @name Shader cache
+/// Mesa keeps its shader cache in MESA_SHADER_CACHE_DIR, and on the Switch
+/// falls back to the SD card's root (sdmc:/.mesa), shared by every program.
+/// Call at the start of main(), before Vulkan or GL starts: the cache goes to
+/// @p dir (created; Mesa only makes its last folder), unless one is set.
+/// Cores use sdmc:/tico/system/<module id>/cache/mesa.
+/// @{
+inline void UseShaderCacheDir(const std::string &dir) {
+#ifdef __SWITCH__
+  if (std::getenv("MESA_SHADER_CACHE_DIR"))
+    return;
+  // Each folder of the path after the device ("sdmc:/")
+  const std::size_t root = dir.find(":/");
+  for (std::size_t at = dir.find('/', root == std::string::npos ? 1 : root + 2);
+       at != std::string::npos; at = dir.find('/', at + 1))
+    mkdir(dir.substr(0, at).c_str(), 0777);
+  mkdir(dir.c_str(), 0777);
+  setenv("MESA_SHADER_CACHE_DIR", dir.c_str(), 1);
+#else
+  (void)dir;
+#endif
+}
+/// @}
 
 /// @name Discord presence
 /// A presence sysmodule sees which title runs, not the game inside it, so the
